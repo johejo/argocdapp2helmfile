@@ -8,17 +8,17 @@ import (
 	"testing"
 )
 
-func TestParseSourceMapRejectsInvalidConfiguration(t *testing.T) {
+func TestParseConfigRejectsInvalidConfiguration(t *testing.T) {
 	valid := `apiVersion: argocdapp2helmfile/v1alpha1
-kind: SourceMap
+kind: Config
 sources:
   - repoURL: https://github.com/example/repo.git
     targetRevision: main
     root: '{{ requiredEnv "REPO_ROOT" }}'
 `
 	tests := map[string]string{
-		"apiVersion":    strings.Replace(valid, sourceMapAPIVersion, "other/v1", 1),
-		"kind":          strings.Replace(valid, "SourceMap", "Other", 1),
+		"apiVersion":    strings.Replace(valid, configAPIVersion, "other/v1", 1),
+		"kind":          strings.Replace(valid, "Config", "Other", 1),
 		"unknown field": valid + "unknown: true\n",
 		"empty root":    strings.Replace(valid, `root: '{{ requiredEnv "REPO_ROOT" }}'`, `root: ""`, 1),
 		"legacy env":    strings.Replace(valid, `root: '{{ requiredEnv "REPO_ROOT" }}'`, "env: REPO_ROOT", 1),
@@ -32,19 +32,24 @@ sources:
     targetRevision: main
     root: /other
 `,
+		"old kind": strings.Replace(valid, "kind: Config", "kind: SourceMap", 1),
+		"multiple documents": valid + `---
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+`,
 	}
 	for name, input := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := parseSourceMap([]byte(input)); err == nil {
-				t.Fatal("parseSourceMap succeeded")
+			if _, err := parseConfig([]byte(input)); err == nil {
+				t.Fatal("parseConfig succeeded")
 			}
 		})
 	}
 }
 
-func TestSourceMapAllowsLiteralAndDuplicateRoots(t *testing.T) {
+func TestConfigAllowsLiteralAndDuplicateRoots(t *testing.T) {
 	const config = `apiVersion: argocdapp2helmfile/v1alpha1
-kind: SourceMap
+kind: Config
 sources:
   - repoURL: https://github.com/example/charts.git
     targetRevision: main
@@ -53,11 +58,11 @@ sources:
     targetRevision: main
     root: '{{ requiredEnv "SOURCES_ROOT" }}'
 `
-	resolver, err := parseSourceMap([]byte(config))
+	parsed, err := parseConfig([]byte(config))
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := resolver.resolve(applicationSource{
+	resolved, err := parsed.sourceResolver.resolve(applicationSource{
 		RepoURL: "https://github.com/example/charts.git", TargetRevision: "main",
 	}, "source")
 	if err != nil {
@@ -86,26 +91,26 @@ func TestJoinSourcePath(t *testing.T) {
 
 func TestConvertRequiresMappedGitSource(t *testing.T) {
 	input := gitApplication("https://github.com/example/charts.git", "chart", "main", "")
-	if output, err := convert([]byte(input)); err == nil || !strings.Contains(err.Error(), "requires --source-map") {
+	if output, err := convert([]byte(input)); err == nil || !strings.Contains(err.Error(), "requires --config") {
 		t.Fatalf("unexpected result: %s, %v", output, err)
 	}
 }
 
-func TestRunWithSourceMapDoesNotResolveRoot(t *testing.T) {
-	sourceMapPath := filepath.Join(t.TempDir(), "sources.yaml")
+func TestRunWithConfigDoesNotResolveRoot(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	config := `apiVersion: argocdapp2helmfile/v1alpha1
-kind: SourceMap
+kind: Config
 sources:
   - repoURL: https://github.com/example/charts.git
     targetRevision: main
     root: '{{ requiredEnv "REPO_ROOT" }}'
 `
-	if err := os.WriteFile(sourceMapPath, []byte(config), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	input := gitApplication("https://github.com/example/charts.git", "chart", "main", "")
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"--source-map", sourceMapPath}, strings.NewReader(input), &stdout, &stderr); code != 0 {
+	if code := run([]string{"--config", configPath}, strings.NewReader(input), &stdout, &stderr); code != 0 {
 		t.Fatalf("run returned %d: %s", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), `chart: '{{ requiredEnv "REPO_ROOT" }}/chart'`) {

@@ -17,7 +17,7 @@ func TestConvertValueFilePathSemantics(t *testing.T) {
         - ../shared.yaml
         - /repository-root-values.yaml
 `)
-	output, err := convertWithSourceMap([]byte(input), resolver)
+	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestConvertDelegatesValueFileGlobAndMissingHandling(t *testing.T) {
 				ignoreLine = "      ignoreMissingValueFiles: true\n"
 			}
 			input := gitApplication(repoURL, "chart", "main", "    helm:\n      valueFiles: [missing/**/*.yaml]\n"+ignoreLine)
-			output, err := convertWithSourceMap([]byte(input), resolver)
+			output, err := convertWithResolver([]byte(input), resolver)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -71,7 +71,7 @@ func TestConvertDoesNotInspectValueFile(t *testing.T) {
 		repoURL: repoURL, targetRevision: "main", root: "/path/that/does/not/exist",
 	})
 	input := gitApplication(repoURL, "chart", "main", "    helm:\n      valueFiles: [values.yaml]\n")
-	output, err := convertWithSourceMap([]byte(input), resolver)
+	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestConvertRejectsValuePathOutsideRepository(t *testing.T) {
 		repoURL: repoURL, targetRevision: "main", root: "/workspace/charts",
 	})
 	input := gitApplication(repoURL, "chart", "main", "    helm:\n      valueFiles: [../../outside.yaml]\n")
-	if output, err := convertWithSourceMap([]byte(input), resolver); err == nil {
+	if output, err := convertWithResolver([]byte(input), resolver); err == nil {
 		t.Fatalf("conversion succeeded:\n%s", output)
 	}
 }

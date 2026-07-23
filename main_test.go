@@ -18,6 +18,7 @@ func TestRunErrorsAreAtomic(t *testing.T) {
 		{name: "duplicate release", input: minimalApplication("") + "---\n" + minimalApplication("")},
 		{name: "shared option conflict", input: minimalApplication("    helm:\n      skipCrds: true\n") + "---\n" + strings.Replace(minimalApplication(""), "name: app", "name: second", 1)},
 		{name: "argument", args: []string{"unexpected"}, input: exampleApplication},
+		{name: "removed source map flag", args: []string{"--source-map", "sources.yaml"}, input: exampleApplication},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

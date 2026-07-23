@@ -12,22 +12,22 @@ func main() {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	var resolver *sourceResolver
+	var config *conversionConfig
 	switch {
 	case len(args) == 0:
-	case len(args) == 2 && args[0] == "--source-map":
+	case len(args) == 2 && args[0] == "--config":
 		input, err := os.ReadFile(args[1])
 		if err != nil {
-			writeDiagnostic(stderr, fmt.Errorf("read source map: %w", err))
+			writeDiagnostic(stderr, fmt.Errorf("read config: %w", err))
 			return 1
 		}
-		resolver, err = parseSourceMap(input)
+		config, err = parseConfig(input)
 		if err != nil {
 			writeDiagnostic(stderr, err)
 			return 1
 		}
 	default:
-		fmt.Fprintln(stderr, "argocdapp2helmfile: usage: argocdapp2helmfile [--source-map PATH]")
+		fmt.Fprintln(stderr, "argocdapp2helmfile: usage: argocdapp2helmfile [--config PATH]")
 		return 1
 	}
 
@@ -36,7 +36,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		writeDiagnostic(stderr, fmt.Errorf("read input: %w", err))
 		return 1
 	}
-	output, err := convertWithSourceMap(input, resolver)
+	output, err := convertWithConfig(input, config)
 	if err != nil {
 		writeDiagnostic(stderr, err)
 		return 1

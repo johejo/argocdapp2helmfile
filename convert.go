@@ -44,6 +44,7 @@ type repository struct {
 type release struct {
 	Name                 string         `yaml:"name"`
 	Namespace            string         `yaml:"namespace,omitempty"`
+	Labels               yaml.MapSlice  `yaml:"labels,omitempty"`
 	Chart                any            `yaml:"chart"`
 	Version              string         `yaml:"version,omitempty"`
 	Values               []any          `yaml:"values,omitempty"`
@@ -66,10 +67,10 @@ func (value templatePath) MarshalYAML() ([]byte, error) {
 }
 
 func convert(input []byte) ([]byte, error) {
-	return convertWithSourceMap(input, nil)
+	return convertWithConfig(input, nil)
 }
 
-func convertWithSourceMap(input []byte, resolver *sourceResolver) ([]byte, error) {
+func convertWithConfig(input []byte, config *conversionConfig) ([]byte, error) {
 	file, err := parser.ParseBytes(input, 0)
 	if err != nil {
 		return nil, fmt.Errorf("document %d: decode Application: %w", documentNumberForError(input, err), err)
@@ -77,6 +78,7 @@ func convertWithSourceMap(input []byte, resolver *sourceResolver) ([]byte, error
 
 	type applicationInput struct {
 		application application
+		data        any
 		origin      inputOrigin
 	}
 	var applications []applicationInput
@@ -98,8 +100,17 @@ func convertWithSourceMap(input []byte, resolver *sourceResolver) ([]byte, error
 			if err := yaml.NodeToValue(document.Body, &app, yaml.UseOrderedMap()); err != nil {
 				return nil, fmt.Errorf("document %d: decode Application: %w", documentNumber, err)
 			}
+			var data any
+			if err := yaml.NodeToValue(document.Body, &data, yaml.UseOrderedMap()); err != nil {
+				return nil, fmt.Errorf("document %d: decode Application data: %w", documentNumber, err)
+			}
+			data, err = normalizeTemplateValue(data)
+			if err != nil {
+				return nil, fmt.Errorf("document %d: normalize Application data: %w", documentNumber, err)
+			}
 			applications = append(applications, applicationInput{
 				application: app,
+				data:        data,
 				origin:      inputOrigin{document: documentNumber},
 			})
 		case "ApplicationSet":
@@ -110,6 +121,7 @@ func convertWithSourceMap(input []byte, resolver *sourceResolver) ([]byte, error
 			for _, item := range generated {
 				applications = append(applications, applicationInput{
 					application: item.application,
+					data:        item.data,
 					origin: inputOrigin{
 						document: documentNumber,
 						path:     item.path,
@@ -130,8 +142,18 @@ func convertWithSourceMap(input []byte, resolver *sourceResolver) ([]byte, error
 	releaseOrigins := make(map[string]inputOrigin)
 	var sharedSkipCRDs bool
 	var sharedSkipCRDsOrigin inputOrigin
+	var resolver *sourceResolver
+	var projector *releaseLabelProjector
+	if config != nil {
+		resolver = config.sourceResolver
+		projector = config.labelProjector
+	}
 	for i, item := range applications {
 		converted, err := convertApplication(item.application, item.origin.document, resolver)
+		if err != nil {
+			return nil, item.origin.wrap(err)
+		}
+		converted.release.Labels, err = projector.project(item.data)
 		if err != nil {
 			return nil, item.origin.wrap(err)
 		}

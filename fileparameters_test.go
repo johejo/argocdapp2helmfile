@@ -30,7 +30,7 @@ func TestConvertGitFileParameterPathsAndOrdering(t *testing.T) {
         - name: duplicate
           path: files/last.json
 `)
-	output, err := convertWithSourceMap([]byte(input), resolver)
+	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ spec:
 			targetRevision: "main",
 			root:           `{{ requiredEnv "FILES_ROOT" }}`,
 		})
-		output, err := convertWithSourceMap([]byte(input), resolver)
+		output, err := convertWithResolver([]byte(input), resolver)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -153,7 +153,7 @@ func TestConvertRejectsUnsafeFileParameterPaths(t *testing.T) {
 	for name, parameterPath := range tests {
 		t.Run(name, func(t *testing.T) {
 			input := gitApplication(repoURL, "chart", "main", "    helm:\n      fileParameters:\n        - name: config\n          path: "+yamlScalar(parameterPath)+"\n")
-			if output, err := convertWithSourceMap([]byte(input), resolver); err == nil {
+			if output, err := convertWithResolver([]byte(input), resolver); err == nil {
 				t.Fatalf("conversion succeeded:\n%s", output)
 			}
 		})
@@ -205,7 +205,7 @@ spec:
             - name: config
               path: 'files/{{ .config }}'
 `
-	output, err := convertWithSourceMap([]byte(input), resolver)
+	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}

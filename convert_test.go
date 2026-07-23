@@ -72,7 +72,7 @@ func TestConvertGitChart(t *testing.T) {
 			input := gitApplication(test.repoURL, test.chartPath, test.revision, `    helm:
       valueFiles: [environments/prod.yaml]
 `)
-			output, err := convertWithSourceMap([]byte(input), resolver)
+			output, err := convertWithResolver([]byte(input), resolver)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -108,7 +108,7 @@ func TestConvertGitChartDoesNotConsumeRepositoryAlias(t *testing.T) {
 	})
 	gitInput := gitApplication(repoURL, "charts/app", "main", "")
 	httpInput := strings.Replace(minimalApplication(""), "name: app", "name: packaged", 1)
-	output, err := convertWithSourceMap([]byte(gitInput+"---\n"+httpInput), resolver)
+	output, err := convertWithResolver([]byte(gitInput+"---\n"+httpInput), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}

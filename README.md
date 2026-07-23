@@ -4,8 +4,8 @@
 `ApplicationSet` resources using the List generator, into one helmfile. It is
 intended to be a small, offline Unix filter: it reads a YAML stream from
 standard input, writes YAML to standard output, and does not fetch charts or
-repositories. A source map describes how Git charts and external values
-repositories should be referenced by helmfile.
+repositories. An optional config describes how Git sources should be referenced
+by helmfile and how Application fields should be projected to release labels.
 
 ## Usage
 
@@ -14,18 +14,18 @@ go install github.com/johejo/argocdapp2helmfile@latest
 argocdapp2helmfile <application.yaml >helmfile.yaml
 ```
 
-When the input uses a Git-hosted chart or external values repository, pass a
-source map:
+Pass a config when the input uses a Git-hosted chart or external values
+repository, or when release labels should be generated:
 
 ```sh
-argocdapp2helmfile --source-map sources.yaml \
+argocdapp2helmfile --config config.yaml \
   <application.yaml >helmfile.yaml
 ```
 
-Source-map roots are copied into the generated paths without being evaluated.
+Config source roots are copied into the generated paths without being evaluated.
 They may be fixed absolute or relative paths. They may also contain helmfile
 template expressions when the path needs to be supplied at runtime; see
-[Git source map](#git-source-map).
+[Conversion config](#conversion-config).
 
 Diagnostics are written to standard error. If the input cannot be converted
 without losing relevant Helm configuration, the command exits with a non-zero
@@ -170,14 +170,11 @@ Applications must have the same effective `skipCrds` value, with an absent value
 treated as `false`. Conflicting values are rejected. Generated files containing
 `helmDefaults.skipCRDs` require helmfile v1.3.0 or newer.
 
-`spec.source.helm.skipTests` is accepted but intentionally ignored because it
-controls an Argo CD Helm invocation rather than the release used by
-`helmfile apply` or `helmfile sync`. To omit test manifests when rendering, run
-`helmfile template --skip-tests`; this is a runtime flag shared by all releases
-in that invocation. A single `helmfile template` invocation therefore does not
-guarantee faithful reproduction of a group of Applications whose `skipTests`
-values differ. Choosing how to run helmfile and whether to include test
-manifests is the user's responsibility.
+`spec.source.helm.skipTests` is accepted but is not converted implicitly because
+it controls an Argo CD Helm invocation rather than the release used by
+`helmfile apply` or `helmfile sync`. It can be projected to an opt-in release
+label and used to split `helmfile template` invocations; see
+[Release labels](#release-labels).
 
 ## ApplicationSet List generator
 
@@ -228,7 +225,7 @@ key. They provide the Sprig function set used by ApplicationSet, except for
 fasttemplate syntax is rejected. `templatePatch` is not supported.
 
 Generated Applications use the same conversion and validation rules as direct
-Application input. Source maps therefore also apply to rendered Git chart and
+Application input. Config sources therefore also apply to rendered Git chart and
 external values sources. If conversion fails, diagnostics identify the
 document, generator, and `elements` or `elementsYaml` index.
 
@@ -254,7 +251,7 @@ repository, or a chart directory in a Git repository.
 | `spec.source.targetRevision` | Release `version` |
 | Git `spec.source.repoURL` | Source identity; accepts HTTP(S), `git@host:path`, and `ssh://user@host/path` |
 | Git `spec.source.path` | Chart path below the mapped source root |
-| Git `spec.source.targetRevision` | Source-map identity and provenance; not emitted as a Helm chart version |
+| Git `spec.source.targetRevision` | Config source identity and provenance; not emitted as a Helm chart version |
 | `spec.source.helm.valueFiles` | Source-relative paths and globs resolved by helmfile |
 | `spec.source.helm.values` | Parsed inline `values` entry |
 | `spec.source.helm.valuesObject` | Inline `values` entry |
@@ -263,6 +260,7 @@ repository, or a chart directory in a Git repository.
 | `spec.source.helm.ignoreMissingValueFiles` | Release `missingFileHandler: Warn` when true |
 | `spec.source.helm.skipSchemaValidation` | Release `skipSchemaValidation` |
 | `spec.source.helm.skipCrds` | `helmDefaults.skipCRDs` |
+| Config `releaseLabels` query result | Release `labels` entry |
 
 For each parameter, `name` and the string `value` are preserved. Parameters
 with `forceString: true` are emitted under `setString`; all other parameters
@@ -283,14 +281,70 @@ parameter with the same name wins. A file parameter that has the same name as
 a parameter with `forceString: true` is rejected because helmfile cannot
 reproduce Argo CD's precedence across `set` and `setString`.
 
-## Git source map
+## Conversion config
+
+The optional config is a single YAML document with a fixed API version and
+kind. Unknown fields are rejected:
+
+```yaml
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+sources:
+  - repoURL: git@github.com:example/platform-charts.git
+    targetRevision: release-1
+    root: checkouts/platform-charts
+releaseLabels:
+  - name: argocd.skipTests
+    query: .spec.source.helm.skipTests // false
+  - name: argocd.project
+    query: .spec.project
+```
+
+Either `sources` or `releaseLabels` may be omitted. The config itself may be
+omitted when neither feature is needed.
+
+### Release labels
+
+Each `releaseLabels` entry contains a unique, non-empty label `name` and a
+non-empty [jq](https://jqlang.org/manual/) expression in `query`. Queries are
+evaluated against each final Application, including an Application generated
+from an ApplicationSet. This makes arbitrary `metadata` and `spec` fields
+available:
+
+```yaml
+releaseLabels:
+  - name: argocd.skipTests
+    query: .spec.source.helm.skipTests // false
+  - name: argocd.project
+    query: .spec.project
+```
+
+A single string, boolean, or number result is converted to a string release
+label value. `null` and no result omit that label. Multiple results, arrays,
+objects, and jq execution errors fail the whole conversion without producing
+partial output. Labels retain config order, and no `labels` mapping is emitted
+when there are no rules or all rules omit their result.
+
+For example, the `argocd.skipTests` mapping above labels every release as
+`"true"` or `"false"`. Render the two selectors separately so the matching
+runtime flag can be applied:
+
+```sh
+helmfile --selector argocd.skipTests=false template
+helmfile --selector argocd.skipTests=true template --skip-tests
+```
+
+Projection is entirely opt-in. In particular, `skipTests` does not affect the
+generated helmfile when no matching `releaseLabels` rule is configured.
+
+### Git sources
 
 The converter never clones, fetches, changes, or inspects a repository. Map each
 Git source to the string that should prefix its paths in the generated helmfile:
 
 ```yaml
 apiVersion: argocdapp2helmfile/v1alpha1
-kind: SourceMap
+kind: Config
 sources:
   - repoURL: git@github.com:example/platform-charts.git
     targetRevision: release-1
@@ -304,8 +358,9 @@ Entries match the Application's literal `repoURL` and `targetRevision` pair.
 `root` is a required, non-empty path prefix. It may be absolute or relative;
 relative paths must be valid in the environment where helmfile runs. The
 converter copies it as written and does not expand values such as `~`, `$PWD`,
-or `${HOME}`. Roots need not be unique. A source map may be omitted only when
-no Git source is needed. A required mapping that is absent is an error.
+or `${HOME}`. Roots need not be unique. Config may be omitted only when no Git
+source or release-label projection is needed. A required source mapping that is
+absent is an error.
 
 When a root needs to vary between helmfile execution environments, it may
 instead contain a helmfile template expression, or a combination of a template
@@ -319,7 +374,7 @@ In that case, write the generated helmfile with the `.gotmpl` suffix and
 provide the template input when helmfile runs:
 
 ```sh
-argocdapp2helmfile --source-map sources.yaml \
+argocdapp2helmfile --config config.yaml \
   <application.yaml >helmfile.yaml.gotmpl
 PLATFORM_CHARTS_ROOT="$PWD/checkouts/platform-charts" \
   helmfile -f helmfile.yaml.gotmpl apply

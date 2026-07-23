@@ -24,7 +24,7 @@ func TestConvertValueFilesPrecedeInlineValues(t *testing.T) {
         - name: replicaCount
           value: "3"
 `)
-	output, err := convertWithSourceMap([]byte(input), resolver)
+	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestConvertValueFilesShareMappedSourceAcrossDocuments(t *testing.T) {
 	})
 	first := gitApplication(repoURL, "chart", "main", "    helm:\n      valueFiles: [values.yaml]\n")
 	second := strings.Replace(first, "name: app", "name: second", 1)
-	output, err := convertWithSourceMap([]byte(first+"---\n"+second), resolver)
+	output, err := convertWithResolver([]byte(first+"---\n"+second), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestConvertIgnoreMissingValueFiles(t *testing.T) {
       valueFiles: [optional.yaml]
       ignoreMissingValueFiles: true
 `)
-	output, err := convertWithSourceMap([]byte(input), resolver)
+	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestConvertMultiSourceValueReferences(t *testing.T) {
 			root: `{{ requiredEnv "TEST_SECRETS_ROOT" }}`,
 		},
 	)
-	output, err := convertWithSourceMap([]byte(input), resolver)
+	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestConvertGitChartWithExternalValuesSource(t *testing.T) {
 			root: `{{ requiredEnv "TEST_VALUES_ROOT" }}`,
 		},
 	)
-	output, err := convertWithSourceMap([]byte(input), resolver)
+	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}

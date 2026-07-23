@@ -231,7 +231,7 @@ spec:
 	}
 }
 
-func TestConvertApplicationSetGitChartWithSourceMap(t *testing.T) {
+func TestConvertApplicationSetGitChartWithConfig(t *testing.T) {
 	const repoURL = "git@github.com:example/charts.git"
 	resolver := testSourceResolver(t, testSource{
 		repoURL: repoURL, targetRevision: "main", root: `{{ requiredEnv "CHARTS_ROOT" }}`,
@@ -259,7 +259,7 @@ spec:
           valueFiles:
             - environments/prod.yaml
 `
-	output, err := convertWithSourceMap([]byte(input), resolver)
+	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}

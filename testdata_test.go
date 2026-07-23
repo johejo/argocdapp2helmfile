@@ -28,13 +28,38 @@ type testSource struct {
 func testSourceResolver(t *testing.T, sources ...testSource) *sourceResolver {
 	t.Helper()
 	var config strings.Builder
-	config.WriteString("apiVersion: argocdapp2helmfile/v1alpha1\nkind: SourceMap\nsources:\n")
+	config.WriteString("apiVersion: argocdapp2helmfile/v1alpha1\nkind: Config\nsources:\n")
 	for _, source := range sources {
 		fmt.Fprintf(&config, "  - repoURL: %q\n    targetRevision: %q\n    root: %q\n", source.repoURL, source.targetRevision, source.root)
 	}
-	resolver, err := parseSourceMap([]byte(config.String()))
+	parsed, err := parseConfig([]byte(config.String()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return resolver
+	return parsed.sourceResolver
+}
+
+func convertWithResolver(input []byte, resolver *sourceResolver) ([]byte, error) {
+	return convertWithConfig(input, &conversionConfig{sourceResolver: resolver})
+}
+
+func testConfig(t *testing.T, body string) *conversionConfig {
+	t.Helper()
+	config, err := parseConfig([]byte(
+		"apiVersion: argocdapp2helmfile/v1alpha1\nkind: Config\n" + body,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return config
+}
+
+func writeTestConfig(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := "apiVersion: argocdapp2helmfile/v1alpha1\nkind: Config\n" + body
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

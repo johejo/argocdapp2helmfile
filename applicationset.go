@@ -38,6 +38,7 @@ func (origin inputOrigin) wrap(err error) error {
 
 type generatedApplication struct {
 	application application
+	data        any
 	path        string
 }
 
@@ -137,7 +138,7 @@ func expandApplicationSet(node ast.Node) ([]generatedApplication, error) {
 					continue
 				}
 			}
-			rendered, err := renderApplicationTemplate(
+			rendered, data, err := renderApplicationTemplate(
 				mergedTemplate,
 				params,
 				appSet.Spec.GoTemplateOptions,
@@ -147,6 +148,7 @@ func expandApplicationSet(node ast.Node) ([]generatedApplication, error) {
 			}
 			generated = append(generated, generatedApplication{
 				application: rendered,
+				data:        data,
 				path:        elementField,
 			})
 		}
@@ -374,26 +376,43 @@ func renderApplicationTemplate(
 	input yaml.MapSlice,
 	params map[string]any,
 	options []string,
-) (application, error) {
+) (application, any, error) {
 	renderer, err := newApplicationSetTemplate(options)
 	if err != nil {
-		return application{}, err
+		return application{}, nil, err
 	}
 	rendered, err := renderTemplateValue(input, params, renderer)
 	if err != nil {
-		return application{}, err
+		return application{}, nil, err
 	}
-	data, err := yaml.Marshal(rendered)
+	renderedMap, ok := rendered.(yaml.MapSlice)
+	if !ok {
+		return application{}, nil, errors.New("rendered Application must be a mapping")
+	}
+	renderedMap = setMapSliceField(renderedMap, "apiVersion", "argoproj.io/v1alpha1")
+	renderedMap = setMapSliceField(renderedMap, "kind", "Application")
+	data, err := yaml.Marshal(renderedMap)
 	if err != nil {
-		return application{}, fmt.Errorf("encode rendered Application: %w", err)
+		return application{}, nil, fmt.Errorf("encode rendered Application: %w", err)
 	}
 	var app application
 	if err := yaml.UnmarshalWithOptions(data, &app, yaml.UseOrderedMap()); err != nil {
-		return application{}, fmt.Errorf("decode rendered Application: %w", err)
+		return application{}, nil, fmt.Errorf("decode rendered Application: %w", err)
 	}
-	app.APIVersion = "argoproj.io/v1alpha1"
-	app.Kind = "Application"
-	return app, nil
+	normalized, err := normalizeTemplateValue(renderedMap)
+	if err != nil {
+		return application{}, nil, fmt.Errorf("normalize rendered Application: %w", err)
+	}
+	return app, normalized, nil
+}
+
+func setMapSliceField(items yaml.MapSlice, key string, value any) yaml.MapSlice {
+	index := mapSliceIndex(items, key)
+	if index >= 0 {
+		items[index].Value = value
+		return items
+	}
+	return append(yaml.MapSlice{{Key: key, Value: value}}, items...)
 }
 
 func newApplicationSetTemplate(options []string) (*template.Template, error) {
