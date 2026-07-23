@@ -350,11 +350,11 @@ The converter rejects:
 Unsupported inputs fail instead of producing an incomplete helmfile.
 Empty unsupported Helm options are ignored.
 
-For upstream behavior, see the
-[Argo CD Helm documentation](https://argo-cd.readthedocs.io/en/latest/user-guide/helm/),
-[Argo CD Go Template documentation](https://argo-cd.readthedocs.io/en/latest/operator-manual/applicationset/GoTemplate/),
-[helmfile configuration reference](https://helmfile.readthedocs.io/en/latest/configuration/),
-and [helmfile v1.3.0 release notes](https://github.com/helmfile/helmfile/releases/tag/v1.3.0).
+For upstream behavior, see also
+
+- [Argo CD Helm documentation](https://argo-cd.readthedocs.io/en/latest/user-guide/helm/)
+- [Argo CD Go Template documentation](https://argo-cd.readthedocs.io/en/latest/operator-manual/applicationset/GoTemplate/)
+- [helmfile configuration reference](https://helmfile.readthedocs.io/en/latest/configuration/)
 
 ## License
 
