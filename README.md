@@ -240,6 +240,7 @@ for the upstream generator model.
 Matrix supports List × List, Git × List, and List × Git with exactly two children.
 The first child's parameters may be used to render the second child,
 including dynamic List `elementsYaml` and Git fields.
+Git `values` may reference parent, Git path, and Git parameter-file fields together.
 Results retain child order,
 and the first child's values take precedence when parameter maps overlap.
 

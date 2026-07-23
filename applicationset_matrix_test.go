@@ -17,6 +17,29 @@ func TestConvertApplicationSetMatrixListGit(t *testing.T) {
 	testConvertApplicationSetMatrixFixture(t, "matrix-list-git", true)
 }
 
+func TestConvertApplicationSetMatrixListGitMissingKeyModes(t *testing.T) {
+	const fixture = "applicationset/matrix-list-git-missingkey/"
+	config, err := parseConfig([]byte(readTestdata(t, fixture+"config.yaml")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := readTestdata(t, fixture+"helmfile.yaml")
+	for _, mode := range []string{"default", "invalid", "zero"} {
+		t.Run(mode, func(t *testing.T) {
+			output, err := convertWithConfig(
+				[]byte(readTestdata(t, fixture+"application-"+mode+".yaml")),
+				config,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(output) != want {
+				t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+			}
+		})
+	}
+}
+
 func testConvertApplicationSetMatrixFixture(t *testing.T, name string, withConfig bool) {
 	t.Helper()
 	var config *conversionConfig
@@ -92,6 +115,22 @@ func TestConvertApplicationSetMatrixErrorReportsBothOrigins(t *testing.T) {
 	_, err := convert([]byte(input))
 	want := "spec.generators[0].matrix.generators[0].list.elements[0] × " +
 		"spec.generators[0].matrix.generators[1].list.elements[1]"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConvertApplicationSetMatrixGitValuesRejectsRenderedDuplicateKey(t *testing.T) {
+	const fixture = "applicationset/matrix-errors/git-values-duplicate/"
+	config, err := parseConfig([]byte(readTestdata(t, fixture+"config.yaml")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := readTestdata(t, fixture+"application.yaml")
+	_, err = convertWithConfig([]byte(input), config)
+	want := "spec.generators[0].matrix.generators[0].list.elements[0] -> " +
+		`spec.generators[0].matrix.generators[1].git.files["clusters/dev.yaml"]` +
+		`: values: templating produced duplicate mapping key "collision"`
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("unexpected error: %v", err)
 	}

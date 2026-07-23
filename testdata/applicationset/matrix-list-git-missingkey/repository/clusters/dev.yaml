@@ -1,0 +1,3 @@
+cluster: alpha
+chart: nginx
+version: 1.0.0

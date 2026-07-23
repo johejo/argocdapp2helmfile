@@ -1,0 +1,8 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+releases:
+  - name: dev-dev.yaml-alpha
+    namespace: dev
+    chart: source/nginx
+    version: 1.0.0

@@ -35,8 +35,13 @@ type gitGeneratorOptions struct {
 	hasDirectories  bool
 	hasFiles        bool
 	pathParamPrefix string
-	values          map[string]string
+	values          []gitValue
 	template        yaml.MapSlice
+}
+
+type gitValue struct {
+	key   string
+	value string
 }
 
 func generateGitParams(
@@ -44,6 +49,7 @@ func generateGitParams(
 	field string,
 	resolver *sourceResolver,
 	renderer *template.Template,
+	parentParams map[string]any,
 ) (gitGeneratorResult, error) {
 	var result gitGeneratorResult
 	options, err := parseGitGeneratorOptions(items, field)
@@ -61,15 +67,27 @@ func generateGitParams(
 	}
 	result.template = options.template
 	if len(options.directories) != 0 {
-		result.params, err = generateGitDirectoryParams(root, options, renderer, field)
+		result.params, err = generateGitDirectoryParams(
+			root,
+			options,
+			renderer,
+			parentParams,
+			field,
+		)
 	} else {
-		result.params, err = generateGitFileParams(root, options, renderer, field)
+		result.params, err = generateGitFileParams(
+			root,
+			options,
+			renderer,
+			parentParams,
+			field,
+		)
 	}
 	return result, err
 }
 
 func parseGitGeneratorOptions(items yaml.MapSlice, field string) (gitGeneratorOptions, error) {
-	result := gitGeneratorOptions{values: make(map[string]string)}
+	var result gitGeneratorOptions
 	for _, item := range items {
 		key, ok := item.Key.(string)
 		if !ok {
@@ -184,12 +202,12 @@ func parseGitPathPatterns(value any, field string) ([]gitPathPattern, error) {
 	return result, nil
 }
 
-func parseGitValues(value any, field string) (map[string]string, error) {
+func parseGitValues(value any, field string) ([]gitValue, error) {
 	items, ok := value.(yaml.MapSlice)
 	if !ok {
 		return nil, fmt.Errorf("%s must be a mapping", field)
 	}
-	result := make(map[string]string, len(items))
+	result := make([]gitValue, 0, len(items))
 	for _, item := range items {
 		key, ok := item.Key.(string)
 		if !ok || strings.TrimSpace(key) == "" {
@@ -199,7 +217,7 @@ func parseGitValues(value any, field string) (map[string]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("%s.%s must be a string", field, key)
 		}
-		result[key] = value
+		result = append(result, gitValue{key: key, value: value})
 	}
 	return result, nil
 }
@@ -242,6 +260,7 @@ func generateGitDirectoryParams(
 	root string,
 	options gitGeneratorOptions,
 	renderer *template.Template,
+	parentParams map[string]any,
 	field string,
 ) ([]generatedGeneratorParams, error) {
 	for _, pattern := range options.directories {
@@ -281,7 +300,7 @@ func generateGitDirectoryParams(
 	for _, relative := range matches {
 		params := make(map[string]any)
 		setGitPathParams(params, options.pathParamPrefix, gitDirectoryPathObject(relative))
-		if err := renderGitValues(params, options.values, renderer); err != nil {
+		if err := renderGitValues(params, parentParams, options.values, renderer); err != nil {
 			return nil, fmt.Errorf("%s.directories[%q]: values: %w", field, relative, err)
 		}
 		result = append(result, generatedGeneratorParams{
@@ -328,6 +347,7 @@ func generateGitFileParams(
 	root string,
 	options gitGeneratorOptions,
 	renderer *template.Template,
+	parentParams map[string]any,
 	field string,
 ) ([]generatedGeneratorParams, error) {
 	for _, pattern := range options.files {
@@ -390,7 +410,7 @@ func generateGitFileParams(
 			if fileParam.index != nil {
 				origin += fmt.Sprintf("[%d]", *fileParam.index)
 			}
-			if err := renderGitValues(params, options.values, renderer); err != nil {
+			if err := renderGitValues(params, parentParams, options.values, renderer); err != nil {
 				return nil, fmt.Errorf("%s: values: %w", origin, err)
 			}
 			result = append(result, generatedGeneratorParams{
@@ -494,14 +514,23 @@ func setGitPathParams(params map[string]any, prefix string, pathObject map[strin
 
 func renderGitValues(
 	params map[string]any,
-	values map[string]string,
+	parentParams map[string]any,
+	values []gitValue,
 	renderer *template.Template,
 ) error {
 	rendered := make(map[string]any, len(values))
-	for key, value := range values {
-		result, err := executeTemplate(value, params, renderer)
+	context := mergeMatrixParams(parentParams, params)
+	for _, item := range values {
+		key, err := executeTemplate(item.key, context, renderer)
 		if err != nil {
-			return fmt.Errorf("%s: %w", key, err)
+			return fmt.Errorf("%s: render key: %w", item.key, err)
+		}
+		if _, exists := rendered[key]; exists {
+			return fmt.Errorf("templating produced duplicate mapping key %q", key)
+		}
+		result, err := executeTemplate(item.value, context, renderer)
+		if err != nil {
+			return fmt.Errorf("%s: %w", item.key, err)
 		}
 		rendered[key] = result
 	}

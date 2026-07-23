@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: list-git-missingkey-zero
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=zero]
+  generators:
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - environment: dev
+                  selectedCluster: alpha
+          - git:
+              repoURL: https://github.com/example/clusters.git
+              revision: main
+              files:
+                - path: clusters/dev.yaml
+              values:
+                name: '{{ .environment }}-{{ .path.filename }}-{{ .cluster }}'
+            selector:
+              matchLabels:
+                cluster: '{{ .selectedCluster }}'
+  template:
+    metadata:
+      name: '{{ .values.name }}'
+    spec:
+      destination:
+        namespace: '{{ .environment }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'

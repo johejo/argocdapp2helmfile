@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 	"text/template"
 
 	"github.com/goccy/go-yaml"
@@ -154,13 +153,12 @@ func renderGeneratorValue(
 	renderer *template.Template,
 	path []string,
 ) (any, error) {
+	if isGitValuesPath(path) {
+		return value, nil
+	}
 	switch typed := value.(type) {
 	case string:
-		rendered, err := executeTemplate(typed, params, renderer)
-		if err != nil && isGitValuesPath(path) && isMissingTemplateKeyError(err) {
-			return typed, nil
-		}
-		return rendered, err
+		return executeTemplate(typed, params, renderer)
 	case yaml.MapSlice:
 		result := make(yaml.MapSlice, 0, len(typed))
 		keys := make(map[string]struct{}, len(typed))
@@ -211,14 +209,5 @@ func appendPath(path []string, element string) []string {
 }
 
 func isGitValuesPath(path []string) bool {
-	return len(path) >= 3 && path[0] == "git" && path[1] == "values"
-}
-
-func isMissingTemplateKeyError(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := err.Error()
-	return strings.Contains(message, "map has no entry for key") ||
-		strings.Contains(message, "can't evaluate field")
+	return len(path) == 2 && path[0] == "git" && path[1] == "values"
 }

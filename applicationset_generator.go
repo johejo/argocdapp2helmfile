@@ -116,7 +116,13 @@ func parseApplicationSetGenerator(
 		if !ok {
 			return result, fmt.Errorf("%s.git must be a mapping", field)
 		}
-		git, err := generateGitParams(items, field+".git", resolver, renderer)
+		git, err := generateGitParams(
+			items,
+			field+".git",
+			resolver,
+			renderer,
+			parentParams,
+		)
 		if err != nil {
 			return result, err
 		}

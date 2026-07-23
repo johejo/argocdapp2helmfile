@@ -1,0 +1,6 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+sources:
+  - repoURL: https://github.com/example/clusters.git
+    targetRevision: main
+    root: testdata/applicationset/matrix-errors/git-values-duplicate/repository

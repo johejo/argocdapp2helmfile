@@ -1,3 +1,4 @@
 name: development
+environment: file-value-must-not-win
 chart: nginx
 version: 1.0.0
