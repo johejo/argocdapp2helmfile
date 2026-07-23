@@ -48,6 +48,8 @@ type release struct {
 	Labels               yaml.MapSlice  `yaml:"labels,omitempty"`
 	Chart                any            `yaml:"chart"`
 	Version              string         `yaml:"version,omitempty"`
+	KubeVersion          string         `yaml:"kubeVersion,omitempty"`
+	APIVersions          []string       `yaml:"apiVersions,omitempty"`
 	Values               []any          `yaml:"values,omitempty"`
 	Set                  []setParameter `yaml:"set,omitempty"`
 	SetString            []setParameter `yaml:"setString,omitempty"`
@@ -361,6 +363,8 @@ func convertApplication(app application, documentNumber int, resolver *sourceRes
 			SetString:            setString,
 			MissingFileHandler:   missingFileHandler(helm.ignoreMissingValues),
 			SkipSchemaValidation: helm.skipSchemaValidation,
+			KubeVersion:          helm.kubeVersion,
+			APIVersions:          helm.apiVersions,
 		},
 	}
 	if repositoryType == gitRepository {

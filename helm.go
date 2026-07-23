@@ -24,6 +24,8 @@ type helmFileParameter struct {
 
 type helmOptions struct {
 	releaseName          string
+	kubeVersion          string
+	apiVersions          []string
 	valueFiles           []string
 	values               any
 	valuesObject         any
@@ -51,6 +53,31 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 				return result, fmt.Errorf("%s.releaseName must be a string", field)
 			}
 			result.releaseName = value
+		case "kubeVersion":
+			if isEmpty(item.Value) {
+				continue
+			}
+			value, ok := item.Value.(string)
+			if !ok {
+				return result, fmt.Errorf("%s.kubeVersion must be a string", field)
+			}
+			result.kubeVersion = value
+		case "apiVersions":
+			if isEmpty(item.Value) {
+				continue
+			}
+			sequence, ok := item.Value.([]any)
+			if !ok {
+				return result, fmt.Errorf("%s.apiVersions must be a sequence", field)
+			}
+			result.apiVersions = make([]string, 0, len(sequence))
+			for i, raw := range sequence {
+				apiVersion, ok := raw.(string)
+				if !ok {
+					return result, fmt.Errorf("%s.apiVersions[%d] must be a string", field, i)
+				}
+				result.apiVersions = append(result.apiVersions, apiVersion)
+			}
 		case "valueFiles":
 			if isEmpty(item.Value) {
 				continue

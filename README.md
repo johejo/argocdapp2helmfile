@@ -119,6 +119,8 @@ An Application must identify either:
 | `spec.source.helm.fileParameters` | Release `set` entries using `file` |
 | `spec.source.helm.ignoreMissingValueFiles` | Release `missingFileHandler: Warn` when true |
 | `spec.source.helm.skipSchemaValidation` | Release `skipSchemaValidation` |
+| `spec.source.helm.kubeVersion` | Release `kubeVersion` |
+| `spec.source.helm.apiVersions` | Release `apiVersions` |
 | `spec.source.helm.skipCrds` | Shared `helmDefaults.skipCRDs` |
 | Config `releaseLabels` query result | Release `labels` entry |
 

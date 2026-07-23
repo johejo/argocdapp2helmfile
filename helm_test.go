@@ -16,6 +16,8 @@ func TestConvertDefaultsAndOmitsEmptyFields(t *testing.T) {
       parameters: []
       fileParameters: []
       valueFiles: []
+      kubeVersion: ""
+      apiVersions: []
       skipCrds: false
       skipSchemaValidation: false
 `)
@@ -29,10 +31,92 @@ func TestConvertDefaultsAndOmitsEmptyFields(t *testing.T) {
 			t.Errorf("output does not contain %q:\n%s", want, text)
 		}
 	}
-	for _, omitted := range []string{"namespace:", "values:", "set:", "setString:", "forceString:", "missingFileHandler:", "helmDefaults:", "skipCRDs:", "skipSchemaValidation:"} {
+	for _, omitted := range []string{"namespace:", "values:", "set:", "setString:", "forceString:", "missingFileHandler:", "helmDefaults:", "skipCRDs:", "skipSchemaValidation:", "kubeVersion:", "apiVersions:"} {
 		if strings.Contains(text, omitted) {
 			t.Errorf("output unexpectedly contains %q:\n%s", omitted, text)
 		}
+	}
+}
+
+func TestConvertHelmCapabilities(t *testing.T) {
+	input := minimalApplication(`    helm:
+      kubeVersion: 1.30.4
+      apiVersions:
+        - batch/v1
+        - example.com/v1/Widget
+        - v1
+`)
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `    kubeVersion: 1.30.4
+    apiVersions:
+      - batch/v1
+      - example.com/v1/Widget
+      - v1
+`
+	if !strings.Contains(string(output), want) {
+		t.Fatalf("Helm capabilities were not preserved in order:\n%s", output)
+	}
+}
+
+func TestConvertHelmCapabilitiesAreReleaseSpecific(t *testing.T) {
+	first := minimalApplication(`    helm:
+      kubeVersion: 1.29.0
+      apiVersions: [first.example/v1]
+`)
+	second := strings.Replace(
+		minimalApplication(`    helm:
+      kubeVersion: 1.31.0
+      apiVersions: [second.example/v1, second.example/v2]
+`),
+		"name: app",
+		"name: second",
+		1,
+	)
+
+	output, err := convert([]byte(first + "---\n" + second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `  - name: app
+    chart: charts/chart
+    version: 1.2.3
+    kubeVersion: 1.29.0
+    apiVersions:
+      - first.example/v1
+  - name: second
+    chart: charts/chart
+    version: 1.2.3
+    kubeVersion: 1.31.0
+    apiVersions:
+      - second.example/v1
+      - second.example/v2
+`
+	if !strings.Contains(string(output), want) {
+		t.Fatalf("Helm capabilities were not kept per release:\n%s", output)
+	}
+}
+
+func TestConvertRejectsInvalidHelmCapabilities(t *testing.T) {
+	tests := map[string]string{
+		"non-string kubeVersion": `    helm:
+      kubeVersion: 1
+`,
+		"non-sequence apiVersions": `    helm:
+      apiVersions: v1
+`,
+		"non-string apiVersions element": `    helm:
+      apiVersions: [v1, 2]
+`,
+	}
+	for name, helm := range tests {
+		t.Run(name, func(t *testing.T) {
+			if output, err := convert([]byte(minimalApplication(helm))); err == nil {
+				t.Fatalf("convert succeeded with output:\n%s", output)
+			}
+		})
 	}
 }
 
