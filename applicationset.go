@@ -53,7 +53,7 @@ type applicationSetResource struct {
 		GoTemplateOptions []string        `yaml:"goTemplateOptions"`
 		Generators        []yaml.MapSlice `yaml:"generators"`
 		Template          yaml.MapSlice   `yaml:"template"`
-		TemplatePatch     any             `yaml:"templatePatch"`
+		TemplatePatch     string          `yaml:"templatePatch"`
 	} `yaml:"spec"`
 }
 
@@ -93,9 +93,6 @@ func expandApplicationSet(node ast.Node) ([]generatedApplication, error) {
 	}
 	if appSet.Spec.Template == nil {
 		return nil, errors.New("spec.template is required")
-	}
-	if !isEmpty(appSet.Spec.TemplatePatch) {
-		return nil, errors.New("spec.templatePatch is not supported")
 	}
 	if _, err := newApplicationSetTemplate(appSet.Spec.GoTemplateOptions); err != nil {
 		return nil, err
@@ -140,6 +137,7 @@ func expandApplicationSet(node ast.Node) ([]generatedApplication, error) {
 			}
 			rendered, data, err := renderApplicationTemplate(
 				mergedTemplate,
+				appSet.Spec.TemplatePatch,
 				params,
 				appSet.Spec.GoTemplateOptions,
 			)
@@ -374,6 +372,7 @@ func mapSliceIndex(items yaml.MapSlice, key any) int {
 
 func renderApplicationTemplate(
 	input yaml.MapSlice,
+	templatePatch string,
 	params map[string]any,
 	options []string,
 ) (application, any, error) {
@@ -391,6 +390,19 @@ func renderApplicationTemplate(
 	}
 	renderedMap = setMapSliceField(renderedMap, "apiVersion", "argoproj.io/v1alpha1")
 	renderedMap = setMapSliceField(renderedMap, "kind", "Application")
+	project, hasProject := applicationProject(renderedMap)
+	renderedPatch, err := executeTemplate(templatePatch, params, renderer)
+	if err != nil {
+		return application{}, nil, fmt.Errorf("render spec.templatePatch: %w", err)
+	}
+	if strings.TrimSpace(renderedPatch) != "" {
+		patch, err := decodeApplicationTemplatePatch(renderedPatch)
+		if err != nil {
+			return application{}, nil, err
+		}
+		renderedMap = mergeApplicationTemplatePatch(renderedMap, patch)
+		renderedMap = restoreApplicationProject(renderedMap, project, hasProject)
+	}
 	data, err := yaml.Marshal(renderedMap)
 	if err != nil {
 		return application{}, nil, fmt.Errorf("encode rendered Application: %w", err)
@@ -404,6 +416,136 @@ func renderApplicationTemplate(
 		return application{}, nil, fmt.Errorf("normalize rendered Application: %w", err)
 	}
 	return app, normalized, nil
+}
+
+func decodeApplicationTemplatePatch(input string) (yaml.MapSlice, error) {
+	const field = "rendered spec.templatePatch"
+	if err := requireSingleDocument([]byte(input), field); err != nil {
+		return nil, err
+	}
+	var value any
+	decoder := yaml.NewDecoder(strings.NewReader(input), yaml.UseOrderedMap())
+	if err := decoder.Decode(&value); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", field, err)
+	}
+	patch, ok := value.(yaml.MapSlice)
+	if !ok {
+		return nil, fmt.Errorf("%s must contain a mapping", field)
+	}
+	if err := validateApplicationTemplatePatch(patch); err != nil {
+		return nil, err
+	}
+	return patch, nil
+}
+
+func validateApplicationTemplatePatch(value any) error {
+	switch typed := value.(type) {
+	case yaml.MapSlice:
+		for _, item := range typed {
+			key, ok := item.Key.(string)
+			if !ok {
+				return errors.New("rendered spec.templatePatch mapping keys must be strings")
+			}
+			if isStrategicMergePatchDirective(key) {
+				return fmt.Errorf(
+					"rendered spec.templatePatch contains unsupported Strategic Merge Patch directive %q",
+					key,
+				)
+			}
+			if err := validateApplicationTemplatePatch(item.Value); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if err := validateApplicationTemplatePatch(item); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func isStrategicMergePatchDirective(key string) bool {
+	return key == "$patch" ||
+		key == "$retainKeys" ||
+		strings.HasPrefix(key, "$setElementOrder/") ||
+		strings.HasPrefix(key, "$deleteFromPrimitiveList/")
+}
+
+func mergeApplicationTemplatePatch(target, patch yaml.MapSlice) yaml.MapSlice {
+	result := cloneMapSlice(target)
+	for _, patchItem := range patch {
+		index := mapSliceIndex(result, patchItem.Key)
+		if patchItem.Value == nil {
+			if index >= 0 {
+				result = slices.Delete(result, index, index+1)
+			}
+			continue
+		}
+		if index < 0 {
+			result = append(result, cloneMapItem(patchItem))
+			continue
+		}
+		targetMap, targetOK := result[index].Value.(yaml.MapSlice)
+		patchMap, patchOK := patchItem.Value.(yaml.MapSlice)
+		if targetOK && patchOK {
+			result[index].Value = mergeApplicationTemplatePatch(targetMap, patchMap)
+			continue
+		}
+		result[index].Value = cloneValue(patchItem.Value)
+	}
+	return result
+}
+
+func applicationProject(application yaml.MapSlice) (any, bool) {
+	specIndex := mapSliceIndex(application, "spec")
+	if specIndex < 0 {
+		return nil, false
+	}
+	spec, ok := application[specIndex].Value.(yaml.MapSlice)
+	if !ok {
+		return nil, false
+	}
+	projectIndex := mapSliceIndex(spec, "project")
+	if projectIndex < 0 {
+		return nil, false
+	}
+	return cloneValue(spec[projectIndex].Value), true
+}
+
+func restoreApplicationProject(application yaml.MapSlice, project any, hasProject bool) yaml.MapSlice {
+	specIndex := mapSliceIndex(application, "spec")
+	if specIndex < 0 {
+		if hasProject {
+			application = append(application, yaml.MapItem{
+				Key: "spec",
+				Value: yaml.MapSlice{
+					{Key: "project", Value: cloneValue(project)},
+				},
+			})
+		}
+		return application
+	}
+	spec, ok := application[specIndex].Value.(yaml.MapSlice)
+	if !ok {
+		return application
+	}
+	projectIndex := mapSliceIndex(spec, "project")
+	if !hasProject {
+		if projectIndex >= 0 {
+			spec = slices.Delete(spec, projectIndex, projectIndex+1)
+			application[specIndex].Value = spec
+		}
+		return application
+	}
+	if projectIndex >= 0 {
+		spec[projectIndex].Value = cloneValue(project)
+	} else {
+		spec = append(spec, yaml.MapItem{Key: "project", Value: cloneValue(project)})
+	}
+	application[specIndex].Value = spec
+	return application
 }
 
 func setMapSliceField(items yaml.MapSlice, key string, value any) yaml.MapSlice {

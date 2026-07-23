@@ -181,14 +181,25 @@ Supported List features are:
 - literal `elementsYaml`;
 - generator-level `template` overrides;
 - selectors using `matchLabels` and the `In`, `NotIn`, `Exists`, and
-  `DoesNotExist` operators; and
-- templating of every string field and string mapping key.
+  `DoesNotExist` operators;
+- templating of every string field and string mapping key; and
+- a YAML or JSON `templatePatch`.
 
 Templates provide the Sprig functions used by ApplicationSet except `env`,
 `expandenv`, and `getHostByName`.
 They also provide `normalize`, `slugify`, `toYaml`, `fromYaml`, and `fromYamlArray`.
 Supported Go template options are `missingkey=default`, `missingkey=invalid`,
 `missingkey=zero`, and `missingkey=error`.
+
+`templatePatch` is rendered once per selected List element with the same parameters, functions, and Go template options as `template`.
+An empty or whitespace-only rendered patch has no effect.
+Mappings merge recursively, while scalars and sequences replace the template value; `null` deletes a field.
+New mapping keys are appended in patch order.
+The patch is applied after generator-level and spec-level templates are merged and rendered, so patched metadata is also available to `releaseLabels` queries.
+As in Argo CD, the pre-patch `spec.project` is always retained.
+
+The rendered patch must be exactly one YAML or JSON document with a mapping at its root.
+Strategic Merge Patch directives are not implemented: `$patch`, `$retainKeys`, `$setElementOrder/...`, and `$deleteFromPrimitiveList/...` are rejected wherever they occur instead of being interpreted with different semantics.
 
 ## Conversion config
 
@@ -325,8 +336,8 @@ because it controls Argo CD's Helm invocation, not a helmfile release.
 
 The converter rejects:
 
-- ApplicationSet generators other than List, legacy fasttemplate syntax, and
-  `templatePatch`;
+- ApplicationSet generators other than List and legacy fasttemplate syntax;
+- Strategic Merge Patch directives in ApplicationSet `templatePatch`;
 - multi-source Applications outside the values-only `ref` form above;
 - values-only sources with `path` or another manifest-generating configuration;
 - non-`$ref` value files and file parameters for HTTP or OCI charts;

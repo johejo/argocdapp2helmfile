@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -226,10 +227,6 @@ func TestConvertApplicationSetErrors(t *testing.T) {
 			input: strings.Replace(valid, "    - list:\n", "    - clusters: {}\n      list:\n", 1),
 			want:  "spec.generators[0].clusters generator is not supported",
 		},
-		"template patch": {
-			input: strings.Replace(valid, "  template:\n", "  templatePatch: '{}'\n  template:\n", 1),
-			want:  "spec.templatePatch is not supported",
-		},
 		"invalid option": {
 			input: strings.Replace(valid, "  generators:\n", "  goTemplateOptions: [missingkey=wat]\n  generators:\n", 1),
 			want:  `unsupported option "missingkey=wat"`,
@@ -260,6 +257,313 @@ func TestConvertApplicationSetErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConvertApplicationSetTemplatePatchYAMLAndJSON(t *testing.T) {
+	const yamlPatch = `metadata:
+  labels:
+    environment: '{{ .environment }}'
+  annotations:
+    owner: '{{ .owner }}'
+spec:
+  destination:
+    namespace: '{{ .namespace }}'
+  source:
+    chart: '{{ .chart }}'
+    targetRevision: '{{ .version }}'
+    helm:
+      parameters:
+        - name: image.tag
+          value: '{{ .tag }}'
+      valuesObject:
+        replicaCount: '{{ .replicas }}'
+`
+	const jsonPatch = `{"metadata":{"labels":{"environment":"{{ .environment }}"},"annotations":{"owner":"{{ .owner }}"}},"spec":{"destination":{"namespace":"{{ .namespace }}"},"source":{"chart":"{{ .chart }}","targetRevision":"{{ .version }}","helm":{"parameters":[{"name":"image.tag","value":"{{ .tag }}"}],"valuesObject":{"replicaCount":"{{ .replicas }}"}}}}}`
+	config := testConfig(t, `releaseLabels:
+  - name: environment
+    query: .metadata.labels.environment
+  - name: owner
+    query: .metadata.annotations.owner
+`)
+
+	var outputs [][]byte
+	for _, patch := range []string{yamlPatch, jsonPatch} {
+		input := applicationSetWithTemplatePatch(patch, `          - name: app
+            environment: production
+            owner: platform
+            namespace: workloads
+            chart: patched-chart
+            version: 2.0.0
+            tag: "001"
+            replicas: "3"
+`)
+		output, err := convertWithConfig([]byte(input), config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outputs = append(outputs, output)
+	}
+	if !bytes.Equal(outputs[0], outputs[1]) {
+		t.Fatalf("YAML and JSON patches differ:\nYAML:\n%s\nJSON:\n%s", outputs[0], outputs[1])
+	}
+	for _, want := range []string{
+		"    labels:\n      environment: production\n      owner: platform\n",
+		"    namespace: workloads\n",
+		"    chart: charts/patched-chart\n",
+		"    version: 2.0.0\n",
+		"      - replicaCount: \"3\"\n",
+		"        value: \"001\"\n",
+	} {
+		if !strings.Contains(string(outputs[0]), want) {
+			t.Errorf("output does not contain %q:\n%s", want, outputs[0])
+		}
+	}
+}
+
+func TestConvertApplicationSetTemplatePatchConditionalAndGeneratorTemplateOrder(t *testing.T) {
+	const patch = `{{- if .patch }}
+spec:
+  destination:
+    namespace: patched
+  source:
+    chart: patched-chart
+{{- end }}
+`
+	input := applicationSetWithTemplatePatch(patch, `          - name: enabled
+            patch: true
+          - name: disabled
+            patch: false
+        template:
+          spec:
+            destination:
+              namespace: generator
+            source:
+              chart: generator-chart
+`)
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"  - name: enabled\n    namespace: patched\n    chart: charts/patched-chart\n",
+		"  - name: disabled\n    namespace: generator\n    chart: charts/generator-chart\n",
+	} {
+		if !strings.Contains(string(output), want) {
+			t.Errorf("output does not contain %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestConvertApplicationSetTemplatePatchValueFiles(t *testing.T) {
+	const repoURL = "git@github.com:example/charts.git"
+	resolver := testSourceResolver(t, testSource{
+		repoURL: repoURL, targetRevision: "main", root: "/workspace/charts",
+	})
+	input := readTestdata(t, "applicationset/git-chart-with-config/application.yaml")
+	input = strings.Replace(input, "  generators:\n", `  templatePatch: |
+    spec:
+      source:
+        helm:
+          valueFiles:
+            - environments/{{ .directory }}.yaml
+  generators:
+`, 1)
+	output, err := convertWithResolver([]byte(input), resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(output), "      - '/workspace/charts/charts/frontend/environments/frontend.yaml'\n") {
+		t.Fatalf("patched valueFiles were not converted:\n%s", output)
+	}
+	if strings.Contains(string(output), "environments/prod.yaml") {
+		t.Fatalf("template valueFiles sequence was not replaced:\n%s", output)
+	}
+}
+
+func TestApplicationSetTemplatePatchMergeSemantics(t *testing.T) {
+	target := yaml.MapSlice{
+		{Key: "mapping", Value: yaml.MapSlice{
+			{Key: "kept", Value: "old"},
+			{Key: "changed", Value: "old"},
+			{Key: "removed", Value: "old"},
+		}},
+		{Key: "sequence", Value: []any{"old", "values"}},
+		{Key: "scalar", Value: "old"},
+	}
+	patch := yaml.MapSlice{
+		{Key: "mapping", Value: yaml.MapSlice{
+			{Key: "changed", Value: "new"},
+			{Key: "removed", Value: nil},
+			{Key: "addedFirst", Value: 1},
+			{Key: "addedSecond", Value: 2},
+		}},
+		{Key: "sequence", Value: []any{"replacement"}},
+		{Key: "scalar", Value: true},
+		{Key: "newMapping", Value: yaml.MapSlice{{Key: "nested", Value: "value"}}},
+	}
+	got := mergeApplicationTemplatePatch(target, patch)
+	want := yaml.MapSlice{
+		{Key: "mapping", Value: yaml.MapSlice{
+			{Key: "kept", Value: "old"},
+			{Key: "changed", Value: "new"},
+			{Key: "addedFirst", Value: 1},
+			{Key: "addedSecond", Value: 2},
+		}},
+		{Key: "sequence", Value: []any{"replacement"}},
+		{Key: "scalar", Value: true},
+		{Key: "newMapping", Value: yaml.MapSlice{{Key: "nested", Value: "value"}}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected merge:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestConvertApplicationSetTemplatePatchPreservesProject(t *testing.T) {
+	config := testConfig(t, `releaseLabels:
+  - name: project
+    query: .spec.project
+`)
+	for name, patch := range map[string]string{
+		"replace": "spec:\n  project: changed\n",
+		"delete":  "spec:\n  project: null\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := strings.Replace(
+				applicationSetWithTemplatePatch(patch, "          - name: app\n"),
+				"    spec:\n      destination:\n",
+				"    spec:\n      project: original\n      destination:\n",
+				1,
+			)
+			output, err := convertWithConfig([]byte(input), config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(output), "    labels:\n      project: original\n") {
+				t.Fatalf("project was not preserved:\n%s", output)
+			}
+		})
+	}
+
+	input := applicationSetWithTemplatePatch("spec:\n  project: added\n", "          - name: app\n")
+	output, err := convertWithConfig([]byte(input), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(output), "project:") {
+		t.Fatalf("patch added a project absent from the template:\n%s", output)
+	}
+}
+
+func TestConvertApplicationSetEmptyTemplatePatchIsNoOp(t *testing.T) {
+	unpatched := applicationSetWithTemplatePatch("", "          - name: app\n")
+	patched := applicationSetWithTemplatePatch("  \n\t\n", "          - name: app\n")
+	first, err := convert([]byte(unpatched))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := convert([]byte(patched))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatalf("whitespace patch changed output:\n%s\nwant:\n%s", second, first)
+	}
+}
+
+func TestConvertApplicationSetTemplatePatchErrors(t *testing.T) {
+	tests := map[string]struct {
+		patch string
+		want  string
+	}{
+		"invalid Go template": {
+			patch: "{{",
+			want:  "render spec.templatePatch",
+		},
+		"invalid YAML": {
+			patch: "metadata: [",
+			want:  "decode rendered spec.templatePatch",
+		},
+		"multiple documents": {
+			patch: "{}\n---\n{}",
+			want:  "must contain exactly one YAML document",
+		},
+		"non-mapping root": {
+			patch: "[]",
+			want:  "must contain a mapping",
+		},
+		"patch directive": {
+			patch: "spec:\n  source:\n    helm:\n      parameters:\n        - $patch: replace\n",
+			want:  `unsupported Strategic Merge Patch directive "$patch"`,
+		},
+		"retain keys directive": {
+			patch: "spec:\n  $retainKeys: [source]\n",
+			want:  `unsupported Strategic Merge Patch directive "$retainKeys"`,
+		},
+		"set element order directive": {
+			patch: "spec:\n  source:\n    helm:\n      $setElementOrder/parameters: []\n",
+			want:  `unsupported Strategic Merge Patch directive "$setElementOrder/parameters"`,
+		},
+		"delete primitive list directive": {
+			patch: "spec:\n  source:\n    helm:\n      $deleteFromPrimitiveList/valueFiles: []\n",
+			want:  `unsupported Strategic Merge Patch directive "$deleteFromPrimitiveList/valueFiles"`,
+		},
+		"invalid resulting Application": {
+			patch: "spec:\n  source:\n    chart: null\n",
+			want:  "spec.source.chart is required",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			input := applicationSetWithTemplatePatch(test.patch, "          - name: app\n")
+			_, err := convert([]byte(input))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(err.Error(), "document 1: spec.generators[0].list.elements[0]") {
+				t.Fatalf("error does not identify the element: %v", err)
+			}
+		})
+	}
+}
+
+func TestConvertApplicationSetTemplatePatchMustBeString(t *testing.T) {
+	input := strings.Replace(
+		applicationSetWithTemplatePatch("", "          - name: app\n"),
+		"  templatePatch: |\n",
+		"  templatePatch: {}\n",
+		1,
+	)
+	_, err := convert([]byte(input))
+	if err == nil || !strings.Contains(err.Error(), "templatePatch") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func applicationSetWithTemplatePatch(patch, elements string) string {
+	indentedPatch := strings.ReplaceAll(patch, "\n", "\n    ")
+	return `apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - list:
+        elements:
+` + elements + `  templatePatch: |
+    ` + indentedPatch + `
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        namespace: default
+      source:
+        repoURL: https://example.com/charts
+        chart: base-chart
+        targetRevision: 1.0.0
+`
 }
 
 func TestRunApplicationSetErrorIsAtomic(t *testing.T) {
