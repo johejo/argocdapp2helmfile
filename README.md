@@ -36,6 +36,13 @@ Diagnostics are written to standard error. If the input cannot be converted
 without losing relevant Helm configuration, the command exits with a non-zero
 status and does not write a partial helmfile to standard output.
 
+Kubernetes `List` wrappers are not accepted directly. Expand `items` into a
+YAML stream before conversion, for example:
+
+```sh
+yq '.items[]' applications.yaml | argocdapp2helmfile
+```
+
 ## Example
 
 Given this Argo CD `Application`:
@@ -383,7 +390,6 @@ also not converted: select the intended kube context when running helmfile.
 
 The converter rejects inputs that require any of the following:
 
-- Kubernetes `List` resources;
 - ApplicationSet generators other than List, legacy fasttemplate rendering, or
   `templatePatch`;
 - multi-source Applications outside the values-only `ref` form described
@@ -409,8 +415,7 @@ described above.
 The following capabilities may be useful additions after the initial format
 and error behavior are established. This is not a committed roadmap:
 
-- commonly used Helm options such as `skipTests`;
-- accepting `List` resources as an alternative batch input format.
+- commonly used Helm options such as `skipTests`.
 
 Additional ApplicationSet generators and translating Argo CD cluster identities
 into local kubeconfig contexts are not currently planned. Cluster selection
