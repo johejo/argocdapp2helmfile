@@ -3,8 +3,8 @@
 `argocdapp2helmfile` converts one or more Argo CD `Application` resources that
 deploy Helm charts into one helmfile. It is intended to be a small, offline
 Unix filter: it reads a YAML stream from standard input, writes YAML to standard
-output, and does not fetch charts or repositories. Git charts and external
-values repositories can be supplied as pre-existing local checkouts.
+output, and does not fetch charts or repositories. A source map describes how
+Git charts and external values repositories should be referenced by helmfile.
 
 ## Usage
 
@@ -14,18 +14,22 @@ argocdapp2helmfile <application.yaml >helmfile.yaml.gotmpl
 ```
 
 When the input uses a Git-hosted chart or external values repository, pass a
-source map and set its environment variables:
+source map:
 
 ```sh
-CHARTS_ROOT="$PWD/checkouts/charts" \
-VALUES_ROOT="$PWD/checkouts/values" \
 argocdapp2helmfile --source-map sources.yaml \
   <application.yaml >helmfile.yaml.gotmpl
 ```
 
-Use the `.gotmpl` suffix whenever a source map is used. Local paths use
-helmfile's `requiredEnv` template function, so the same environment variables
-must also be set when helmfile runs.
+Source-map roots are copied into the generated paths without being evaluated.
+If they contain helmfile template expressions, use the `.gotmpl` suffix and
+provide their inputs when helmfile runs:
+
+```sh
+CHARTS_ROOT="$PWD/checkouts/charts" \
+VALUES_ROOT="$PWD/checkouts/values" \
+helmfile -f helmfile.yaml.gotmpl apply
+```
 
 Diagnostics are written to standard error. If the input cannot be converted
 without losing relevant Helm configuration, the command exits with a non-zero
@@ -176,10 +180,10 @@ Helm repository, or a chart directory in a Git repository.
 | `spec.source.repoURL` | Repository `url`; scheme-less OCI repositories also set `oci: true` |
 | `spec.source.chart` | Release chart as `source/<chart>` |
 | `spec.source.targetRevision` | Release `version` |
-| Git `spec.source.repoURL` | Checkout identity; accepts HTTP(S), `git@host:path`, and `ssh://user@host/path` |
-| Git `spec.source.path` | Chart root below the mapped local Git checkout |
-| Git `spec.source.targetRevision` | Checkout provenance; not emitted as a Helm chart version |
-| `spec.source.helm.valueFiles` | Resolved local files using Argo CD 3.4 path and glob semantics |
+| Git `spec.source.repoURL` | Source identity; accepts HTTP(S), `git@host:path`, and `ssh://user@host/path` |
+| Git `spec.source.path` | Chart path below the mapped source root |
+| Git `spec.source.targetRevision` | Source-map identity and provenance; not emitted as a Helm chart version |
+| `spec.source.helm.valueFiles` | Source-relative paths and globs resolved by helmfile |
 | `spec.source.helm.values` | Parsed inline `values` entry |
 | `spec.source.helm.valuesObject` | Inline `values` entry |
 | `spec.source.helm.parameters` | Release `set` or `setString` entries |
@@ -196,10 +200,10 @@ Values retain Argo CD's precedence: chart defaults, `valueFiles`, `values`,
 `valueFiles` retain their input order. The generated entries are ordered so
 that helmfile applies the same precedence.
 
-## Local Git source map
+## Git source map
 
-The converter never clones, fetches, or changes a repository. Describe existing
-Git worktrees in a versioned YAML source map:
+The converter never clones, fetches, changes, or inspects a repository. Map each
+Git source to the string that should prefix its paths in the generated helmfile:
 
 ```yaml
 apiVersion: argocdapp2helmfile/v1alpha1
@@ -207,23 +211,22 @@ kind: SourceMap
 sources:
   - repoURL: git@github.com:example/platform-charts.git
     targetRevision: release-1
-    env: PLATFORM_CHARTS_ROOT
+    root: '{{ requiredEnv "PLATFORM_CHARTS_ROOT" }}'
   - repoURL: https://github.com/example/values.git
     targetRevision: main
-    env: PLATFORM_VALUES_ROOT
-    allowDirty: true
+    root: '{{ requiredEnv "PLATFORM_VALUES_ROOT" }}'
 ```
 
 Entries match the Application's literal `repoURL` and `targetRevision` pair.
-Environment variable names must be unique and their values must be absolute
-paths to Git worktree roots. A source map may be omitted only when no local Git
-source is needed. A required mapping or environment variable that is absent is
-an error; there is no implicit `document-N` directory fallback.
+`root` is a required, non-empty string; it may be a fixed path, a helmfile
+template expression, or a combination of both. Roots need not be unique. A
+source map may be omitted only when no Git source is needed. A required mapping
+that is absent is an error.
 
-For every used checkout, the converter verifies that `HEAD` resolves to
-`targetRevision`. By default it also rejects staged or unstaged tracked changes,
-including dirty submodules. Untracked files are allowed. Set `allowDirty: true`
-on an entry to permit tracked changes without disabling the revision check.
+The converter does not evaluate templates or verify that a root exists,
+contains a Git worktree at `targetRevision`, or has a clean status. Preparing
+the correct sources is the responsibility of the helmfile execution
+environment.
 
 ### Git-hosted charts
 
@@ -237,9 +240,8 @@ source:
 ```
 
 SCP-like `user@host:path`, `ssh://user@host/path`, and HTTP(S) Git URLs are
-accepted. Set the mapped environment variable to a checkout of
-`targetRevision`. The directory selected by `path` must contain `Chart.yaml`; a
-`path` of `.` is accepted for a chart at the repository root.
+accepted. The mapped root should resolve to the corresponding source when
+helmfile runs. A `path` of `.` refers directly to the mapped root.
 
 The generated release refers directly to that directory:
 
@@ -252,14 +254,14 @@ releases:
 
 No Helm repository or release `version` is emitted: `targetRevision` selects a
 Git revision, not the version in `Chart.yaml`. SSH keys, agents, and known-hosts
-configuration remain the responsibility of the checkout environment.
+configuration remain the responsibility of the helmfile execution environment.
 
 ### Multi-source values repositories
 
 A multi-source Application is supported when it has exactly one Helm chart
 source and all other sources are values-only sources with a unique `ref`. A
 value file beginning with `$ref/` is resolved from the root of the corresponding
-mapped checkout. The `$ref` token is accepted only at the start of the value
+mapped source. The `$ref` token is accepted only at the start of the value
 file path.
 
 For example, `$values/prod/values.yaml` becomes:
@@ -277,21 +279,21 @@ represented by this conversion.
 
 ### Value file path behavior
 
-Value paths follow Argo CD 3.4 filesystem behavior:
+Value paths retain Argo CD's source-relative interpretation:
 
 - a relative path is based at the Git chart directory;
 - a leading `/` is based at that Git repository's root, not the OS root;
 - the portion after `$ref/` is based at the referenced repository's root;
-- `*`, `?`, `[]`, and `**` use doublestar expansion and lexical ordering;
-- explicit paths take priority over glob matches, and duplicate resolved paths
-  are emitted once; and
-- normalized paths and symlink targets must remain inside their source
-  repository.
+- input order is preserved; and
+- normalized paths must not escape their mapped source.
 
-Glob expansion happens during conversion so helmfile receives explicit files in
-Argo CD precedence order. A missing explicit file or unmatched glob fails the
-conversion unless `ignoreMissingValueFiles: true`, in which case it is omitted
-and `missingFileHandler: Warn` is emitted.
+The converter emits value paths and glob patterns without inspecting or
+expanding them. Helmfile resolves them at execution time using its native glob
+behavior. This is not identical to Argo CD's doublestar behavior: recursive
+`**` matching and deduplication across explicit paths and globs are not
+guaranteed. When `ignoreMissingValueFiles: true` is set, the converter emits
+`missingFileHandler: Warn`; otherwise helmfile's default missing-file behavior
+applies.
 
 Non-`$ref` value files are not supported for HTTP/OCI charts because those
 charts remain remote. Argo CD build-environment substitutions in value paths and

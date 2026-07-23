@@ -66,12 +66,8 @@ func TestConvertGitChart(t *testing.T) {
 			if test.chartPath != "." {
 				chartPrefix = test.chartPath + "/"
 			}
-			root := newTestGitRepository(t, test.revision, map[string]string{
-				chartPrefix + "Chart.yaml":             "apiVersion: v2\nname: app\nversion: 1.0.0\n",
-				chartPrefix + "environments/prod.yaml": "replicaCount: 2\n",
-			})
 			resolver := testSourceResolver(t, testSource{
-				repoURL: test.repoURL, targetRevision: test.revision, env: "TEST_CHART_ROOT", root: root,
+				repoURL: test.repoURL, targetRevision: test.revision, root: `{{ requiredEnv "TEST_CHART_ROOT" }}`,
 			})
 			input := gitApplication(test.repoURL, test.chartPath, test.revision, `    helm:
       valueFiles: [environments/prod.yaml]
@@ -107,11 +103,8 @@ func TestConvertGitChart(t *testing.T) {
 
 func TestConvertGitChartDoesNotConsumeRepositoryAlias(t *testing.T) {
 	repoURL := "git@github.com:example/charts.git"
-	root := newTestGitRepository(t, "main", map[string]string{
-		"charts/app/Chart.yaml": "apiVersion: v2\nname: app\nversion: 1.0.0\n",
-	})
 	resolver := testSourceResolver(t, testSource{
-		repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
+		repoURL: repoURL, targetRevision: "main", root: `{{ requiredEnv "TEST_CHART_ROOT" }}`,
 	})
 	gitInput := gitApplication(repoURL, "charts/app", "main", "")
 	httpInput := strings.Replace(minimalApplication(""), "name: app", "name: packaged", 1)

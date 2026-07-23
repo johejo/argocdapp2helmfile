@@ -7,13 +7,8 @@ import (
 
 func TestConvertValueFilesPrecedeInlineValues(t *testing.T) {
 	repoURL := "https://github.com/example/charts.git"
-	root := newTestGitRepository(t, "main", map[string]string{
-		"charts/app/Chart.yaml":             "apiVersion: v2\nname: app\nversion: 1.0.0\n",
-		"charts/app/values.yaml":            "replicaCount: 1\n",
-		"charts/app/environments/prod.yaml": "replicaCount: 2\n",
-	})
 	resolver := testSourceResolver(t, testSource{
-		repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
+		repoURL: repoURL, targetRevision: "main", root: `{{ requiredEnv "TEST_CHART_ROOT" }}`,
 	})
 	input := gitApplication(repoURL, "charts/app", "main", `    helm:
       valueFiles:
@@ -52,12 +47,8 @@ func TestConvertValueFilesPrecedeInlineValues(t *testing.T) {
 
 func TestConvertValueFilesShareMappedSourceAcrossDocuments(t *testing.T) {
 	repoURL := "https://github.com/example/charts.git"
-	root := newTestGitRepository(t, "main", map[string]string{
-		"chart/Chart.yaml":  "apiVersion: v2\nname: app\nversion: 1.0.0\n",
-		"chart/values.yaml": "replicaCount: 1\n",
-	})
 	resolver := testSourceResolver(t, testSource{
-		repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
+		repoURL: repoURL, targetRevision: "main", root: `{{ requiredEnv "TEST_CHART_ROOT" }}`,
 	})
 	first := gitApplication(repoURL, "chart", "main", "    helm:\n      valueFiles: [values.yaml]\n")
 	second := strings.Replace(first, "name: app", "name: second", 1)
@@ -73,11 +64,8 @@ func TestConvertValueFilesShareMappedSourceAcrossDocuments(t *testing.T) {
 
 func TestConvertIgnoreMissingValueFiles(t *testing.T) {
 	repoURL := "git@github.com:example/charts.git"
-	root := newTestGitRepository(t, "main", map[string]string{
-		"chart/Chart.yaml": "apiVersion: v2\nname: app\nversion: 1.0.0\n",
-	})
 	resolver := testSourceResolver(t, testSource{
-		repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
+		repoURL: repoURL, targetRevision: "main", root: `{{ requiredEnv "TEST_CHART_ROOT" }}`,
 	})
 	input := gitApplication(repoURL, "chart", "main", `    helm:
       valueFiles: [optional.yaml]
@@ -91,8 +79,8 @@ func TestConvertIgnoreMissingValueFiles(t *testing.T) {
 	if !strings.Contains(text, "    missingFileHandler: Warn\n") {
 		t.Fatalf("missingFileHandler was not emitted:\n%s", output)
 	}
-	if strings.Contains(text, "optional.yaml") {
-		t.Fatalf("missing value file was not omitted:\n%s", output)
+	if !strings.Contains(text, `{{ requiredEnv "TEST_CHART_ROOT" }}/chart/optional.yaml`) {
+		t.Fatalf("missing value file was not delegated to helmfile:\n%s", output)
 	}
 }
 
@@ -110,20 +98,14 @@ func TestConvertRejectsNonRefValueFilesForRemoteCharts(t *testing.T) {
 
 func TestConvertMultiSourceValueReferences(t *testing.T) {
 	input := readTestdata(t, "multi-source/application.yaml")
-	valuesRoot := newTestGitRepository(t, "0123456789abcdef", map[string]string{
-		"environments/prod.yaml": "replicaCount: 2\n",
-	})
-	secretsRoot := newTestGitRepository(t, "release-1", map[string]string{
-		"team/values.yaml": "secret: value\n",
-	})
 	resolver := testSourceResolver(t,
 		testSource{
 			repoURL: "https://github.com/example/values.git", targetRevision: "0123456789abcdef",
-			env: "TEST_VALUES_ROOT", root: valuesRoot,
+			root: `{{ requiredEnv "TEST_VALUES_ROOT" }}`,
 		},
 		testSource{
 			repoURL: "ssh://git@example.com/secrets.git", targetRevision: "release-1",
-			env: "TEST_SECRETS_ROOT", root: secretsRoot,
+			root: `{{ requiredEnv "TEST_SECRETS_ROOT" }}`,
 		},
 	)
 	output, err := convertWithSourceMap([]byte(input), resolver)
@@ -187,20 +169,14 @@ spec:
       targetRevision: main
       ref: values
 `
-	chartRoot := newTestGitRepository(t, "release-1", map[string]string{
-		"charts/app/Chart.yaml": "apiVersion: v2\nname: app\nversion: 1.0.0\n",
-	})
-	valuesRoot := newTestGitRepository(t, "main", map[string]string{
-		"prod/values.yaml": "replicaCount: 2\n",
-	})
 	resolver := testSourceResolver(t,
 		testSource{
 			repoURL: "git@github.com:example/charts.git", targetRevision: "release-1",
-			env: "TEST_CHART_ROOT", root: chartRoot,
+			root: `{{ requiredEnv "TEST_CHART_ROOT" }}`,
 		},
 		testSource{
 			repoURL: "git@git.example.com:platform/values.git", targetRevision: "main",
-			env: "TEST_VALUES_ROOT", root: valuesRoot,
+			root: `{{ requiredEnv "TEST_VALUES_ROOT" }}`,
 		},
 	)
 	output, err := convertWithSourceMap([]byte(input), resolver)

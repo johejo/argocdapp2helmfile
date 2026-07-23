@@ -1,23 +1,14 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestConvertValueFileArgoCD34PathSemantics(t *testing.T) {
+func TestConvertValueFilePathSemantics(t *testing.T) {
 	const repoURL = "https://github.com/example/charts.git"
-	root := newTestGitRepository(t, "main", map[string]string{
-		"charts/app/Chart.yaml":       "apiVersion: v2\nname: app\nversion: 1.0.0\n",
-		"charts/app/values/a.yaml":    "value: a\n",
-		"charts/app/values/b.yaml":    "value: b\n",
-		"charts/shared.yaml":          "shared: true\n",
-		"repository-root-values.yaml": "root: true\n",
-	})
 	resolver := testSourceResolver(t, testSource{
-		repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
+		repoURL: repoURL, targetRevision: "main", root: `{{ requiredEnv "CHARTS_ROOT" }}`,
 	})
 	input := gitApplication(repoURL, "charts/app", "main", `    helm:
       valueFiles:
@@ -30,84 +21,69 @@ func TestConvertValueFileArgoCD34PathSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(output)
 	ordered := []string{
-		"/charts/app/values/a.yaml",
-		"/charts/app/values/b.yaml",
-		"/charts/shared.yaml",
-		"/repository-root-values.yaml",
+		`{{ requiredEnv "CHARTS_ROOT" }}/charts/app/values/*.yaml`,
+		`{{ requiredEnv "CHARTS_ROOT" }}/charts/app/values/b.yaml`,
+		`{{ requiredEnv "CHARTS_ROOT" }}/charts/shared.yaml`,
+		`{{ requiredEnv "CHARTS_ROOT" }}/repository-root-values.yaml`,
 	}
 	position := -1
 	for _, fragment := range ordered {
-		next := strings.Index(text[position+1:], fragment)
+		next := strings.Index(string(output)[position+1:], fragment)
 		if next < 0 {
 			t.Fatalf("output does not contain %q in order:\n%s", fragment, output)
 		}
 		position += next + 1
 	}
-	if strings.Count(text, "/charts/app/values/b.yaml") != 1 {
-		t.Fatalf("explicit file was not deduplicated from glob:\n%s", output)
-	}
 }
 
-func TestConvertValueFileGlobNoMatch(t *testing.T) {
+func TestConvertDelegatesValueFileGlobAndMissingHandling(t *testing.T) {
 	const repoURL = "git@github.com:example/charts.git"
-	root := newTestGitRepository(t, "main", map[string]string{
-		"chart/Chart.yaml": "apiVersion: v2\nname: app\nversion: 1.0.0\n",
+	resolver := testSourceResolver(t, testSource{
+		repoURL: repoURL, targetRevision: "main", root: "/workspace/charts",
 	})
 	for _, ignore := range []bool{false, true} {
-		t.Run(map[bool]string{false: "error", true: "ignored"}[ignore], func(t *testing.T) {
-			resolver := testSourceResolver(t, testSource{
-				repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
-			})
+		t.Run(map[bool]string{false: "error by default", true: "warn"}[ignore], func(t *testing.T) {
 			ignoreLine := ""
 			if ignore {
 				ignoreLine = "      ignoreMissingValueFiles: true\n"
 			}
 			input := gitApplication(repoURL, "chart", "main", "    helm:\n      valueFiles: [missing/**/*.yaml]\n"+ignoreLine)
 			output, err := convertWithSourceMap([]byte(input), resolver)
-			if ignore {
-				if err != nil {
-					t.Fatal(err)
-				}
-				if strings.Contains(string(output), "missing/") {
-					t.Fatalf("unmatched glob was emitted:\n%s", output)
-				}
-			} else if err == nil || !strings.Contains(err.Error(), "matched no files") {
-				t.Fatalf("unexpected error: %v", err)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := string(output)
+			if !strings.Contains(text, "/workspace/charts/chart/missing/**/*.yaml") {
+				t.Fatalf("glob was not preserved:\n%s", output)
+			}
+			hasWarn := strings.Contains(text, "    missingFileHandler: Warn\n")
+			if hasWarn != ignore {
+				t.Fatalf("unexpected missingFileHandler:\n%s", output)
 			}
 		})
 	}
 }
 
-func TestConvertRejectsValueSymlinkOutsideRepository(t *testing.T) {
+func TestConvertDoesNotInspectValueFile(t *testing.T) {
 	const repoURL = "git@github.com:example/charts.git"
-	root := newTestGitRepository(t, "main", map[string]string{
-		"chart/Chart.yaml": "apiVersion: v2\nname: app\nversion: 1.0.0\n",
-	})
-	outside := filepath.Join(t.TempDir(), "outside.yaml")
-	if err := os.WriteFile(outside, []byte("outside: true\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(outside, filepath.Join(root, "chart", "outside.yaml")); err != nil {
-		t.Fatal(err)
-	}
 	resolver := testSourceResolver(t, testSource{
-		repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
+		repoURL: repoURL, targetRevision: "main", root: "/path/that/does/not/exist",
 	})
-	input := gitApplication(repoURL, "chart", "main", "    helm:\n      valueFiles: ['*.yaml']\n")
-	if output, err := convertWithSourceMap([]byte(input), resolver); err == nil {
-		t.Fatalf("conversion succeeded:\n%s", output)
+	input := gitApplication(repoURL, "chart", "main", "    helm:\n      valueFiles: [values.yaml]\n")
+	output, err := convertWithSourceMap([]byte(input), resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(output), "/path/that/does/not/exist/chart/values.yaml") {
+		t.Fatalf("unexpected output:\n%s", output)
 	}
 }
 
 func TestConvertRejectsValuePathOutsideRepository(t *testing.T) {
 	const repoURL = "git@github.com:example/charts.git"
-	root := newTestGitRepository(t, "main", map[string]string{
-		"chart/Chart.yaml": "apiVersion: v2\nname: app\nversion: 1.0.0\n",
-	})
 	resolver := testSourceResolver(t, testSource{
-		repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
+		repoURL: repoURL, targetRevision: "main", root: "/workspace/charts",
 	})
 	input := gitApplication(repoURL, "chart", "main", "    helm:\n      valueFiles: [../../outside.yaml]\n")
 	if output, err := convertWithSourceMap([]byte(input), resolver); err == nil {
