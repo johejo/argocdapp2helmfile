@@ -6,7 +6,16 @@ import (
 )
 
 func TestConvertValueFilesPrecedeInlineValues(t *testing.T) {
-	input := minimalApplication(`    helm:
+	repoURL := "https://github.com/example/charts.git"
+	root := newTestGitRepository(t, "main", map[string]string{
+		"charts/app/Chart.yaml":             "apiVersion: v2\nname: app\nversion: 1.0.0\n",
+		"charts/app/values.yaml":            "replicaCount: 1\n",
+		"charts/app/environments/prod.yaml": "replicaCount: 2\n",
+	})
+	resolver := testSourceResolver(t, testSource{
+		repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
+	})
+	input := gitApplication(repoURL, "charts/app", "main", `    helm:
       valueFiles:
         - values.yaml
         - environments/prod.yaml
@@ -20,13 +29,13 @@ func TestConvertValueFilesPrecedeInlineValues(t *testing.T) {
         - name: replicaCount
           value: "3"
 `)
-	output, err := convert([]byte(input))
+	output, err := convertWithSourceMap([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ordered := []string{
-		`'{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-1/chart/values.yaml'`,
-		`'{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-1/chart/environments/prod.yaml'`,
+		`'{{ requiredEnv "TEST_CHART_ROOT" }}/charts/app/values.yaml'`,
+		`'{{ requiredEnv "TEST_CHART_ROOT" }}/charts/app/environments/prod.yaml'`,
 		"      - image:\n          tag: inline",
 		"      - image:\n          pullPolicy: Always",
 		"    set:\n      - name: replicaCount",
@@ -41,29 +50,40 @@ func TestConvertValueFilesPrecedeInlineValues(t *testing.T) {
 	}
 }
 
-func TestConvertValueFilesUseDocumentScopedRoots(t *testing.T) {
-	first := minimalApplication("    helm:\n      valueFiles: [values.yaml]\n")
+func TestConvertValueFilesShareMappedSourceAcrossDocuments(t *testing.T) {
+	repoURL := "https://github.com/example/charts.git"
+	root := newTestGitRepository(t, "main", map[string]string{
+		"chart/Chart.yaml":  "apiVersion: v2\nname: app\nversion: 1.0.0\n",
+		"chart/values.yaml": "replicaCount: 1\n",
+	})
+	resolver := testSourceResolver(t, testSource{
+		repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
+	})
+	first := gitApplication(repoURL, "chart", "main", "    helm:\n      valueFiles: [values.yaml]\n")
 	second := strings.Replace(first, "name: app", "name: second", 1)
-	output, err := convert([]byte(first + "---\n" + second))
+	output, err := convertWithSourceMap([]byte(first+"---\n"+second), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{
-		`document-1/chart/values.yaml`,
-		`document-2/chart/values.yaml`,
-	} {
-		if !strings.Contains(string(output), want) {
-			t.Errorf("output does not contain %q:\n%s", want, output)
-		}
+	want := `{{ requiredEnv "TEST_CHART_ROOT" }}/chart/values.yaml`
+	if strings.Count(string(output), want) != 2 {
+		t.Errorf("output does not contain two mapped values paths:\n%s", output)
 	}
 }
 
 func TestConvertIgnoreMissingValueFiles(t *testing.T) {
-	input := minimalApplication(`    helm:
+	repoURL := "git@github.com:example/charts.git"
+	root := newTestGitRepository(t, "main", map[string]string{
+		"chart/Chart.yaml": "apiVersion: v2\nname: app\nversion: 1.0.0\n",
+	})
+	resolver := testSourceResolver(t, testSource{
+		repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
+	})
+	input := gitApplication(repoURL, "chart", "main", `    helm:
       valueFiles: [optional.yaml]
       ignoreMissingValueFiles: true
 `)
-	output, err := convert([]byte(input))
+	output, err := convertWithSourceMap([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,17 +91,17 @@ func TestConvertIgnoreMissingValueFiles(t *testing.T) {
 	if !strings.Contains(text, "    missingFileHandler: Warn\n") {
 		t.Fatalf("missingFileHandler was not emitted:\n%s", output)
 	}
-	if !strings.Contains(text, `requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT"`) {
-		t.Fatalf("values root is not still required:\n%s", output)
+	if strings.Contains(text, "optional.yaml") {
+		t.Fatalf("missing value file was not omitted:\n%s", output)
 	}
 }
 
-func TestConvertRejectsUnsafeValueFilePaths(t *testing.T) {
-	tests := []string{"", "/values.yaml", "C:/values.yaml", "./values.yaml", "../values.yaml", "a/../values.yaml", "a//values.yaml", `a\values.yaml`, "*.yaml", "values?.yaml", "values[0].yaml", "{a,b}.yaml"}
-	for _, valueFile := range tests {
+func TestConvertRejectsNonRefValueFilesForRemoteCharts(t *testing.T) {
+	for _, valueFile := range []string{"values.yaml", "/values.yaml", "*.yaml"} {
 		t.Run(valueFile, func(t *testing.T) {
 			input := minimalApplication("    helm:\n      valueFiles:\n        - " + yamlScalar(valueFile) + "\n")
-			if output, err := convert([]byte(input)); err == nil {
+			if output, err := convert([]byte(input)); err == nil ||
+				!strings.Contains(err.Error(), "non-$ref valueFiles are not supported") {
 				t.Fatalf("convert succeeded with output:\n%s", output)
 			}
 		})
@@ -90,15 +110,30 @@ func TestConvertRejectsUnsafeValueFilePaths(t *testing.T) {
 
 func TestConvertMultiSourceValueReferences(t *testing.T) {
 	input := readTestdata(t, "multi-source/application.yaml")
-	output, err := convert([]byte(input))
+	valuesRoot := newTestGitRepository(t, "0123456789abcdef", map[string]string{
+		"environments/prod.yaml": "replicaCount: 2\n",
+	})
+	secretsRoot := newTestGitRepository(t, "release-1", map[string]string{
+		"team/values.yaml": "secret: value\n",
+	})
+	resolver := testSourceResolver(t,
+		testSource{
+			repoURL: "https://github.com/example/values.git", targetRevision: "0123456789abcdef",
+			env: "TEST_VALUES_ROOT", root: valuesRoot,
+		},
+		testSource{
+			repoURL: "ssh://git@example.com/secrets.git", targetRevision: "release-1",
+			env: "TEST_SECRETS_ROOT", root: secretsRoot,
+		},
+	)
+	output, err := convertWithSourceMap([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(output)
 	for _, want := range []string{
-		`document-1/chart/defaults.yaml`,
-		`document-1/refs/values/environments/prod.yaml`,
-		`document-1/refs/secrets/team/values.yaml`,
+		`{{ requiredEnv "TEST_VALUES_ROOT" }}/environments/prod.yaml`,
+		`{{ requiredEnv "TEST_SECRETS_ROOT" }}/team/values.yaml`,
 		`# document 1 values source ref "values": repoURL "https://github.com/example/values.git", targetRevision "0123456789abcdef"`,
 		`# document 1 values source ref "secrets": repoURL "ssh://git@example.com/secrets.git", targetRevision "release-1"`,
 	} {
@@ -152,7 +187,23 @@ spec:
       targetRevision: main
       ref: values
 `
-	output, err := convert([]byte(input))
+	chartRoot := newTestGitRepository(t, "release-1", map[string]string{
+		"charts/app/Chart.yaml": "apiVersion: v2\nname: app\nversion: 1.0.0\n",
+	})
+	valuesRoot := newTestGitRepository(t, "main", map[string]string{
+		"prod/values.yaml": "replicaCount: 2\n",
+	})
+	resolver := testSourceResolver(t,
+		testSource{
+			repoURL: "git@github.com:example/charts.git", targetRevision: "release-1",
+			env: "TEST_CHART_ROOT", root: chartRoot,
+		},
+		testSource{
+			repoURL: "git@git.example.com:platform/values.git", targetRevision: "main",
+			env: "TEST_VALUES_ROOT", root: valuesRoot,
+		},
+	)
+	output, err := convertWithSourceMap([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +211,7 @@ spec:
 	for _, want := range []string{
 		`# document 1 chart source: repoURL "git@github.com:example/charts.git", path "charts/app", targetRevision "release-1"`,
 		`# document 1 values source ref "values": repoURL "git@git.example.com:platform/values.git", targetRevision "main"`,
-		`document-1/refs/values/prod/values.yaml`,
+		`{{ requiredEnv "TEST_VALUES_ROOT" }}/prod/values.yaml`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("output does not contain %q:\n%s", want, output)

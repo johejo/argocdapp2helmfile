@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -65,6 +67,10 @@ func (value templatePath) MarshalYAML() ([]byte, error) {
 }
 
 func convert(input []byte) ([]byte, error) {
+	return convertWithSourceMap(input, nil)
+}
+
+func convertWithSourceMap(input []byte, resolver *sourceResolver) ([]byte, error) {
 	file, err := parser.ParseBytes(input, 0)
 	if err != nil {
 		return nil, fmt.Errorf("document %d: decode Application: %w", documentNumberForError(input, err), err)
@@ -85,7 +91,7 @@ func convert(input []byte) ([]byte, error) {
 		if err := yaml.NodeToValue(document.Body, &app, yaml.UseOrderedMap()); err != nil {
 			return nil, fmt.Errorf("document %d: decode Application: %w", documentNumber, err)
 		}
-		converted, err := convertApplication(app, documentNumber)
+		converted, err := convertApplication(app, documentNumber, resolver)
 		if err != nil {
 			return nil, fmt.Errorf("document %d: %w", documentNumber, err)
 		}
@@ -144,7 +150,7 @@ type convertedApplication struct {
 	provenanceComments []string
 }
 
-func convertApplication(app application, documentNumber int) (convertedApplication, error) {
+func convertApplication(app application, documentNumber int, resolver *sourceResolver) (convertedApplication, error) {
 	var converted convertedApplication
 
 	if app.APIVersion != "argoproj.io/v1alpha1" {
@@ -168,6 +174,9 @@ func convertApplication(app application, documentNumber int) (convertedApplicati
 	hasPath := strings.TrimSpace(chartSource.Path) != ""
 	if hasChart && hasPath {
 		return converted, fmt.Errorf("%s.chart and %s.path cannot both be set", chartSourceField, chartSourceField)
+	}
+	if hasPath && repositoryType == httpRepository {
+		repositoryType = gitRepository
 	}
 	if repositoryType == gitRepository {
 		if hasChart {
@@ -199,13 +208,43 @@ func convertApplication(app application, documentNumber int) (convertedApplicati
 	if releaseName == "" {
 		releaseName = app.Metadata.Name
 	}
-	values := make([]any, 0, len(helm.valueFiles)+2)
-	for i, valueFile := range helm.valueFiles {
-		resolved, err := resolveValueFile(valueFile, documentNumber, refs)
+	var chartLocal *localSource
+	var chartRoot string
+	if repositoryType == gitRepository {
+		local, err := resolver.resolve(chartSource, chartSourceField)
 		if err != nil {
-			return converted, fmt.Errorf("%s.helm.valueFiles[%d]: %w", chartSourceField, i, err)
+			return converted, err
 		}
-		values = append(values, templatePath(resolved))
+		chartLocal = &local
+		chartRoot = filepath.Clean(filepath.Join(local.root, filepath.FromSlash(chartSource.Path)))
+		if err := verifyLexicalPathWithinRoot(chartRoot, local.root); err != nil {
+			return converted, fmt.Errorf("%s.path %q: %w", chartSourceField, chartSource.Path, err)
+		}
+		if err := verifyPathWithinRoot(chartRoot, local.root); err != nil {
+			return converted, fmt.Errorf("%s.path %q: %w", chartSourceField, chartSource.Path, err)
+		}
+		info, err := os.Stat(chartRoot)
+		if err != nil {
+			return converted, fmt.Errorf("%s.path %q: inspect chart directory: %w", chartSourceField, chartSource.Path, err)
+		}
+		if !info.IsDir() {
+			return converted, fmt.Errorf("%s.path %q must point to a chart directory", chartSourceField, chartSource.Path)
+		}
+		if info, err := os.Stat(filepath.Join(chartRoot, "Chart.yaml")); err != nil || info.IsDir() {
+			if err == nil {
+				err = errors.New("is a directory")
+			}
+			return converted, fmt.Errorf("%s.path %q: Chart.yaml: %w", chartSourceField, chartSource.Path, err)
+		}
+	}
+	values, err := resolveValueFiles(helm.valueFiles, helm.ignoreMissingValues, valueFileContext{
+		chartLocal: chartLocal,
+		chartRoot:  chartRoot,
+		refs:       refs,
+		resolver:   resolver,
+	})
+	if err != nil {
+		return converted, fmt.Errorf("%s.helm.%w", chartSourceField, err)
 	}
 	if !isEmpty(helm.values) {
 		values = append(values, helm.values)
@@ -239,10 +278,15 @@ func convertApplication(app application, documentNumber int) (convertedApplicati
 		},
 	}
 	if repositoryType == gitRepository {
-		converted.release.Chart = templatePath(fmt.Sprintf(
-			`{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-%d/chart`,
-			documentNumber,
-		))
+		chartRelative, err := filepath.Rel(chartLocal.root, chartRoot)
+		if err != nil {
+			return converted, fmt.Errorf("%s.path %q: %w", chartSourceField, chartSource.Path, err)
+		}
+		chartTemplate := fmt.Sprintf(`{{ requiredEnv %q }}`, chartLocal.env)
+		if chartRelative != "." {
+			chartTemplate += "/" + filepath.ToSlash(chartRelative)
+		}
+		converted.release.Chart = templatePath(chartTemplate)
 		converted.provenanceComments = append([]string{fmt.Sprintf(
 			"document %d chart source: repoURL %q, path %q, targetRevision %q",
 			documentNumber, chartSource.RepoURL, chartSource.Path, chartSource.TargetRevision,

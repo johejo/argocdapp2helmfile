@@ -34,7 +34,7 @@ const (
 	gitRepository
 )
 
-func resolveSources(app application, documentNumber int) (applicationSource, string, map[string]struct{}, []string, error) {
+func resolveSources(app application, documentNumber int) (applicationSource, string, map[string]applicationSource, []string, error) {
 	if app.Spec.Source != nil && app.Spec.Sources != nil {
 		return applicationSource{}, "", nil, nil, errors.New("spec.source and spec.sources cannot both be set")
 	}
@@ -51,7 +51,7 @@ func resolveSources(app application, documentNumber int) (applicationSource, str
 		return applicationSource{}, "", nil, nil, errors.New("spec.sources must contain one Helm chart source")
 	}
 
-	refs := make(map[string]struct{})
+	refs := make(map[string]applicationSource)
 	var chartSource applicationSource
 	chartSourceField := ""
 	var comments []string
@@ -95,7 +95,7 @@ func resolveSources(app application, documentNumber int) (applicationSource, str
 		if strings.TrimSpace(source.TargetRevision) == "" {
 			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.targetRevision is required", field)
 		}
-		refs[source.Ref] = struct{}{}
+		refs[source.Ref] = source
 		comments = append(comments, fmt.Sprintf(
 			"document %d values source ref %q: repoURL %q, targetRevision %q",
 			documentNumber, source.Ref, source.RepoURL, source.TargetRevision,
@@ -112,32 +112,6 @@ func validateReferenceName(ref string) error {
 		return errors.New("must be a safe single path segment containing only letters, digits, '.', '_', or '-'")
 	}
 	return nil
-}
-
-func resolveValueFile(valueFile string, documentNumber int, refs map[string]struct{}) (string, error) {
-	base := fmt.Sprintf(`{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-%d`, documentNumber)
-	if strings.HasPrefix(valueFile, "$") {
-		separator := strings.IndexByte(valueFile, '/')
-		if separator < 0 {
-			return "", errors.New("a $ref value file must include a path after the reference")
-		}
-		ref := strings.TrimPrefix(valueFile[:separator], "$")
-		if err := validateReferenceName(ref); err != nil {
-			return "", fmt.Errorf("reference %q is unsafe: %w", ref, err)
-		}
-		if _, exists := refs[ref]; !exists {
-			return "", fmt.Errorf("reference %q is not defined by spec.sources", ref)
-		}
-		relative := valueFile[separator+1:]
-		if err := validateRelativeValuePath(relative); err != nil {
-			return "", err
-		}
-		return base + "/refs/" + ref + "/" + relative, nil
-	}
-	if err := validateRelativeValuePath(valueFile); err != nil {
-		return "", err
-	}
-	return base + "/chart/" + valueFile, nil
 }
 
 func validateRelativeValuePath(valuePath string) error {

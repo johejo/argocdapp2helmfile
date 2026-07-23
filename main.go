@@ -12,8 +12,22 @@ func main() {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if len(args) != 0 {
-		fmt.Fprintln(stderr, "argocdapp2helmfile: command-line arguments are not supported")
+	var resolver *sourceResolver
+	switch {
+	case len(args) == 0:
+	case len(args) == 2 && args[0] == "--source-map":
+		input, err := os.ReadFile(args[1])
+		if err != nil {
+			writeDiagnostic(stderr, fmt.Errorf("read source map: %w", err))
+			return 1
+		}
+		resolver, err = parseSourceMap(input)
+		if err != nil {
+			writeDiagnostic(stderr, err)
+			return 1
+		}
+	default:
+		fmt.Fprintln(stderr, "argocdapp2helmfile: usage: argocdapp2helmfile [--source-map PATH]")
 		return 1
 	}
 
@@ -22,7 +36,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		writeDiagnostic(stderr, fmt.Errorf("read input: %w", err))
 		return 1
 	}
-	output, err := convert(input)
+	output, err := convertWithSourceMap(input, resolver)
 	if err != nil {
 		writeDiagnostic(stderr, err)
 		return 1

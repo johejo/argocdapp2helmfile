@@ -62,18 +62,35 @@ func TestConvertGitChart(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			chartPrefix := ""
+			if test.chartPath != "." {
+				chartPrefix = test.chartPath + "/"
+			}
+			root := newTestGitRepository(t, test.revision, map[string]string{
+				chartPrefix + "Chart.yaml":             "apiVersion: v2\nname: app\nversion: 1.0.0\n",
+				chartPrefix + "environments/prod.yaml": "replicaCount: 2\n",
+			})
+			resolver := testSourceResolver(t, testSource{
+				repoURL: test.repoURL, targetRevision: test.revision, env: "TEST_CHART_ROOT", root: root,
+			})
 			input := gitApplication(test.repoURL, test.chartPath, test.revision, `    helm:
       valueFiles: [environments/prod.yaml]
 `)
-			output, err := convert([]byte(input))
+			output, err := convertWithSourceMap([]byte(input), resolver)
 			if err != nil {
 				t.Fatal(err)
 			}
 			text := string(output)
+			expectedChart := test.chartPath
+			if expectedChart == "." {
+				expectedChart = ""
+			} else {
+				expectedChart = "/" + expectedChart
+			}
 			for _, want := range []string{
 				`# document 1 chart source: repoURL "` + test.repoURL + `", path "` + test.chartPath + `", targetRevision "` + test.revision + `"`,
-				`chart: '{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-1/chart'`,
-				`'{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-1/chart/environments/prod.yaml'`,
+				`chart: '{{ requiredEnv "TEST_CHART_ROOT" }}` + expectedChart + `'`,
+				`'{{ requiredEnv "TEST_CHART_ROOT" }}/` + chartPrefix + `environments/prod.yaml'`,
 			} {
 				if !strings.Contains(text, want) {
 					t.Errorf("output does not contain %q:\n%s", want, output)
@@ -89,9 +106,16 @@ func TestConvertGitChart(t *testing.T) {
 }
 
 func TestConvertGitChartDoesNotConsumeRepositoryAlias(t *testing.T) {
-	gitInput := gitApplication("git@github.com:example/charts.git", "charts/app", "main", "")
+	repoURL := "git@github.com:example/charts.git"
+	root := newTestGitRepository(t, "main", map[string]string{
+		"charts/app/Chart.yaml": "apiVersion: v2\nname: app\nversion: 1.0.0\n",
+	})
+	resolver := testSourceResolver(t, testSource{
+		repoURL: repoURL, targetRevision: "main", env: "TEST_CHART_ROOT", root: root,
+	})
+	gitInput := gitApplication(repoURL, "charts/app", "main", "")
 	httpInput := strings.Replace(minimalApplication(""), "name: app", "name: packaged", 1)
-	output, err := convert([]byte(gitInput + "---\n" + httpInput))
+	output, err := convertWithSourceMap([]byte(gitInput+"---\n"+httpInput), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}

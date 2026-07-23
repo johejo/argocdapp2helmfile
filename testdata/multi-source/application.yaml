@@ -9,7 +9,6 @@ spec:
       targetRevision: 1.2.3
       helm:
         valueFiles:
-          - defaults.yaml
           - $values/environments/prod.yaml
           - $secrets/team/values.yaml
     - repoURL: https://github.com/example/values.git
