@@ -7,13 +7,115 @@ import (
 
 func TestConvertExample(t *testing.T) {
 	input := readTestdata(t, "example/application.yaml")
-	output, err := convert([]byte(input))
+	config := testConfig(t, `destinations:
+  - server: https://kubernetes.default.svc
+    kubeContext: in-cluster
+`)
+	output, err := convertWithConfig([]byte(input), config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := readTestdata(t, "example/helmfile.yaml")
 	if string(output) != want {
 		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+	}
+}
+
+func TestConvertDestinationToKubeContext(t *testing.T) {
+	config := testConfig(t, `destinations:
+  - name: production
+    kubeContext: prod-admin
+  - server: https://example
+    kubeContext: example-admin
+`)
+	tests := []struct {
+		name        string
+		destination string
+		want        string
+	}{
+		{name: "name", destination: "    name: production\n", want: "prod-admin"},
+		{name: "server", destination: "    server: https://example\n", want: "example-admin"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := strings.Replace(
+				minimalApplication(""),
+				"spec:\n",
+				"spec:\n  destination:\n"+test.destination,
+				1,
+			)
+			output, err := convertWithConfig([]byte(input), config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(output), "    kubeContext: "+test.want+"\n") {
+				t.Fatalf("kubeContext was not emitted:\n%s", output)
+			}
+		})
+	}
+}
+
+func TestConvertDestinationFailsClosed(t *testing.T) {
+	withDestination := func(destination string) string {
+		return strings.Replace(
+			minimalApplication(""),
+			"spec:\n",
+			"spec:\n  destination:\n"+destination,
+			1,
+		)
+	}
+	tests := []struct {
+		name   string
+		input  string
+		config *conversionConfig
+		want   string
+	}{
+		{
+			name:  "config required",
+			input: withDestination("    name: production\n"),
+			want:  "document 1: spec.destination requires --config",
+		},
+		{
+			name:   "name not mapped",
+			input:  withDestination("    name: staging\n"),
+			config: testConfig(t, "destinations: []\n"),
+			want:   `document 1: spec.destination has no config destination entry for name "staging"`,
+		},
+		{
+			name:   "server not mapped",
+			input:  withDestination("    server: https://unknown\n"),
+			config: testConfig(t, "destinations: []\n"),
+			want:   `document 1: spec.destination has no config destination entry for server "https://unknown"`,
+		},
+		{
+			name:  "name and server",
+			input: withDestination("    name: production\n    server: https://example\n"),
+			want:  "document 1: spec.destination.name and spec.destination.server cannot both be set",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := convertWithConfig([]byte(test.input), test.config)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestConvertOmitsKubeContextWithoutDestinationSelector(t *testing.T) {
+	input := strings.Replace(
+		minimalApplication(""),
+		"spec:\n",
+		"spec:\n  destination:\n    namespace: default\n",
+		1,
+	)
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(output), "kubeContext:") {
+		t.Fatalf("kubeContext was emitted:\n%s", output)
 	}
 }
 

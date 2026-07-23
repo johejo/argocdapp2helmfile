@@ -6,6 +6,7 @@ helmDefaults:
 releases:
   - name: edge
     namespace: web
+    kubeContext: in-cluster
     chart: bitnami/nginx
     version: 18.2.4
     values:

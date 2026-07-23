@@ -20,16 +20,23 @@ const (
 )
 
 type configResource struct {
-	APIVersion    string               `yaml:"apiVersion"`
-	Kind          string               `yaml:"kind"`
-	Sources       []sourceConfigEntry  `yaml:"sources"`
-	ReleaseLabels []releaseLabelConfig `yaml:"releaseLabels"`
+	APIVersion    string                   `yaml:"apiVersion"`
+	Kind          string                   `yaml:"kind"`
+	Sources       []sourceConfigEntry      `yaml:"sources"`
+	Destinations  []destinationConfigEntry `yaml:"destinations"`
+	ReleaseLabels []releaseLabelConfig     `yaml:"releaseLabels"`
 }
 
 type sourceConfigEntry struct {
 	RepoURL        string `yaml:"repoURL"`
 	TargetRevision string `yaml:"targetRevision"`
 	Root           string `yaml:"root"`
+}
+
+type destinationConfigEntry struct {
+	Name        string `yaml:"name"`
+	Server      string `yaml:"server"`
+	KubeContext string `yaml:"kubeContext"`
 }
 
 type releaseLabelConfig struct {
@@ -50,6 +57,15 @@ type sourceResolver struct {
 	entries map[sourceKey]sourceConfigEntry
 }
 
+type destinationKey struct {
+	kind  string
+	value string
+}
+
+type destinationResolver struct {
+	entries map[destinationKey]destinationConfigEntry
+}
+
 type releaseLabelRule struct {
 	name string
 	code *gojq.Code
@@ -60,8 +76,9 @@ type releaseLabelProjector struct {
 }
 
 type conversionConfig struct {
-	sourceResolver *sourceResolver
-	labelProjector *releaseLabelProjector
+	sourceResolver      *sourceResolver
+	destinationResolver *destinationResolver
+	labelProjector      *releaseLabelProjector
 }
 
 func parseConfig(input []byte) (*conversionConfig, error) {
@@ -105,6 +122,29 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 		resolver.entries[key] = entry
 	}
 
+	destinationResolver := &destinationResolver{
+		entries: make(map[destinationKey]destinationConfigEntry, len(resource.Destinations)),
+	}
+	for i, entry := range resource.Destinations {
+		field := fmt.Sprintf("config destinations[%d]", i)
+		hasName := strings.TrimSpace(entry.Name) != ""
+		hasServer := strings.TrimSpace(entry.Server) != ""
+		if hasName == hasServer {
+			return nil, fmt.Errorf("%s must set exactly one of name or server", field)
+		}
+		if strings.TrimSpace(entry.KubeContext) == "" {
+			return nil, fmt.Errorf("%s.kubeContext is required", field)
+		}
+		key := destinationKey{kind: "name", value: entry.Name}
+		if hasServer {
+			key = destinationKey{kind: "server", value: entry.Server}
+		}
+		if _, exists := destinationResolver.entries[key]; exists {
+			return nil, fmt.Errorf("%s duplicates %s %q", field, key.kind, key.value)
+		}
+		destinationResolver.entries[key] = entry
+	}
+
 	projector := &releaseLabelProjector{
 		rules: make([]releaseLabelRule, 0, len(resource.ReleaseLabels)),
 	}
@@ -133,8 +173,9 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 	}
 
 	return &conversionConfig{
-		sourceResolver: resolver,
-		labelProjector: projector,
+		sourceResolver:      resolver,
+		destinationResolver: destinationResolver,
+		labelProjector:      projector,
 	}, nil
 }
 
@@ -151,6 +192,29 @@ func (resolver *sourceResolver) resolve(source applicationSource, field string) 
 		)
 	}
 	return mappedSource{root: entry.Root}, nil
+}
+
+func (resolver *destinationResolver) resolve(destination applicationDestination, field string) (string, error) {
+	hasName := strings.TrimSpace(destination.Name) != ""
+	hasServer := strings.TrimSpace(destination.Server) != ""
+	if hasName && hasServer {
+		return "", fmt.Errorf("%s.name and %s.server cannot both be set", field, field)
+	}
+	if !hasName && !hasServer {
+		return "", nil
+	}
+	if resolver == nil {
+		return "", fmt.Errorf("%s requires --config", field)
+	}
+	key := destinationKey{kind: "name", value: destination.Name}
+	if hasServer {
+		key = destinationKey{kind: "server", value: destination.Server}
+	}
+	entry, exists := resolver.entries[key]
+	if !exists {
+		return "", fmt.Errorf("%s has no config destination entry for %s %q", field, key.kind, key.value)
+	}
+	return entry.KubeContext, nil
 }
 
 func (projector *releaseLabelProjector) project(input any) (yaml.MapSlice, error) {

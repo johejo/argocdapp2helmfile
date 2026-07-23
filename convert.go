@@ -11,6 +11,12 @@ import (
 	"github.com/goccy/go-yaml/parser"
 )
 
+type applicationDestination struct {
+	Name      string `yaml:"name"`
+	Server    string `yaml:"server"`
+	Namespace string `yaml:"namespace"`
+}
+
 type application struct {
 	APIVersion string `yaml:"apiVersion"`
 	Kind       string `yaml:"kind"`
@@ -18,11 +24,9 @@ type application struct {
 		Name string `yaml:"name"`
 	} `yaml:"metadata"`
 	Spec struct {
-		Destination struct {
-			Namespace string `yaml:"namespace"`
-		} `yaml:"destination"`
-		Source  *applicationSource  `yaml:"source"`
-		Sources []applicationSource `yaml:"sources"`
+		Destination applicationDestination `yaml:"destination"`
+		Source      *applicationSource     `yaml:"source"`
+		Sources     []applicationSource    `yaml:"sources"`
 	} `yaml:"spec"`
 }
 
@@ -45,6 +49,7 @@ type repository struct {
 type release struct {
 	Name                 string         `yaml:"name"`
 	Namespace            string         `yaml:"namespace,omitempty"`
+	KubeContext          string         `yaml:"kubeContext,omitempty"`
 	Labels               yaml.MapSlice  `yaml:"labels,omitempty"`
 	Chart                any            `yaml:"chart"`
 	Version              string         `yaml:"version,omitempty"`
@@ -147,13 +152,20 @@ func convertWithConfig(input []byte, config *conversionConfig) ([]byte, error) {
 	var sharedSkipCRDs bool
 	var sharedSkipCRDsOrigin inputOrigin
 	var resolver *sourceResolver
+	var destinationResolver *destinationResolver
 	var projector *releaseLabelProjector
 	if config != nil {
 		resolver = config.sourceResolver
+		destinationResolver = config.destinationResolver
 		projector = config.labelProjector
 	}
 	for i, item := range applications {
-		converted, err := convertApplication(item.application, item.origin.document, resolver)
+		converted, err := convertApplication(
+			item.application,
+			item.origin.document,
+			resolver,
+			destinationResolver,
+		)
 		if err != nil {
 			return nil, item.origin.wrap(err)
 		}
@@ -231,7 +243,12 @@ type convertedApplication struct {
 	provenanceComments []string
 }
 
-func convertApplication(app application, documentNumber int, resolver *sourceResolver) (convertedApplication, error) {
+func convertApplication(
+	app application,
+	documentNumber int,
+	resolver *sourceResolver,
+	destinationResolver *destinationResolver,
+) (convertedApplication, error) {
 	var converted convertedApplication
 
 	if app.APIVersion != "argoproj.io/v1alpha1" {
@@ -242,6 +259,10 @@ func convertApplication(app application, documentNumber int, resolver *sourceRes
 	}
 	if strings.TrimSpace(app.Metadata.Name) == "" {
 		return converted, errors.New("metadata.name is required")
+	}
+	kubeContext, err := destinationResolver.resolve(app.Spec.Destination, "spec.destination")
+	if err != nil {
+		return converted, err
 	}
 	chartSource, chartSourceField, refs, provenance, err := resolveSources(app, documentNumber)
 	if err != nil {
@@ -358,6 +379,7 @@ func convertApplication(app application, documentNumber int, resolver *sourceRes
 		release: release{
 			Name:                 releaseName,
 			Namespace:            app.Spec.Destination.Namespace,
+			KubeContext:          kubeContext,
 			Values:               values,
 			Set:                  set,
 			SetString:            setString,

@@ -73,6 +73,87 @@ sources:
 	}
 }
 
+func TestConfigDestinationsResolveNameAndServer(t *testing.T) {
+	config := testConfig(t, `destinations:
+  - name: production
+    kubeContext: prod-admin
+  - server: https://example
+    kubeContext: example-admin
+`)
+	tests := []struct {
+		name        string
+		destination applicationDestination
+		want        string
+	}{
+		{
+			name:        "name",
+			destination: applicationDestination{Name: "production"},
+			want:        "prod-admin",
+		},
+		{
+			name:        "server",
+			destination: applicationDestination{Server: "https://example"},
+			want:        "example-admin",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := config.destinationResolver.resolve(test.destination, "spec.destination")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("resolve() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestParseConfigRejectsInvalidDestinations(t *testing.T) {
+	tests := map[string]string{
+		"missing selector": `destinations:
+  - kubeContext: admin
+`,
+		"name and server": `destinations:
+  - name: production
+    server: https://example
+    kubeContext: admin
+`,
+		"missing kube context": `destinations:
+  - name: production
+`,
+		"empty kube context": `destinations:
+  - name: production
+    kubeContext: " "
+`,
+		"duplicate name": `destinations:
+  - name: production
+    kubeContext: first
+  - name: production
+    kubeContext: second
+`,
+		"duplicate server": `destinations:
+  - server: https://example
+    kubeContext: first
+  - server: https://example
+    kubeContext: second
+`,
+		"unknown field": `destinations:
+  - name: production
+    kubeContext: admin
+    namespace: default
+`,
+	}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			input := "apiVersion: argocdapp2helmfile/v1alpha1\nkind: Config\n" + body
+			if _, err := parseConfig([]byte(input)); err == nil {
+				t.Fatal("parseConfig succeeded")
+			}
+		})
+	}
+}
+
 func TestJoinSourcePath(t *testing.T) {
 	for name, test := range map[string]struct {
 		root, relative, want string

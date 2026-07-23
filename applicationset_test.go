@@ -22,6 +22,67 @@ func TestConvertApplicationSetList(t *testing.T) {
 	}
 }
 
+func TestConvertApplicationSetResolvesPatchedDestination(t *testing.T) {
+	input := readTestdata(t, "applicationset/minimal/application.yaml")
+	input = strings.Replace(
+		input,
+		"      source:\n",
+		"      destination:\n        name: ignored\n      source:\n",
+		1,
+	)
+	input = strings.Replace(
+		input,
+		"  template:\n",
+		"  templatePatch: |\n    spec:\n      destination:\n        name: '{{ .name }}'\n  template:\n",
+		1,
+	)
+	config := testConfig(t, `destinations:
+  - name: app
+    kubeContext: generated-admin
+`)
+	output, err := convertWithConfig([]byte(input), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(output), "    kubeContext: generated-admin\n") {
+		t.Fatalf("patched destination was not resolved:\n%s", output)
+	}
+}
+
+func TestConvertApplicationSetDestinationErrorReportsOrigin(t *testing.T) {
+	input := readTestdata(t, "applicationset/minimal/application.yaml")
+	input = strings.Replace(
+		input,
+		"      source:\n",
+		"      destination:\n        name: production\n      source:\n",
+		1,
+	)
+	tests := []struct {
+		name   string
+		config *conversionConfig
+		want   string
+	}{
+		{
+			name: "config required",
+			want: "spec.destination requires --config",
+		},
+		{
+			name:   "destination not mapped",
+			config: testConfig(t, "destinations: []\n"),
+			want:   `spec.destination has no config destination entry for name "production"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := convertWithConfig([]byte(input), test.config)
+			prefix := "document 1: spec.generators[0].list.elements[0]: "
+			if err == nil || !strings.Contains(err.Error(), prefix+test.want) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestConvertApplicationSetGeneratorTemplateOverridesAndInherits(t *testing.T) {
 	input := readTestdata(t, "applicationset/generator-template/application.yaml")
 	output, err := convert([]byte(input))

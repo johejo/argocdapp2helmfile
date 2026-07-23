@@ -332,6 +332,10 @@ func TestConvertInlineScalar(t *testing.T) {
 
 func TestConvertRejectsInvalidInput(t *testing.T) {
 	exampleApplication := readTestdata(t, "example/application.yaml")
+	config := testConfig(t, `destinations:
+  - server: https://kubernetes.default.svc
+    kubeContext: in-cluster
+`)
 	tests := map[string]string{
 		"empty":                       "",
 		"invalid YAML":                "apiVersion: [",
@@ -364,7 +368,7 @@ func TestConvertRejectsInvalidInput(t *testing.T) {
 	}
 	for name, input := range tests {
 		t.Run(name, func(t *testing.T) {
-			if output, err := convert([]byte(input)); err == nil {
+			if output, err := convertWithConfig([]byte(input), config); err == nil {
 				t.Fatalf("convert succeeded with output:\n%s", output)
 			}
 		})

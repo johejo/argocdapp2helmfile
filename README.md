@@ -5,8 +5,7 @@
 It is an offline Unix filter: it reads a YAML stream from standard input,
 writes YAML to standard output, and never fetches charts or repositories.
 
-An optional config maps Git sources to paths available when helmfile runs and
-projects Application fields into release labels.
+An optional config maps Argo CD destinations to helmfile kube contexts, maps Git sources to paths available when helmfile runs, and projects Application fields into release labels.
 
 ## Quick start
 
@@ -15,7 +14,7 @@ go install github.com/johejo/argocdapp2helmfile@latest
 argocdapp2helmfile <application.yaml >helmfile.yaml
 ```
 
-Use `--config` for Git-hosted charts, external values repositories, or release labels:
+Use `--config` for destination kube contexts, Git-hosted charts, external values repositories, or release labels:
 
 ```sh
 argocdapp2helmfile --config config.yaml \
@@ -122,6 +121,7 @@ An Application must identify either:
 | `spec.source.helm.kubeVersion` | Release `kubeVersion` |
 | `spec.source.helm.apiVersions` | Release `apiVersions` |
 | `spec.source.helm.skipCrds` | Shared `helmDefaults.skipCRDs` |
+| `spec.destination.name` or `spec.destination.server` | Release `kubeContext` through Config `destinations` |
 | Config `releaseLabels` query result | Release `labels` entry |
 
 The required fields are `metadata.name`, the chart source's `repoURL` and
@@ -207,11 +207,16 @@ Strategic Merge Patch directives are not implemented: `$patch`, `$retainKeys`, `
 
 The optional config is exactly one YAML document.
 It uses a fixed API version and kind, and rejects unknown fields.
-This complete example shows both available features:
+This complete example shows all available features:
 
 ```yaml
 apiVersion: argocdapp2helmfile/v1alpha1
 kind: Config
+destinations:
+  - name: production
+    kubeContext: prod-admin
+  - server: https://kubernetes.default.svc
+    kubeContext: in-cluster
 sources:
   - repoURL: git@github.com:example/platform-charts.git
     targetRevision: release-1
@@ -226,8 +231,36 @@ releaseLabels:
     query: .spec.project
 ```
 
-Either `sources` or `releaseLabels` may be omitted.
-The config may be omitted when neither feature is needed.
+Any of `destinations`, `sources`, or `releaseLabels` may be omitted.
+The config may be omitted when none of these features is needed.
+
+### Destination kube contexts
+
+Each `destinations` item must contain exactly one non-empty `name` or `server` and a non-empty `kubeContext`.
+Entries match the corresponding literal `spec.destination.name` or `spec.destination.server` by exact string equality.
+The configured `kubeContext` is copied unchanged to the generated helmfile release; the converter does not read a kubeconfig or verify that the context exists.
+
+For example, this Application destination:
+
+```yaml
+destination:
+  name: production
+  namespace: web
+```
+
+uses the `production` entry above and produces:
+
+```yaml
+namespace: web
+kubeContext: prod-admin
+```
+
+Destination resolution is fail closed.
+If an Application sets `name` or `server`, `--config` is required and a matching entry must exist.
+Setting both `name` and `server` is rejected in both Config entries and Applications.
+Duplicate Config entries with the same selector type and value are also rejected.
+If both Application selector fields are empty, `kubeContext` is omitted for compatibility with inputs that do not identify a cluster.
+For an ApplicationSet, resolution happens after template rendering and `templatePatch` application.
 
 ### Git charts, external values, and paths
 
@@ -332,9 +365,7 @@ because it controls Argo CD's Helm invocation, not a helmfile release.
 - Empty YAML documents are rejected.
   Errors identify the one-based document number and, for ApplicationSets, the
   generator and element.
-- Argo CD operational fields such as `project`, `syncPolicy`, and destination
-  `server` or `name` are not converted.
-  Select the intended kube context when running helmfile.
+- Argo CD operational fields such as `project` and `syncPolicy` are not converted.
 
 The converter rejects:
 
@@ -346,6 +377,8 @@ The converter rejects:
 - remote URLs and Argo CD build-environment substitutions in `valueFiles` or
   `fileParameters`;
 - unsafe Git paths, refs, or paths that escape a configured source;
+- configured Application destinations without a matching Config entry;
+- Applications that set both destination `name` and `server`;
 - same-name file parameters and `forceString` parameters; and
 - non-empty Helm options not listed in the mapping, except ignored `skipTests`.
 
