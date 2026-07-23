@@ -1,9 +1,9 @@
 repositories:
-  - name: source
+  - name: bitnamicharts
     url: registry-1.docker.io/bitnamicharts
     oci: true
 releases:
   - name: nginx
     namespace: nginx
-    chart: source/nginx
+    chart: bitnamicharts/nginx
     version: 15.9.0

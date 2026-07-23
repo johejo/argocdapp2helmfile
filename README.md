@@ -67,12 +67,12 @@ Output:
 
 ```yaml
 repositories:
-  - name: source
+  - name: bitnami
     url: https://charts.bitnami.com/bitnami
 releases:
   - name: edge
     namespace: web
-    chart: source/nginx
+    chart: bitnami/nginx
     version: 18.2.4
     values:
       - service:
@@ -303,9 +303,13 @@ because it controls Argo CD's Helm invocation, not a helmfile release.
 
 ## Conversion behavior and constraints
 
-- Repository aliases are assigned in first-use order as `source`, `source-2`,
-  `source-3`, and so on.
+- Repository aliases use the final non-empty URL path element, normalized to
+  lowercase with unsafe character runs replaced by `-`.
+  Query strings, fragments, and trailing slashes are ignored.
+  An empty result falls back to `source`.
   Exact matching `repoURL` strings share an alias.
+  When aliases for different URLs collide, later aliases receive the first available numeric suffix
+  (`charts-2`, `charts-3`, and so on) within the generated Helmfile.
 - A release name defaults to `metadata.name` unless `helm.releaseName` is set.
   Resolved names must be unique across all namespaces and generated Applications.
 - `skipCrds` is per Application in Argo CD but `helmDefaults.skipCRDs` is shared.

@@ -1,12 +1,12 @@
 repositories:
-  - name: source
+  - name: charts
     url: https://example.com/charts
 releases:
   - name: dev-app
     namespace: dev
-    chart: source/frontend
+    chart: charts/frontend
     version: 1.2.3
   - name: qa-app
     namespace: qa
-    chart: source/worker
+    chart: charts/worker
     version: 4.5.6

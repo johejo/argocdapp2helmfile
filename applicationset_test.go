@@ -29,7 +29,7 @@ func TestConvertApplicationSetGeneratorTemplateOverridesAndInherits(t *testing.T
 	}
 	for _, want := range []string{
 		"    namespace: generated\n",
-		"    chart: source/chart\n",
+		"    chart: charts/chart\n",
 		"    version: 2.0.0\n",
 	} {
 		if !strings.Contains(string(output), want) {
@@ -68,7 +68,7 @@ func TestConvertApplicationSetTemplateFunctions(t *testing.T) {
 	}
 	for _, want := range []string{
 		"  - name: hello-wide\n",
-		"    chart: source/parsed\n",
+		"    chart: charts/parsed\n",
 	} {
 		if !strings.Contains(string(output), want) {
 			t.Errorf("output does not contain %q:\n%s", want, output)

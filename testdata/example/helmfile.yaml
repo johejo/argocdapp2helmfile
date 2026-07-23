@@ -1,12 +1,12 @@
 repositories:
-  - name: source
+  - name: bitnami
     url: https://charts.bitnami.com/bitnami
 helmDefaults:
   skipCRDs: true
 releases:
   - name: edge
     namespace: web
-    chart: source/nginx
+    chart: bitnami/nginx
     version: 18.2.4
     values:
       - service:

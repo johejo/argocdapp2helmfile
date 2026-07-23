@@ -102,7 +102,7 @@ func TestConvertGitChart(t *testing.T) {
 }
 
 func TestConvertGitChartDoesNotConsumeRepositoryAlias(t *testing.T) {
-	repoURL := "git@github.com:example/charts.git"
+	repoURL := "git@github.com:example/charts"
 	resolver := testSourceResolver(t, testSource{
 		repoURL: repoURL, targetRevision: "main", root: `{{ requiredEnv "TEST_CHART_ROOT" }}`,
 	})
@@ -113,9 +113,9 @@ func TestConvertGitChartDoesNotConsumeRepositoryAlias(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(output)
-	if !strings.Contains(text, "  - name: source\n    url: https://example.com/charts\n") ||
-		!strings.Contains(text, "  - name: packaged\n    chart: source/chart\n") {
-		t.Fatalf("HTTP repository did not retain the first alias:\n%s", output)
+	if !strings.Contains(text, "  - name: charts\n    url: https://example.com/charts\n") ||
+		!strings.Contains(text, "  - name: packaged\n    chart: charts/chart\n") {
+		t.Fatalf("Git repository consumed the HTTP repository alias:\n%s", output)
 	}
 }
 
@@ -164,13 +164,68 @@ func TestConvertSharesOnlyExactlyMatchingRepositories(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(output)
-	if strings.Count(text, "  - name: source\n") != 1 || strings.Count(text, "  - name: source-2\n") != 1 {
+	if strings.Count(text, "  - name: charts\n") != 1 || strings.Count(text, "  - name: charts-2\n") != 1 {
 		t.Fatalf("repositories were not deduplicated by exact URL:\n%s", output)
 	}
 	for _, want := range []string{
-		"    chart: source/chart\n",
-		"  - name: shared\n    chart: source/chart\n",
-		"  - name: distinct\n    chart: source-2/chart\n",
+		"    chart: charts/chart\n",
+		"  - name: shared\n    chart: charts/chart\n",
+		"  - name: distinct\n    chart: charts-2/chart\n",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output does not contain %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestRepositoryAlias(t *testing.T) {
+	tests := []struct {
+		name          string
+		repositoryURL string
+		want          string
+	}{
+		{name: "HTTP", repositoryURL: "https://charts.bitnami.com/bitnami", want: "bitnami"},
+		{name: "OCI", repositoryURL: "registry-1.docker.io/bitnamicharts", want: "bitnamicharts"},
+		{name: "trailing slash query and fragment", repositoryURL: "https://example.com/Stable_Charts/?channel=prod#readme", want: "stable-charts"},
+		{name: "unsafe and percent encoded characters", repositoryURL: "https://example.com/%E3%83%81%E3%83%A3%E3%83%BC%E3%83%88%20Repo!", want: "repo"},
+		{name: "encoded slash stays in final segment", repositoryURL: "https://example.com/team%2Fcharts", want: "team-charts"},
+		{name: "root URL", repositoryURL: "https://example.com/", want: "source"},
+		{name: "empty normalized segment", repositoryURL: "https://example.com/%E3%83%81%E3%83%A3%E3%83%BC%E3%83%88", want: "source"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := repositoryAlias(test.repositoryURL); got != test.want {
+				t.Fatalf("repositoryAlias(%q) = %q, want %q", test.repositoryURL, got, test.want)
+			}
+		})
+	}
+}
+
+func TestConvertRepositoryAliasCollisions(t *testing.T) {
+	app := func(name, repositoryURL string) string {
+		return strings.NewReplacer(
+			"name: app", "name: "+name,
+			"https://example.com/charts", repositoryURL,
+		).Replace(minimalApplication(""))
+	}
+	input := strings.Join([]string{
+		app("first", "https://one.example/charts"),
+		app("reserved", "https://two.example/charts-2"),
+		app("second", "https://three.example/charts"),
+	}, "---\n")
+
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(output)
+	for _, want := range []string{
+		"  - name: charts\n    url: https://one.example/charts\n",
+		"  - name: charts-2\n    url: https://two.example/charts-2\n",
+		"  - name: charts-3\n    url: https://three.example/charts\n",
+		"  - name: first\n    chart: charts/chart\n",
+		"  - name: reserved\n    chart: charts-2/chart\n",
+		"  - name: second\n    chart: charts-3/chart\n",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("output does not contain %q:\n%s", want, output)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -139,6 +140,7 @@ func convertWithConfig(input []byte, config *conversionConfig) ([]byte, error) {
 	result := helmfile{}
 	var provenanceComments []string
 	repositoryAliases := make(map[string]string)
+	usedRepositoryAliases := make(map[string]struct{})
 	releaseOrigins := make(map[string]inputOrigin)
 	var sharedSkipCRDs bool
 	var sharedSkipCRDsOrigin inputOrigin
@@ -194,8 +196,9 @@ func convertWithConfig(input []byte, config *conversionConfig) ([]byte, error) {
 		if converted.repository != nil {
 			alias, exists := repositoryAliases[converted.repository.URL]
 			if !exists {
-				alias = repositoryAlias(len(result.Repositories))
+				alias = uniqueRepositoryAlias(repositoryAlias(converted.repository.URL), usedRepositoryAliases)
 				repositoryAliases[converted.repository.URL] = alias
+				usedRepositoryAliases[alias] = struct{}{}
 				converted.repository.Name = alias
 				result.Repositories = append(result.Repositories, *converted.repository)
 			}
@@ -374,11 +377,62 @@ func convertApplication(app application, documentNumber int, resolver *sourceRes
 	return converted, nil
 }
 
-func repositoryAlias(index int) string {
-	if index == 0 {
+func repositoryAlias(repositoryURL string) string {
+	raw := repositoryURL
+	if !strings.Contains(raw, "://") {
+		raw = "//" + raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
 		return "source"
 	}
-	return fmt.Sprintf("source-%d", index+1)
+
+	var segment string
+	for escapedSegment := range strings.SplitSeq(parsed.EscapedPath(), "/") {
+		if escapedSegment == "" {
+			continue
+		}
+		decoded, err := url.PathUnescape(escapedSegment)
+		if err != nil {
+			continue
+		}
+		segment = decoded
+	}
+	alias := normalizeRepositoryAlias(segment)
+	if alias == "" {
+		return "source"
+	}
+	return alias
+}
+
+func normalizeRepositoryAlias(candidate string) string {
+	var normalized strings.Builder
+	previousInvalid := false
+	for _, char := range strings.ToLower(candidate) {
+		valid := char >= 'a' && char <= 'z' ||
+			char >= '0' && char <= '9' ||
+			char == '-' || char == '.'
+		if valid {
+			normalized.WriteRune(char)
+			previousInvalid = false
+		} else if !previousInvalid {
+			normalized.WriteByte('-')
+			previousInvalid = true
+		}
+	}
+	return strings.Trim(normalized.String(), "-.")
+}
+
+func uniqueRepositoryAlias(candidate string, used map[string]struct{}) string {
+	if _, exists := used[candidate]; !exists {
+		return candidate
+	}
+	for suffix := 2; ; suffix++ {
+		alias := fmt.Sprintf("%s-%d", candidate, suffix)
+		if _, exists := used[alias]; !exists {
+			return alias
+		}
+	}
 }
 
 func missingFileHandler(ignoreMissing bool) string {

@@ -24,7 +24,7 @@ func TestConvertDefaultsAndOmitsEmptyFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(output)
-	for _, want := range []string{"- name: app\n", "chart: source/chart\n", "version: 1.2.3\n"} {
+	for _, want := range []string{"- name: app\n", "chart: charts/chart\n", "version: 1.2.3\n"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("output does not contain %q:\n%s", want, text)
 		}
