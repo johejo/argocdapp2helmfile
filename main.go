@@ -118,54 +118,109 @@ func writeDiagnostic(stderr io.Writer, err error) {
 }
 
 func convert(input []byte) ([]byte, error) {
-	if err := requireSingleDocument(input, "input"); err != nil {
-		return nil, err
-	}
-	var app application
-	decoder := yaml.NewDecoder(bytes.NewReader(input), yaml.UseOrderedMap())
-	if err := decoder.Decode(&app); err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil, errors.New("input must contain exactly one YAML document")
-		}
-		return nil, fmt.Errorf("decode Application: %w", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return nil, fmt.Errorf("decode additional YAML document: %w", err)
-		}
-		return nil, errors.New("input must contain exactly one YAML document")
+	file, err := parser.ParseBytes(input, 0)
+	if err != nil {
+		return nil, fmt.Errorf("document %d: decode Application: %w", documentNumberForError(input, err), err)
 	}
 
+	result := helmfile{}
+	repositoryAliases := make(map[string]string)
+	releaseDocuments := make(map[string]int)
+	var sharedSkipCRDs bool
+	for i, document := range file.Docs {
+		documentNumber := i + 1
+		if document.Body == nil {
+			return nil, fmt.Errorf("document %d: document must contain an Application", documentNumber)
+		}
+
+		var app application
+		if err := yaml.NodeToValue(document.Body, &app, yaml.UseOrderedMap()); err != nil {
+			return nil, fmt.Errorf("document %d: decode Application: %w", documentNumber, err)
+		}
+		converted, err := convertApplication(app)
+		if err != nil {
+			return nil, fmt.Errorf("document %d: %w", documentNumber, err)
+		}
+
+		if previousDocument, exists := releaseDocuments[converted.release.Name]; exists {
+			return nil, fmt.Errorf(
+				"document %d: release name %q duplicates document %d",
+				documentNumber,
+				converted.release.Name,
+				previousDocument,
+			)
+		}
+		releaseDocuments[converted.release.Name] = documentNumber
+
+		if documentNumber == 1 {
+			sharedSkipCRDs = converted.skipCRDs
+		} else if converted.skipCRDs != sharedSkipCRDs {
+			return nil, fmt.Errorf("document %d: spec.source.helm.skipCrds conflicts with document 1", documentNumber)
+		}
+
+		alias, exists := repositoryAliases[converted.repository.URL]
+		if !exists {
+			alias = repositoryAlias(len(result.Repositories))
+			repositoryAliases[converted.repository.URL] = alias
+			converted.repository.Name = alias
+			result.Repositories = append(result.Repositories, converted.repository)
+		}
+		converted.release.Chart = alias + "/" + converted.chart
+		result.Releases = append(result.Releases, converted.release)
+	}
+	if len(file.Docs) == 0 {
+		return nil, errors.New("document 1: document must contain an Application")
+	}
+	if sharedSkipCRDs {
+		result.HelmDefaults = &helmDefaults{SkipCRDs: true}
+	}
+
+	var output bytes.Buffer
+	if err := yaml.NewEncoder(&output, yaml.Indent(2), yaml.IndentSequence(true)).Encode(result); err != nil {
+		return nil, fmt.Errorf("encode helmfile: %w", err)
+	}
+	return output.Bytes(), nil
+}
+
+type convertedApplication struct {
+	repository repository
+	release    release
+	chart      string
+	skipCRDs   bool
+}
+
+func convertApplication(app application) (convertedApplication, error) {
+	var converted convertedApplication
+
 	if app.APIVersion != "argoproj.io/v1alpha1" {
-		return nil, fmt.Errorf("apiVersion must be %q", "argoproj.io/v1alpha1")
+		return converted, fmt.Errorf("apiVersion must be %q", "argoproj.io/v1alpha1")
 	}
 	if app.Kind != "Application" {
-		return nil, errors.New("kind must be \"Application\"")
+		return converted, errors.New("kind must be \"Application\"")
 	}
 	if strings.TrimSpace(app.Metadata.Name) == "" {
-		return nil, errors.New("metadata.name is required")
+		return converted, errors.New("metadata.name is required")
 	}
 	if app.Spec.Sources != nil {
-		return nil, errors.New("spec.sources is not supported")
+		return converted, errors.New("spec.sources is not supported")
 	}
 	if strings.TrimSpace(app.Spec.Source.Path) != "" {
-		return nil, errors.New("spec.source.path is not supported")
+		return converted, errors.New("spec.source.path is not supported")
 	}
 	oci, err := classifyRepositoryURL(app.Spec.Source.RepoURL)
 	if err != nil {
-		return nil, err
+		return converted, err
 	}
 	if strings.TrimSpace(app.Spec.Source.Chart) == "" {
-		return nil, errors.New("spec.source.chart is required")
+		return converted, errors.New("spec.source.chart is required")
 	}
 	if strings.TrimSpace(app.Spec.Source.TargetRevision) == "" {
-		return nil, errors.New("spec.source.targetRevision is required")
+		return converted, errors.New("spec.source.targetRevision is required")
 	}
 
 	helm, err := parseHelmOptions(app.Spec.Source.Helm)
 	if err != nil {
-		return nil, err
+		return converted, err
 	}
 	releaseName := helm.releaseName
 	if releaseName == "" {
@@ -189,28 +244,62 @@ func convert(input []byte) ([]byte, error) {
 		}
 	}
 
-	result := helmfile{
-		Repositories: []repository{{Name: "source", URL: app.Spec.Source.RepoURL, OCI: oci}},
-		Releases: []release{{
+	converted = convertedApplication{
+		repository: repository{URL: app.Spec.Source.RepoURL, OCI: oci},
+		chart:      app.Spec.Source.Chart,
+		skipCRDs:   helm.skipCRDs,
+		release: release{
 			Name:                 releaseName,
 			Namespace:            app.Spec.Destination.Namespace,
-			Chart:                "source/" + app.Spec.Source.Chart,
 			Version:              app.Spec.Source.TargetRevision,
 			Values:               values,
 			Set:                  set,
 			SetString:            setString,
 			SkipSchemaValidation: helm.skipSchemaValidation,
-		}},
+		},
 	}
-	if helm.skipCRDs {
-		result.HelmDefaults = &helmDefaults{SkipCRDs: true}
-	}
+	return converted, nil
+}
 
-	var output bytes.Buffer
-	if err := yaml.NewEncoder(&output, yaml.Indent(2), yaml.IndentSequence(true)).Encode(result); err != nil {
-		return nil, fmt.Errorf("encode helmfile: %w", err)
+func repositoryAlias(index int) string {
+	if index == 0 {
+		return "source"
 	}
-	return output.Bytes(), nil
+	return fmt.Sprintf("source-%d", index+1)
+}
+
+func documentNumberForError(input []byte, err error) int {
+	var yamlError yaml.Error
+	if !errors.As(err, &yamlError) || yamlError.GetToken() == nil {
+		return 1
+	}
+	targetLine := yamlError.GetToken().Position.Line
+	lines := strings.Split(string(input), "\n")
+	documentHeaders := 0
+	contentBeforeFirstHeader := false
+	for lineNumber, line := range lines {
+		if lineNumber+1 > targetLine {
+			break
+		}
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(line, "---") {
+			remainder := strings.TrimSpace(strings.TrimPrefix(line, "---"))
+			if remainder == "" || strings.HasPrefix(remainder, "#") {
+				documentHeaders++
+				continue
+			}
+		}
+		if documentHeaders == 0 && trimmed != "" && !strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "%") {
+			contentBeforeFirstHeader = true
+		}
+	}
+	if documentHeaders == 0 {
+		return 1
+	}
+	if contentBeforeFirstHeader {
+		return documentHeaders + 1
+	}
+	return documentHeaders
 }
 
 func classifyRepositoryURL(raw string) (bool, error) {

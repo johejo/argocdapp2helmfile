@@ -1,8 +1,8 @@
 # argocdapp2helmfile
 
-`argocdapp2helmfile` converts a single Argo CD `Application` that deploys a
-Helm chart into a single-release helmfile. It is intended to be a small,
-offline Unix filter: it reads YAML from standard input, writes YAML to standard
+`argocdapp2helmfile` converts one or more Argo CD `Application` resources that
+deploy Helm charts into one helmfile. It is intended to be a small, offline
+Unix filter: it reads a YAML stream from standard input, writes YAML to standard
 output, and does not fetch charts or repositories.
 
 ## Usage
@@ -80,8 +80,11 @@ releases:
     skipSchemaValidation: true
 ```
 
-The repository alias is always `source`. If `helm.releaseName` is absent, the
-release name defaults to `metadata.name`.
+Repository aliases are assigned in first-use order as `source`, `source-2`,
+`source-3`, and so on. Applications whose `repoURL` strings match exactly share
+one repository entry and alias. If `helm.releaseName` is absent, the release
+name defaults to `metadata.name`. Resolved release names must be unique across
+the entire generated helmfile, including releases in different namespaces.
 
 OCI Helm repositories use the scheme-less form accepted by Argo CD. For
 example, this source:
@@ -107,11 +110,48 @@ releases:
     version: 15.9.0
 ```
 
+## Multiple Applications
+
+Separate Applications with YAML document markers to aggregate them. Releases
+retain document order in the generated helmfile:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: frontend
+spec:
+  source:
+    repoURL: https://example.com/charts
+    chart: frontend
+    targetRevision: 1.2.3
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backend
+spec:
+  source:
+    repoURL: https://example.com/charts
+    chart: backend
+    targetRevision: 4.5.6
+```
+
+Every YAML document must contain exactly one supported `Application`; empty
+documents are rejected. A failure in any document produces no helmfile output.
+Diagnostics for document-specific failures include a one-based document number.
+
+Argo CD exposes `skipCrds` per Application, while helmfile exposes the matching
+`skipCRDs` setting under the shared top-level `helmDefaults`. Consequently, all
+Applications must have the same effective `skipCrds` value, with an absent value
+treated as `false`. Conflicting values are rejected. Generated files containing
+`helmDefaults.skipCRDs` require helmfile v1.3.0 or newer.
+
 ## Supported mapping
 
-The initial version accepts exactly one YAML document containing one
-`argoproj.io/v1alpha1` `Application`. Its source must use `spec.source.chart`
-and either an HTTP(S) Helm repository or a scheme-less OCI Helm repository.
+Each input document must contain one `argoproj.io/v1alpha1` `Application`. Its
+source must use `spec.source.chart` and either an HTTP(S) Helm repository or a
+scheme-less OCI Helm repository.
 
 | Argo CD Application | helmfile |
 | --- | --- |
@@ -131,10 +171,6 @@ For each parameter, `name` and the string `value` are preserved. Parameters
 with `forceString: true` are emitted under `setString`; all other parameters
 are emitted under `set`.
 
-`skipCrds` is a release option in an Argo CD Application, but helmfile exposes
-the corresponding `skipCRDs` setting under the top-level `helmDefaults`.
-Generated files containing this setting require helmfile v1.3.0 or newer.
-
 Values retain Argo CD's precedence: chart defaults, `values`, `valuesObject`,
 then `parameters`, from lowest to highest precedence. The generated entries are
 ordered so that helmfile applies the same precedence.
@@ -146,9 +182,9 @@ also not converted: select the intended kube context when running helmfile.
 
 ## Current limitations
 
-The initial version rejects inputs that require any of the following:
+The converter rejects inputs that require any of the following:
 
-- multiple YAML documents, multiple Applications, `List`, or `ApplicationSet`;
+- `List` or `ApplicationSet` resources;
 - Git-hosted charts selected with `spec.source.path`;
 - multi-source Applications using `spec.sources`;
 - `valueFiles` or `fileParameters`; or
@@ -173,11 +209,7 @@ and error behavior are established. This is not a committed roadmap:
 - commonly used Helm options such as `fileParameters`,
   `ignoreMissingValueFiles`, and `skipTests`;
 - multi-source Applications and cross-repository `$values` references; and
-- aggregating multiple Applications into one helmfile.
-
-When support for multiple releases is added, their `skipCrds` values must
-agree before being promoted to the shared `helmDefaults.skipCRDs` setting.
-Conflicting values must be rejected rather than producing a lossy conversion.
+- accepting `List` resources as an alternative batch input format.
 
 Supporting `valueFiles` is not just a matter of copying the path. Argo CD can
 resolve a relative values path inside a fetched chart, whereas helmfile usually
