@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: false-value
+spec:
+  source:
+    repoURL: https://example.com/charts
+    chart: chart
+    targetRevision: 1.2.3
+    helm:
+      values: "false"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: zero-value
+spec:
+  source:
+    repoURL: https://example.com/charts
+    chart: chart
+    targetRevision: 1.2.3
+    helm:
+      values: "0"

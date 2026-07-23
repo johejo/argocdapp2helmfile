@@ -77,7 +77,7 @@ func resolveSources(app application, documentNumber int) (applicationSource, str
 		if strings.TrimSpace(source.Path) != "" {
 			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.path would generate manifests and is not supported", field)
 		}
-		if !isEmpty(source.Helm) {
+		if !isNilOrEmptyCollection(source.Helm) {
 			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.helm is only supported on the Helm chart source", field)
 		}
 		if source.Directory != nil || source.Kustomize != nil || source.Plugin != nil {

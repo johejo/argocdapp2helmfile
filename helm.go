@@ -47,7 +47,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 		}
 		switch key {
 		case "releaseName":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			value, ok := item.Value.(string)
@@ -56,7 +56,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 			}
 			result.releaseName = value
 		case "namespace":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			value, ok := item.Value.(string)
@@ -65,7 +65,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 			}
 			result.namespace = value
 		case "kubeVersion":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			value, ok := item.Value.(string)
@@ -74,7 +74,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 			}
 			result.kubeVersion = value
 		case "apiVersions":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			sequence, ok := item.Value.([]any)
@@ -90,7 +90,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 				result.apiVersions = append(result.apiVersions, apiVersion)
 			}
 		case "valueFiles":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			sequence, ok := item.Value.([]any)
@@ -106,7 +106,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 				result.valueFiles = append(result.valueFiles, valueFile)
 			}
 		case "values":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			inline, ok := item.Value.(string)
@@ -121,7 +121,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 		case "valuesObject":
 			result.valuesObject = item.Value
 		case "parameters":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			parameters, err := parseParameters(item.Value, field+".parameters")
@@ -130,7 +130,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 			}
 			result.parameters = parameters
 		case "fileParameters":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			fileParameters, err := parseFileParameters(item.Value, field+".fileParameters")
@@ -139,7 +139,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 			}
 			result.fileParameters = fileParameters
 		case "ignoreMissingValueFiles":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			value, ok := item.Value.(bool)
@@ -148,7 +148,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 			}
 			result.ignoreMissingValues = value
 		case "skipSchemaValidation":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			value, ok := item.Value.(bool)
@@ -157,7 +157,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 			}
 			result.skipSchemaValidation = value
 		case "skipCrds":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			value, ok := item.Value.(bool)
@@ -176,7 +176,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 			// release definition represented by the generated helmfile.
 			continue
 		default:
-			if !isEmpty(item.Value) {
+			if !isIgnorableEmptyYAMLOption(item.Value) {
 				return result, fmt.Errorf("%s.%s is not supported", field, key)
 			}
 		}
@@ -259,7 +259,7 @@ func parseParameters(value any, field string) ([]helmParameter, error) {
 				}
 				parameter.ForceString = forceString
 			default:
-				if !isEmpty(item.Value) {
+				if !isIgnorableEmptyYAMLOption(item.Value) {
 					return nil, fmt.Errorf("%s[%d].%s is not supported", field, i, key)
 				}
 			}
@@ -308,7 +308,7 @@ func parseFileParameters(value any, field string) ([]helmFileParameter, error) {
 				parameter.Path = parameterPath
 				hasPath = true
 			default:
-				if !isEmpty(item.Value) {
+				if !isIgnorableEmptyYAMLOption(item.Value) {
 					return nil, fmt.Errorf("%s[%d].%s is not supported", field, i, key)
 				}
 			}
@@ -324,25 +324,21 @@ func parseFileParameters(value any, field string) ([]helmFileParameter, error) {
 	return parameters, nil
 }
 
-func isEmpty(value any) bool {
+func isNilOrEmptyCollection(value any) bool {
 	if value == nil {
 		return true
 	}
-	if ordered, ok := value.(yaml.MapSlice); ok {
-		return len(ordered) == 0
-	}
 	v := reflect.ValueOf(value)
 	switch v.Kind() {
-	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+	case reflect.Array, reflect.Map, reflect.Slice:
 		return v.Len() == 0
-	case reflect.Bool:
-		return !v.Bool()
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return v.Int() == 0
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return v.Uint() == 0
-	case reflect.Float32, reflect.Float64:
-		return v.Float() == 0
 	}
 	return false
+}
+
+func isIgnorableEmptyYAMLOption(value any) bool {
+	if text, ok := value.(string); ok {
+		return text == ""
+	}
+	return isNilOrEmptyCollection(value)
 }

@@ -358,10 +358,10 @@ func convertApplication(
 	if err != nil {
 		return converted, fmt.Errorf("%s.helm.%w", chartSourceField, err)
 	}
-	if !isEmpty(helm.values) {
+	if !isNilOrEmptyCollection(helm.values) {
 		values = append(values, helm.values)
 	}
-	if !isEmpty(helm.valuesObject) {
+	if !isNilOrEmptyCollection(helm.valuesObject) {
 		values = append(values, helm.valuesObject)
 	}
 	set := make([]setParameter, 0, len(helm.parameters)+len(helm.fileParameters))

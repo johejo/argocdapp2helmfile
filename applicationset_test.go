@@ -445,6 +445,73 @@ func TestApplicationSetTemplatePatchMergeSemantics(t *testing.T) {
 	}
 }
 
+func TestMergeTemplatePreservesScalarOverrides(t *testing.T) {
+	override := yaml.MapSlice{
+		{Key: "false", Value: false},
+		{Key: "zero", Value: 0},
+		{Key: "emptyString", Value: ""},
+		{Key: "nil", Value: nil},
+		{Key: "emptySequence", Value: []any{}},
+	}
+	base := yaml.MapSlice{
+		{Key: "false", Value: true},
+		{Key: "zero", Value: 1},
+		{Key: "emptyString", Value: "base"},
+		{Key: "nil", Value: "base"},
+		{Key: "emptySequence", Value: []any{"base"}},
+	}
+	got := mergeTemplate(override, base)
+	want := yaml.MapSlice{
+		{Key: "false", Value: false},
+		{Key: "zero", Value: 0},
+		{Key: "emptyString", Value: ""},
+		{Key: "nil", Value: "base"},
+		{Key: "emptySequence", Value: []any{"base"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected merge:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestListOptionsRejectFalseAndZeroForTypedFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value any
+		want  string
+	}{
+		{
+			name:  "false elements",
+			key:   "elements",
+			value: false,
+			want:  "list.elements must be a sequence",
+		},
+		{
+			name:  "zero elementsYaml",
+			key:   "elementsYaml",
+			value: 0,
+			want:  "list.elementsYaml must be a string",
+		},
+		{
+			name:  "false template",
+			key:   "template",
+			value: false,
+			want:  "list.template must be a mapping",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := parseListOptions(
+				yaml.MapSlice{{Key: test.key, Value: test.value}},
+				"list",
+			)
+			if err == nil || err.Error() != test.want {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestConvertApplicationSetTemplatePatchPreservesProject(t *testing.T) {
 	config := testConfig(t, `releaseLabels:
   - name: project

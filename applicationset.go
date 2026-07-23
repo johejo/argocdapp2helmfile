@@ -207,7 +207,7 @@ func parseListOptions(items yaml.MapSlice, field string) (listGenerator, error) 
 		}
 		switch key {
 		case "elements":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			elements, ok := item.Value.([]any)
@@ -216,7 +216,7 @@ func parseListOptions(items yaml.MapSlice, field string) (listGenerator, error) 
 			}
 			result.elements = elements
 		case "elementsYaml":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			value, ok := item.Value.(string)
@@ -225,7 +225,7 @@ func parseListOptions(items yaml.MapSlice, field string) (listGenerator, error) 
 			}
 			result.elementsYAML = value
 		case "template":
-			if isEmpty(item.Value) {
+			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
 			value, ok := item.Value.(yaml.MapSlice)
@@ -327,7 +327,7 @@ func mergeTemplate(override, base yaml.MapSlice) yaml.MapSlice {
 		baseMap, baseOK := baseItem.Value.(yaml.MapSlice)
 		if overrideOK && baseOK {
 			result[index].Value = mergeTemplate(overrideMap, baseMap)
-		} else if isEmpty(result[index].Value) {
+		} else if isNilOrEmptyCollection(result[index].Value) {
 			result[index].Value = cloneValue(baseItem.Value)
 		}
 	}

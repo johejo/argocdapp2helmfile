@@ -423,7 +423,9 @@ The converter rejects:
   except ignored `skipTests` and `version`.
 
 Unsupported inputs fail instead of producing an incomplete helmfile.
-Empty unsupported Helm options are ignored.
+Unsupported Helm options are ignored only when their value is null, an empty string,
+an empty sequence, or an empty mapping.
+Boolean `false` and numeric zero are values rather than empty input, so they are rejected.
 
 For upstream behavior, see also
 

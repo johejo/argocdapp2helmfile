@@ -202,6 +202,102 @@ func TestConvertRejectsNonBooleanPassCredentials(t *testing.T) {
 	}
 }
 
+func TestConvertRejectsZeroSkipCRDs(t *testing.T) {
+	input := readTestdata(t, "helm-options/non-boolean-zero/application.yaml")
+	_, err := convert([]byte(input))
+	if err == nil ||
+		err.Error() != "document 1: spec.source.helm.skipCrds must be a boolean" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConvertPreservesFalseAndZeroInlineValues(t *testing.T) {
+	input := readTestdata(t, "helm-options/scalar-values/application.yaml")
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"  - name: false-value\n    chart: charts/chart\n    version: 1.2.3\n" +
+			"    values:\n      - false\n",
+		"  - name: zero-value\n    chart: charts/chart\n    version: 1.2.3\n" +
+			"    values:\n      - 0\n",
+	} {
+		if !strings.Contains(string(output), want) {
+			t.Errorf("output does not contain %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestHelmBooleanOptionsAcceptFalseAndRejectZero(t *testing.T) {
+	for _, option := range []string{
+		"ignoreMissingValueFiles",
+		"skipSchemaValidation",
+		"skipCrds",
+	} {
+		t.Run(option, func(t *testing.T) {
+			if _, err := parseHelmOptions(
+				yaml.MapSlice{{Key: option, Value: false}},
+				"helm",
+			); err != nil {
+				t.Fatalf("false was rejected: %v", err)
+			}
+			_, err := parseHelmOptions(yaml.MapSlice{{Key: option, Value: 0}}, "helm")
+			want := "helm." + option + " must be a boolean"
+			if err == nil || err.Error() != want {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestUnsupportedHelmOptionsIgnoreOnlyEmptyValues(t *testing.T) {
+	for _, value := range []any{nil, "", []any{}, yaml.MapSlice{}} {
+		if _, err := parseHelmOptions(
+			yaml.MapSlice{{Key: "unsupported", Value: value}},
+			"helm",
+		); err != nil {
+			t.Errorf("empty value %#v was rejected: %v", value, err)
+		}
+	}
+	for _, value := range []any{false, 0} {
+		_, err := parseHelmOptions(
+			yaml.MapSlice{{Key: "unsupported", Value: value}},
+			"helm",
+		)
+		if err == nil || err.Error() != "helm.unsupported is not supported" {
+			t.Errorf("unexpected error for %#v: %v", value, err)
+		}
+	}
+}
+
+func TestYAMLEmptyValueClassifications(t *testing.T) {
+	tests := []struct {
+		name                 string
+		value                any
+		nilOrEmptyCollection bool
+		ignorableOption      bool
+	}{
+		{name: "nil", nilOrEmptyCollection: true, ignorableOption: true},
+		{name: "empty string", value: "", ignorableOption: true},
+		{name: "empty sequence", value: []any{}, nilOrEmptyCollection: true, ignorableOption: true},
+		{name: "empty mapping", value: yaml.MapSlice{}, nilOrEmptyCollection: true, ignorableOption: true},
+		{name: "false", value: false},
+		{name: "integer zero", value: 0},
+		{name: "float zero", value: 0.0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isNilOrEmptyCollection(test.value); got != test.nilOrEmptyCollection {
+				t.Errorf("isNilOrEmptyCollection() = %v, want %v", got, test.nilOrEmptyCollection)
+			}
+			if got := isIgnorableEmptyYAMLOption(test.value); got != test.ignorableOption {
+				t.Errorf("isIgnorableEmptyYAMLOption() = %v, want %v", got, test.ignorableOption)
+			}
+		})
+	}
+}
+
 func TestConvertIgnoresSkipTestsRegardlessOfValue(t *testing.T) {
 	baseline, err := convert([]byte(minimalApplication("")))
 	if err != nil {
