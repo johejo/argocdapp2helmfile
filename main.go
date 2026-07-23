@@ -52,19 +52,25 @@ type release struct {
 	Version   string         `yaml:"version"`
 	Values    []any          `yaml:"values,omitempty"`
 	Set       []setParameter `yaml:"set,omitempty"`
+	SetString []setParameter `yaml:"setString,omitempty"`
 }
 
 type setParameter struct {
-	Name        string `yaml:"name"`
-	Value       string `yaml:"value"`
-	ForceString bool   `yaml:"forceString,omitempty"`
+	Name  string `yaml:"name"`
+	Value string `yaml:"value"`
+}
+
+type helmParameter struct {
+	Name        string
+	Value       string
+	ForceString bool
 }
 
 type helmOptions struct {
 	releaseName  string
 	values       any
 	valuesObject any
-	parameters   []setParameter
+	parameters   []helmParameter
 }
 
 func main() {
@@ -161,6 +167,16 @@ func convert(input []byte) ([]byte, error) {
 	if !isEmpty(helm.valuesObject) {
 		values = append(values, helm.valuesObject)
 	}
+	set := make([]setParameter, 0, len(helm.parameters))
+	setString := make([]setParameter, 0, len(helm.parameters))
+	for _, parameter := range helm.parameters {
+		outputParameter := setParameter{Name: parameter.Name, Value: parameter.Value}
+		if parameter.ForceString {
+			setString = append(setString, outputParameter)
+		} else {
+			set = append(set, outputParameter)
+		}
+	}
 
 	result := helmfile{
 		Repositories: []repository{{Name: "source", URL: app.Spec.Source.RepoURL}},
@@ -170,7 +186,8 @@ func convert(input []byte) ([]byte, error) {
 			Chart:     "source/" + app.Spec.Source.Chart,
 			Version:   app.Spec.Source.TargetRevision,
 			Values:    values,
-			Set:       helm.parameters,
+			Set:       set,
+			SetString: setString,
 		}},
 	}
 
@@ -275,18 +292,18 @@ func requireSingleDocument(input []byte, field string) error {
 	return nil
 }
 
-func parseParameters(value any) ([]setParameter, error) {
+func parseParameters(value any) ([]helmParameter, error) {
 	sequence, ok := value.([]any)
 	if !ok {
 		return nil, errors.New("spec.source.helm.parameters must be a sequence")
 	}
-	parameters := make([]setParameter, 0, len(sequence))
+	parameters := make([]helmParameter, 0, len(sequence))
 	for i, raw := range sequence {
 		items, ok := raw.(yaml.MapSlice)
 		if !ok {
 			return nil, fmt.Errorf("spec.source.helm.parameters[%d] must be a mapping", i)
 		}
-		var parameter setParameter
+		var parameter helmParameter
 		var hasValue bool
 		for _, item := range items {
 			key, ok := item.Key.(string)

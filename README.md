@@ -45,6 +45,9 @@ spec:
       parameters:
         - name: replicaCount
           value: "2"
+        - name: image.tag
+          value: "001"
+          forceString: true
 ```
 
 `argocdapp2helmfile` produces:
@@ -67,6 +70,9 @@ releases:
     set:
       - name: replicaCount
         value: "2"
+    setString:
+      - name: image.tag
+        value: "001"
 ```
 
 The repository alias is always `source`. If `helm.releaseName` is absent, the
@@ -88,10 +94,11 @@ and an HTTP or HTTPS Helm repository.
 | `spec.source.targetRevision` | Release `version` |
 | `spec.source.helm.values` | Parsed inline `values` entry |
 | `spec.source.helm.valuesObject` | Inline `values` entry |
-| `spec.source.helm.parameters` | Release `set` entries |
+| `spec.source.helm.parameters` | Release `set` or `setString` entries |
 
-For each parameter, `name` and the string `value` are preserved. A true
-`forceString` is emitted as `forceString: true`; false is omitted.
+For each parameter, `name` and the string `value` are preserved. Parameters
+with `forceString: true` are emitted under `setString`; all other parameters
+are emitted under `set`.
 
 Values retain Argo CD's precedence: chart defaults, `values`, `valuesObject`,
 then `parameters`, from lowest to highest precedence. The generated entries are

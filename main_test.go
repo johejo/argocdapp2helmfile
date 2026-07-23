@@ -81,7 +81,7 @@ func TestConvertDefaultsAndOmitsEmptyFields(t *testing.T) {
 			t.Errorf("output does not contain %q:\n%s", want, text)
 		}
 	}
-	for _, omitted := range []string{"namespace:", "values:", "set:", "forceString:"} {
+	for _, omitted := range []string{"namespace:", "values:", "set:", "setString:", "forceString:"} {
 		if strings.Contains(text, omitted) {
 			t.Errorf("output unexpectedly contains %q:\n%s", omitted, text)
 		}
@@ -132,23 +132,78 @@ func TestConvertParameters(t *testing.T) {
         - name: replicaCount
           value: "3"
           forceString: false
+        - name: service.port
+          value: "8080"
+        - name: image.digest
+          value: sha256:abc
+          forceString: true
 `)
 	output, err := convert([]byte(input))
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := `    set:
-      - name: image.tag
-        value: "001"
-        forceString: true
       - name: replicaCount
         value: "3"
+      - name: service.port
+        value: "8080"
+    setString:
+      - name: image.tag
+        value: "001"
+      - name: image.digest
+        value: sha256:abc
 `
 	if !strings.Contains(string(output), want) {
-		t.Fatalf("parameters not preserved:\n%s", output)
+		t.Fatalf("parameters not partitioned into set and setString:\n%s", output)
 	}
-	if strings.Count(string(output), "forceString:") != 1 {
-		t.Fatalf("false forceString was not omitted:\n%s", output)
+	if strings.Contains(string(output), "forceString:") {
+		t.Fatalf("forceString was emitted:\n%s", output)
+	}
+}
+
+func TestConvertOmitsEmptyParameterGroups(t *testing.T) {
+	tests := []struct {
+		name    string
+		helm    string
+		present string
+		absent  string
+	}{
+		{
+			name: "set only",
+			helm: `    helm:
+      parameters:
+        - name: replicaCount
+          value: "3"
+`,
+			present: "    set:\n",
+			absent:  "    setString:\n",
+		},
+		{
+			name: "setString only",
+			helm: `    helm:
+      parameters:
+        - name: image.tag
+          value: "001"
+          forceString: true
+`,
+			present: "    setString:\n",
+			absent:  "    set:\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := minimalApplication(test.helm)
+			output, err := convert([]byte(input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(output), test.present) {
+				t.Fatalf("output does not contain %q:\n%s", test.present, output)
+			}
+			if strings.Contains(string(output), test.absent) {
+				t.Fatalf("output unexpectedly contains %q:\n%s", test.absent, output)
+			}
+		})
 	}
 }
 
@@ -187,6 +242,7 @@ func TestConvertRejectsInvalidInput(t *testing.T) {
 		"multi-doc values":         strings.Replace(exampleApplication, "        service:\n          type: ClusterIP", "        one: 1\n        ---\n        two: 2", 1),
 		"trailing values document": strings.Replace(exampleApplication, "        service:\n          type: ClusterIP", "        one: 1\n        ---", 1),
 		"non-string parameter":     strings.Replace(exampleApplication, "value: \"2\"", "value: 2", 1),
+		"non-boolean forceString":  strings.Replace(exampleApplication, "value: \"2\"", "value: \"2\"\n          forceString: yes", 1),
 	}
 	for name, input := range tests {
 		t.Run(name, func(t *testing.T) {
