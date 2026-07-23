@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - name: app
+        template:
+          spec:
+            destination:
+              namespace: generated
+            source:
+              targetRevision: 2.0.0
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        namespace: default
+      source:
+        repoURL: https://example.com/charts
+        chart: chart
+        targetRevision: 1.0.0

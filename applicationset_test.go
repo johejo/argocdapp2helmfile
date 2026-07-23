@@ -9,99 +9,19 @@ import (
 )
 
 func TestConvertApplicationSetList(t *testing.T) {
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apps
-spec:
-  goTemplate: true
-  goTemplateOptions: [missingkey=error]
-  generators:
-    - list:
-        elements:
-          - name: Dev_App
-            chart: frontend
-            version: 1.2.3
-            enabled: "true"
-            target:
-              namespace: dev
-          - name: ignored
-            chart: ignored
-            version: 0.0.0
-            enabled: "false"
-            target:
-              namespace: ignored
-        elementsYaml: |
-          - name: QA_App
-            chart: worker
-            version: 4.5.6
-            enabled: "true"
-            target:
-              namespace: qa
-      selector:
-        matchLabels:
-          enabled: "true"
-  template:
-    metadata:
-      name: '{{ .name | normalize }}'
-    spec:
-      destination:
-        namespace: '{{ .target.namespace }}'
-      source:
-        repoURL: https://example.com/charts
-        chart: '{{ .chart }}'
-        targetRevision: '{{ .version }}'
-`
+	input := readTestdata(t, "applicationset/list/application.yaml")
 	output, err := convert([]byte(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `repositories:
-  - name: source
-    url: https://example.com/charts
-releases:
-  - name: dev-app
-    namespace: dev
-    chart: source/frontend
-    version: 1.2.3
-  - name: qa-app
-    namespace: qa
-    chart: source/worker
-    version: 4.5.6
-`
+	want := readTestdata(t, "applicationset/list/helmfile.yaml")
 	if string(output) != want {
 		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
 	}
 }
 
 func TestConvertApplicationSetGeneratorTemplateOverridesAndInherits(t *testing.T) {
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apps
-spec:
-  goTemplate: true
-  generators:
-    - list:
-        elements:
-          - name: app
-        template:
-          spec:
-            destination:
-              namespace: generated
-            source:
-              targetRevision: 2.0.0
-  template:
-    metadata:
-      name: '{{ .name }}'
-    spec:
-      destination:
-        namespace: default
-      source:
-        repoURL: https://example.com/charts
-        chart: chart
-        targetRevision: 1.0.0
-`
+	input := readTestdata(t, "applicationset/generator-template/application.yaml")
 	output, err := convert([]byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -365,25 +285,7 @@ spec:
 }
 
 func TestConvertApplicationSetErrors(t *testing.T) {
-	valid := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apps
-spec:
-  goTemplate: true
-  generators:
-    - list:
-        elements:
-          - name: app
-  template:
-    metadata:
-      name: '{{ .name }}'
-    spec:
-      source:
-        repoURL: https://example.com/charts
-        chart: chart
-        targetRevision: 1.0.0
-`
+	valid := readTestdata(t, "applicationset/errors-base/application.yaml")
 	tests := map[string]struct {
 		input string
 		want  string

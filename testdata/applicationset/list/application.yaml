@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - list:
+        elements:
+          - name: Dev_App
+            chart: frontend
+            version: 1.2.3
+            enabled: "true"
+            target:
+              namespace: dev
+          - name: ignored
+            chart: ignored
+            version: 0.0.0
+            enabled: "false"
+            target:
+              namespace: ignored
+        elementsYaml: |
+          - name: QA_App
+            chart: worker
+            version: 4.5.6
+            enabled: "true"
+            target:
+              namespace: qa
+      selector:
+        matchLabels:
+          enabled: "true"
+  template:
+    metadata:
+      name: '{{ .name | normalize }}'
+    spec:
+      destination:
+        namespace: '{{ .target.namespace }}'
+      source:
+        repoURL: https://example.com/charts
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'

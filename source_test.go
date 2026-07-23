@@ -154,21 +154,7 @@ func TestConvertRejectsInvalidMultiSources(t *testing.T) {
 }
 
 func TestConvertGitChartWithExternalValuesSource(t *testing.T) {
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: app
-spec:
-  sources:
-    - repoURL: git@github.com:example/charts.git
-      path: charts/app
-      targetRevision: release-1
-      helm:
-        valueFiles: [$values/prod/values.yaml]
-    - repoURL: git@git.example.com:platform/values.git
-      targetRevision: main
-      ref: values
-`
+	input := readTestdata(t, "git-chart-external-values/application.yaml")
 	resolver := testSourceResolver(t,
 		testSource{
 			repoURL: "git@github.com:example/charts.git", targetRevision: "release-1",
