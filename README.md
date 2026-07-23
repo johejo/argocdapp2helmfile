@@ -78,18 +78,42 @@ releases:
 The repository alias is always `source`. If `helm.releaseName` is absent, the
 release name defaults to `metadata.name`.
 
+OCI Helm repositories use the scheme-less form accepted by Argo CD. For
+example, this source:
+
+```yaml
+source:
+  repoURL: registry-1.docker.io/bitnamicharts
+  chart: nginx
+  targetRevision: 15.9.0
+```
+
+produces an OCI-enabled helmfile repository while retaining the same release
+chart alias:
+
+```yaml
+repositories:
+  - name: source
+    url: registry-1.docker.io/bitnamicharts
+    oci: true
+releases:
+  - name: nginx
+    chart: source/nginx
+    version: 15.9.0
+```
+
 ## Supported mapping
 
 The initial version accepts exactly one YAML document containing one
 `argoproj.io/v1alpha1` `Application`. Its source must use `spec.source.chart`
-and an HTTP or HTTPS Helm repository.
+and either an HTTP(S) Helm repository or a scheme-less OCI Helm repository.
 
 | Argo CD Application | helmfile |
 | --- | --- |
 | `metadata.name` | Release `name` when `helm.releaseName` is absent |
 | `spec.source.helm.releaseName` | Release `name` |
 | `spec.destination.namespace` | Release `namespace` |
-| `spec.source.repoURL` | Repository `url` |
+| `spec.source.repoURL` | Repository `url`; scheme-less OCI repositories also set `oci: true` |
 | `spec.source.chart` | Release chart as `source/<chart>` |
 | `spec.source.targetRevision` | Release `version` |
 | `spec.source.helm.values` | Parsed inline `values` entry |
@@ -115,14 +139,14 @@ The initial version rejects inputs that require any of the following:
 
 - multiple YAML documents, multiple Applications, `List`, or `ApplicationSet`;
 - Git-hosted charts selected with `spec.source.path`;
-- OCI Helm repositories;
 - multi-source Applications using `spec.sources`;
 - `valueFiles` or `fileParameters`; or
 - non-empty Helm options not listed in the supported mapping above.
 
 The required fields are `metadata.name`, `spec.source.repoURL`,
 `spec.source.chart`, and `spec.source.targetRevision`. The repository URL must
-be an HTTP or HTTPS URL. Empty unsupported Helm options are ignored.
+be an HTTP(S) URL or a scheme-less OCI registry reference. In particular,
+`oci://` must not be included. Empty unsupported Helm options are ignored.
 
 These inputs fail explicitly instead of producing an incomplete helmfile.
 Fields unrelated to describing or rendering the Helm release are ignored as
@@ -133,7 +157,6 @@ described above.
 The following capabilities may be useful additions after the initial format
 and error behavior are established. This is not a committed roadmap:
 
-- OCI Helm repositories;
 - charts stored in Git repositories;
 - `valueFiles` for a local or already-fetched chart;
 - commonly used Helm options such as `fileParameters`,

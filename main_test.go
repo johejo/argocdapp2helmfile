@@ -62,6 +62,49 @@ releases:
 	}
 }
 
+func TestConvertOCIRepository(t *testing.T) {
+	input := `apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx
+spec:
+  destination:
+    namespace: nginx
+  source:
+    repoURL: registry-1.docker.io/bitnamicharts
+    chart: nginx
+    targetRevision: 15.9.0
+`
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `repositories:
+  - name: source
+    url: registry-1.docker.io/bitnamicharts
+    oci: true
+releases:
+  - name: nginx
+    namespace: nginx
+    chart: source/nginx
+    version: 15.9.0
+`
+	if string(output) != want {
+		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+	}
+}
+
+func TestConvertOCIRepositoryWithPort(t *testing.T) {
+	input := strings.Replace(minimalApplication(""), "https://example.com/charts", "registry.example.com:5000/charts", 1)
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(output), "    url: registry.example.com:5000/charts\n    oci: true\n") {
+		t.Fatalf("OCI repository was not emitted correctly:\n%s", output)
+	}
+}
+
 func TestConvertDefaultsAndOmitsEmptyFields(t *testing.T) {
 	input := minimalApplication(`    helm:
       releaseName: ""
@@ -220,29 +263,34 @@ func TestConvertInlineScalar(t *testing.T) {
 
 func TestConvertRejectsInvalidInput(t *testing.T) {
 	tests := map[string]string{
-		"empty":                    "",
-		"invalid YAML":             "apiVersion: [",
-		"duplicate key":            strings.Replace(exampleApplication, "kind: Application", "kind: Application\nkind: Application", 1),
-		"multiple documents":       exampleApplication + "---\nfoo: bar\n",
-		"trailing empty document":  exampleApplication + "---\n",
-		"wrong apiVersion":         strings.Replace(exampleApplication, "argoproj.io/v1alpha1", "v1", 1),
-		"wrong kind":               strings.Replace(exampleApplication, "kind: Application", "kind: List", 1),
-		"missing name":             strings.Replace(exampleApplication, "name: nginx", "name: ''", 1),
-		"missing repoURL":          strings.Replace(exampleApplication, "https://charts.bitnami.com/bitnami", "", 1),
-		"invalid repoURL":          strings.Replace(exampleApplication, "https://charts.bitnami.com/bitnami", "https:///missing-host", 1),
-		"OCI repoURL":              strings.Replace(exampleApplication, "https://charts.bitnami.com/bitnami", "oci://registry.example.com/charts", 1),
-		"missing chart":            strings.Replace(exampleApplication, "chart: nginx", "chart: ''", 1),
-		"missing revision":         strings.Replace(exampleApplication, "targetRevision: 18.2.4", "targetRevision: ''", 1),
-		"path":                     strings.Replace(exampleApplication, "chart: nginx", "chart: nginx\n    path: charts/nginx", 1),
-		"sources":                  strings.Replace(exampleApplication, "  source:\n", "  sources: []\n  source:\n", 1),
-		"valueFiles":               strings.Replace(exampleApplication, "      releaseName: edge", "      releaseName: edge\n      valueFiles: [values.yaml]", 1),
-		"fileParameters":           strings.Replace(exampleApplication, "      releaseName: edge", "      releaseName: edge\n      fileParameters: [{name: x, path: x}]", 1),
-		"unknown Helm option":      strings.Replace(exampleApplication, "      releaseName: edge", "      releaseName: edge\n      skipCrds: true", 1),
-		"invalid inline values":    strings.Replace(exampleApplication, "        service:\n          type: ClusterIP", "        invalid: [", 1),
-		"multi-doc values":         strings.Replace(exampleApplication, "        service:\n          type: ClusterIP", "        one: 1\n        ---\n        two: 2", 1),
-		"trailing values document": strings.Replace(exampleApplication, "        service:\n          type: ClusterIP", "        one: 1\n        ---", 1),
-		"non-string parameter":     strings.Replace(exampleApplication, "value: \"2\"", "value: 2", 1),
-		"non-boolean forceString":  strings.Replace(exampleApplication, "value: \"2\"", "value: \"2\"\n          forceString: yes", 1),
+		"empty":                       "",
+		"invalid YAML":                "apiVersion: [",
+		"duplicate key":               strings.Replace(exampleApplication, "kind: Application", "kind: Application\nkind: Application", 1),
+		"multiple documents":          exampleApplication + "---\nfoo: bar\n",
+		"trailing empty document":     exampleApplication + "---\n",
+		"wrong apiVersion":            strings.Replace(exampleApplication, "argoproj.io/v1alpha1", "v1", 1),
+		"wrong kind":                  strings.Replace(exampleApplication, "kind: Application", "kind: List", 1),
+		"missing name":                strings.Replace(exampleApplication, "name: nginx", "name: ''", 1),
+		"missing repoURL":             strings.Replace(exampleApplication, "https://charts.bitnami.com/bitnami", "", 1),
+		"invalid repoURL":             strings.Replace(exampleApplication, "https://charts.bitnami.com/bitnami", "https:///missing-host", 1),
+		"OCI repoURL with scheme":     strings.Replace(exampleApplication, "https://charts.bitnami.com/bitnami", "oci://registry.example.com/charts", 1),
+		"unknown repoURL scheme":      strings.Replace(exampleApplication, "https://charts.bitnami.com/bitnami", "ftp://example.com/charts", 1),
+		"OCI repoURL with query":      strings.Replace(exampleApplication, "https://charts.bitnami.com/bitnami", "registry.example.com/charts?channel=stable", 1),
+		"OCI repoURL with fragment":   strings.Replace(exampleApplication, "https://charts.bitnami.com/bitnami", `"registry.example.com/charts#stable"`, 1),
+		"OCI repoURL with userinfo":   strings.Replace(exampleApplication, "https://charts.bitnami.com/bitnami", "user@registry.example.com/charts", 1),
+		"OCI repoURL with whitespace": strings.Replace(exampleApplication, "https://charts.bitnami.com/bitnami", `"registry.example.com/bad charts"`, 1),
+		"missing chart":               strings.Replace(exampleApplication, "chart: nginx", "chart: ''", 1),
+		"missing revision":            strings.Replace(exampleApplication, "targetRevision: 18.2.4", "targetRevision: ''", 1),
+		"path":                        strings.Replace(exampleApplication, "chart: nginx", "chart: nginx\n    path: charts/nginx", 1),
+		"sources":                     strings.Replace(exampleApplication, "  source:\n", "  sources: []\n  source:\n", 1),
+		"valueFiles":                  strings.Replace(exampleApplication, "      releaseName: edge", "      releaseName: edge\n      valueFiles: [values.yaml]", 1),
+		"fileParameters":              strings.Replace(exampleApplication, "      releaseName: edge", "      releaseName: edge\n      fileParameters: [{name: x, path: x}]", 1),
+		"unknown Helm option":         strings.Replace(exampleApplication, "      releaseName: edge", "      releaseName: edge\n      skipCrds: true", 1),
+		"invalid inline values":       strings.Replace(exampleApplication, "        service:\n          type: ClusterIP", "        invalid: [", 1),
+		"multi-doc values":            strings.Replace(exampleApplication, "        service:\n          type: ClusterIP", "        one: 1\n        ---\n        two: 2", 1),
+		"trailing values document":    strings.Replace(exampleApplication, "        service:\n          type: ClusterIP", "        one: 1\n        ---", 1),
+		"non-string parameter":        strings.Replace(exampleApplication, "value: \"2\"", "value: 2", 1),
+		"non-boolean forceString":     strings.Replace(exampleApplication, "value: \"2\"", "value: \"2\"\n          forceString: yes", 1),
 	}
 	for name, input := range tests {
 		t.Run(name, func(t *testing.T) {

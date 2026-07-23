@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"unicode"
 
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/parser"
@@ -43,6 +44,7 @@ type helmfile struct {
 type repository struct {
 	Name string `yaml:"name"`
 	URL  string `yaml:"url"`
+	OCI  bool   `yaml:"oci,omitempty"`
 }
 
 type release struct {
@@ -142,7 +144,8 @@ func convert(input []byte) ([]byte, error) {
 	if strings.TrimSpace(app.Spec.Source.Path) != "" {
 		return nil, errors.New("spec.source.path is not supported")
 	}
-	if err := validateRepositoryURL(app.Spec.Source.RepoURL); err != nil {
+	oci, err := classifyRepositoryURL(app.Spec.Source.RepoURL)
+	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(app.Spec.Source.Chart) == "" {
@@ -179,7 +182,7 @@ func convert(input []byte) ([]byte, error) {
 	}
 
 	result := helmfile{
-		Repositories: []repository{{Name: "source", URL: app.Spec.Source.RepoURL}},
+		Repositories: []repository{{Name: "source", URL: app.Spec.Source.RepoURL, OCI: oci}},
 		Releases: []release{{
 			Name:      releaseName,
 			Namespace: app.Spec.Destination.Namespace,
@@ -198,12 +201,20 @@ func convert(input []byte) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
-func validateRepositoryURL(raw string) error {
+func classifyRepositoryURL(raw string) (bool, error) {
 	parsed, err := url.Parse(raw)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return errors.New("spec.source.repoURL must be a valid HTTP or HTTPS URL")
+	if err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" {
+		return false, nil
 	}
-	return nil
+
+	if raw == "" || strings.IndexFunc(raw, unicode.IsSpace) >= 0 || strings.Contains(raw, "://") {
+		return false, errors.New("spec.source.repoURL must be a valid HTTP, HTTPS, or scheme-less OCI repository URL")
+	}
+	parsed, err = url.Parse("//" + raw)
+	if err != nil || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false, errors.New("spec.source.repoURL must be a valid HTTP, HTTPS, or scheme-less OCI repository URL")
+	}
+	return true, nil
 }
 
 func parseHelmOptions(items yaml.MapSlice) (helmOptions, error) {
