@@ -1,0 +1,8 @@
+{
+  "name": "third",
+  "chart": "nginx",
+  "version": "3.0.0",
+  "nested": {
+    "namespace": "three"
+  }
+}

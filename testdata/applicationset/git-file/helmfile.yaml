@@ -1,0 +1,28 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+releases:
+  - name: first
+    namespace: one
+    chart: source/nginx
+    version: 1.0.0
+    values:
+      - generated: first-a.yaml
+        sourceDirectory: clusters
+        sourceFile: a.yaml
+  - name: second
+    namespace: two
+    chart: source/nginx
+    version: 2.0.0
+    values:
+      - generated: second-a.yaml
+        sourceDirectory: clusters
+        sourceFile: a.yaml
+  - name: third
+    namespace: three
+    chart: source/nginx
+    version: 3.0.0
+    values:
+      - generated: third-b.json
+        sourceDirectory: nested
+        sourceFile: b.json

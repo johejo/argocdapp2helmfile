@@ -14,7 +14,7 @@ type applicationInput struct {
 	origin      inputOrigin
 }
 
-func decodeApplicationInputs(input []byte) ([]applicationInput, error) {
+func decodeApplicationInputs(input []byte, resolver *sourceResolver) ([]applicationInput, error) {
 	file, err := parser.ParseBytes(input, 0)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -60,7 +60,7 @@ func decodeApplicationInputs(input []byte) ([]applicationInput, error) {
 				origin:      inputOrigin{document: documentNumber},
 			})
 		case "ApplicationSet":
-			generated, err := expandApplicationSet(document.Body)
+			generated, err := expandApplicationSet(document.Body, resolver)
 			if err != nil {
 				return nil, fmt.Errorf("document %d: %w", documentNumber, err)
 			}

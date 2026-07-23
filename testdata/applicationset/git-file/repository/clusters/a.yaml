@@ -1,0 +1,13 @@
+- name: first
+  chart: nginx
+  version: 1.0.0
+  nested:
+    namespace: one
+  path: file-data-must-lose
+  values:
+    generated: file-data-must-lose
+- name: second
+  chart: nginx
+  version: 2.0.0
+  nested:
+    namespace: two

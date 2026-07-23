@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: file-generator
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: https://github.com/example/config.git
+        revision: main
+        files:
+          - path: clusters/**/*.yaml
+          - path: clusters/**/*.json
+          - path: clusters/ignored.yaml
+            exclude: true
+        values:
+          generated: '{{ .name }}-{{ .path.filenameNormalized }}'
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        namespace: '{{ .nested.namespace }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'
+        helm:
+          valuesObject:
+            generated: '{{ .values.generated }}'
+            sourceDirectory: '{{ .path.basename }}'
+            sourceFile: '{{ .path.filename }}'

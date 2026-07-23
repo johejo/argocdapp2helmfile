@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: directory-generator
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: https://github.com/example/config.git
+        revision: main
+        directories:
+          - path: .
+          - path: '*'
+          - path: environments
+            exclude: true
+          - path: environments/*
+          - path: environments/*
+          - path: environments/skip
+            exclude: true
+        pathParamPrefix: repo
+        values:
+          environment: '{{ .repo.path.basename }}'
+          selected: '{{ ne .repo.path.path "environments/skip" | toString }}'
+        template:
+          spec:
+            destination:
+              namespace: from-generator
+      selector:
+        matchLabels:
+          values.selected: "true"
+  template:
+    metadata:
+      name: '{{ if eq .repo.path.path "." }}root{{ else }}{{ .values.environment }}{{ end }}'
+    spec:
+      destination:
+        namespace: from-spec
+      source:
+        repoURL: https://charts.example.com
+        chart: nginx
+        targetRevision: 1.2.3

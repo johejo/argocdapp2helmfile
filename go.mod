@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	github.com/Masterminds/sprig/v3 v3.3.0
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gosimple/slug v1.15.0
 	github.com/itchyny/gojq v0.12.19

@@ -49,7 +49,7 @@ type applicationSetResource struct {
 	} `yaml:"spec"`
 }
 
-func expandApplicationSet(node ast.Node) ([]generatedApplication, error) {
+func expandApplicationSet(node ast.Node, resolver *sourceResolver) ([]generatedApplication, error) {
 	var appSet applicationSetResource
 	if err := yaml.NodeToValue(node, &appSet, yaml.UseOrderedMap()); err != nil {
 		return nil, fmt.Errorf("decode ApplicationSet: %w", err)
@@ -64,7 +64,7 @@ func expandApplicationSet(node ast.Node) ([]generatedApplication, error) {
 		return nil, errors.New("spec.goTemplate must be true; fasttemplate is not supported")
 	}
 	if len(appSet.Spec.Generators) == 0 {
-		return nil, errors.New("spec.generators must contain at least one List generator")
+		return nil, errors.New("spec.generators must contain at least one generator")
 	}
 	if appSet.Spec.Template == nil {
 		return nil, errors.New("spec.template is required")
@@ -77,33 +77,19 @@ func expandApplicationSet(node ast.Node) ([]generatedApplication, error) {
 	var generated []generatedApplication
 	for generatorIndex, rawGenerator := range appSet.Spec.Generators {
 		field := fmt.Sprintf("spec.generators[%d]", generatorIndex)
-		list, selector, err := parseListGenerator(rawGenerator, field)
+		generator, err := parseApplicationSetGenerator(
+			rawGenerator,
+			field,
+			resolver,
+			renderer,
+		)
 		if err != nil {
 			return nil, err
 		}
-		mergedTemplate := mergeTemplate(list.template, appSet.Spec.Template)
-		elements := append([]any(nil), list.elements...)
-		yamlElements, err := parseElementsYAML(list.elementsYAML, field+".list.elementsYaml")
-		if err != nil {
-			return nil, err
-		}
-		elements = append(elements, yamlElements...)
-
-		for elementIndex, rawElement := range elements {
-			elementField := fmt.Sprintf("%s.list.elements[%d]", field, elementIndex)
-			if elementIndex >= len(list.elements) {
-				elementField = fmt.Sprintf(
-					"%s.list.elementsYaml[%d]",
-					field,
-					elementIndex-len(list.elements),
-				)
-			}
-			params, err := normalizeStringMap(rawElement)
-			if err != nil {
-				return nil, fmt.Errorf("%s: must be a mapping: %w", elementField, err)
-			}
-			if selector != nil {
-				matches, err := selector.matches(params)
+		mergedTemplate := mergeTemplate(generator.template, appSet.Spec.Template)
+		for _, generatedParams := range generator.params {
+			if generator.selector != nil {
+				matches, err := generator.selector.matches(generatedParams.params)
 				if err != nil {
 					return nil, fmt.Errorf("%s.selector: %w", field, err)
 				}
@@ -114,16 +100,16 @@ func expandApplicationSet(node ast.Node) ([]generatedApplication, error) {
 			rendered, data, err := renderApplicationTemplate(
 				mergedTemplate,
 				appSet.Spec.TemplatePatch,
-				params,
+				generatedParams.params,
 				renderer,
 			)
 			if err != nil {
-				return nil, fmt.Errorf("%s: render template: %w", elementField, err)
+				return nil, fmt.Errorf("%s: render template: %w", generatedParams.path, err)
 			}
 			generated = append(generated, generatedApplication{
 				application: rendered,
 				data:        data,
-				path:        elementField,
+				path:        generatedParams.path,
 			})
 		}
 	}

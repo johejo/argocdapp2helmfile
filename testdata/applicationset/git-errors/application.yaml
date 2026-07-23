@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: errors
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: https://github.com/example/config.git
+        revision: main
+        files:
+          - path: scalar.yaml
+  template:
+    metadata:
+      name: generated
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: nginx
+        targetRevision: 1.0.0

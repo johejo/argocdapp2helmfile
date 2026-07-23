@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: symlinks
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: https://github.com/example/config.git
+        revision: main
+        files:
+          - path: '**/*.yaml'
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: nginx
+        targetRevision: 1.0.0

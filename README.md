@@ -1,7 +1,7 @@
 # argocdapp2helmfile
 
 `argocdapp2helmfile` converts Argo CD `Application` resources and
-`ApplicationSet` resources using the List generator into one helmfile.
+`ApplicationSet` resources using the List or Git generator into one helmfile.
 It is an offline Unix filter: it reads a YAML stream from standard input,
 writes YAML to standard output, and never fetches charts or repositories.
 
@@ -158,9 +158,9 @@ parameters in `set`, so a same-name file parameter wins within that list.
 A file parameter conflicting with a same-name `forceString` parameter is rejected:
 helmfile cannot preserve ordering across `set` and `setString`.
 
-### ApplicationSet List generator
+### ApplicationSet generators
 
-ApplicationSets must enable Go templates and contain one or more List generators:
+ApplicationSets must enable Go templates and contain one or more supported generators:
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -207,13 +207,40 @@ Supported List features are:
 - templating of every string field and string mapping key; and
 - a YAML or JSON `templatePatch`.
 
+#### Git generator
+
+The Git generator supports either `directories` or `files`.
+Its `repoURL` and `revision` must exactly match a Config `sources` entry,
+whose `root` is explored from the converter's current working directory.
+
+Directory patterns use Go's `path.Match` rules.
+File patterns use doublestar rules,
+where `*` matches one component and `**` matches recursively.
+Excludes take precedence,
+duplicates are removed,
+and results are generated in lexical order.
+
+Templates receive Argo CD-compatible path parameters.
+File generators read YAML or JSON mappings and mapping sequences.
+`pathParamPrefix`, generator `values`, selectors,
+generator-level templates, and `templatePatch` are supported.
+
+The root must be an existing non-symlink directory without helmfile template expressions.
+Hidden directories are skipped by directory generators;
+`.git` and symlinks are skipped by file generators.
+The converter reads the current local snapshot and does not clone,
+checkout revisions, authenticate, poll, or verify Git state.
+See the
+[Argo CD Git generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/)
+for the upstream generator model.
+
 Templates provide the Sprig functions used by ApplicationSet except `env`,
 `expandenv`, and `getHostByName`.
 They also provide `normalize`, `slugify`, `toYaml`, `fromYaml`, and `fromYamlArray`.
 Supported Go template options are `missingkey=default`, `missingkey=invalid`,
 `missingkey=zero`, and `missingkey=error`.
 
-`templatePatch` is rendered once per selected List element
+`templatePatch` is rendered once per selected generator parameter set
 with the same parameters, functions, and Go template options as `template`.
 An empty or whitespace-only rendered patch has no effect.
 Mappings merge recursively,
@@ -332,7 +359,8 @@ Path resolution follows these rules:
 - normalized paths may not escape their configured source; and
 - input order is preserved.
 
-The converter does not clone, fetch, inspect, or change repositories.
+For chart and value path conversion,
+the converter does not clone, fetch, inspect, or change repositories.
 It does not evaluate roots, expand `~`, `$PWD`, or `${HOME}`, verify revisions,
 or check whether a path exists.
 Prepare every configured source in the environment where helmfile runs.
@@ -406,7 +434,11 @@ and intentionally ignored as an Argo CD backward-compatibility field.
 
 The converter rejects:
 
-- ApplicationSet generators other than List and legacy fasttemplate syntax;
+- ApplicationSet generators other than List and Git,
+  and legacy fasttemplate syntax;
+- ApplicationSet Matrix and Merge generators,
+  remote repository access, polling, webhooks, signature verification,
+  revision checkout, and authentication;
 - Strategic Merge Patch directives in ApplicationSet `templatePatch`;
 - multi-source Applications outside the values-only `ref` form above;
 - values-only sources with `path` or another manifest-generating configuration;

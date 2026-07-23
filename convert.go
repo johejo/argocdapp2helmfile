@@ -78,7 +78,11 @@ func convert(input []byte) ([]byte, error) {
 }
 
 func convertWithConfig(input []byte, config *conversionConfig) ([]byte, error) {
-	applications, err := decodeApplicationInputs(input)
+	var resolver *sourceResolver
+	if config != nil {
+		resolver = config.sourceResolver
+	}
+	applications, err := decodeApplicationInputs(input, resolver)
 	if err != nil {
 		return nil, err
 	}

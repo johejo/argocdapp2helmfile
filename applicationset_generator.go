@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/goccy/go-yaml"
 )
@@ -14,6 +15,101 @@ type listGenerator struct {
 	elements     []any
 	elementsYAML string
 	template     yaml.MapSlice
+}
+
+type generatedGeneratorParams struct {
+	params map[string]any
+	path   string
+}
+
+type applicationSetGenerator struct {
+	params   []generatedGeneratorParams
+	template yaml.MapSlice
+	selector *labelSelector
+}
+
+func parseApplicationSetGenerator(
+	raw yaml.MapSlice,
+	field string,
+	resolver *sourceResolver,
+	renderer *template.Template,
+) (applicationSetGenerator, error) {
+	var result applicationSetGenerator
+	var generatorName string
+	var generatorValue any
+	for _, item := range raw {
+		key, ok := item.Key.(string)
+		if !ok {
+			return result, fmt.Errorf("%s contains a non-string field name", field)
+		}
+		if key == "selector" {
+			items, ok := item.Value.(yaml.MapSlice)
+			if !ok {
+				return result, fmt.Errorf("%s.selector must be a mapping", field)
+			}
+			selector, err := parseLabelSelector(items, field+".selector")
+			if err != nil {
+				return result, err
+			}
+			result.selector = &selector
+			continue
+		}
+		if key != "list" && key != "git" {
+			return result, fmt.Errorf("%s.%s generator is not supported", field, key)
+		}
+		if generatorName != "" {
+			return result, fmt.Errorf("%s must contain exactly one generator", field)
+		}
+		generatorName, generatorValue = key, item.Value
+	}
+	switch generatorName {
+	case "list":
+		items, ok := generatorValue.(yaml.MapSlice)
+		if !ok {
+			return result, fmt.Errorf("%s.list must be a mapping", field)
+		}
+		list, err := parseListOptions(items, field+".list")
+		if err != nil {
+			return result, err
+		}
+		result.template = list.template
+		elements := append([]any(nil), list.elements...)
+		yamlElements, err := parseElementsYAML(list.elementsYAML, field+".list.elementsYaml")
+		if err != nil {
+			return result, err
+		}
+		elements = append(elements, yamlElements...)
+		for i, rawElement := range elements {
+			elementField := fmt.Sprintf("%s.list.elements[%d]", field, i)
+			if i >= len(list.elements) {
+				elementField = fmt.Sprintf("%s.list.elementsYaml[%d]", field, i-len(list.elements))
+			}
+			params, err := normalizeStringMap(rawElement)
+			if err != nil {
+				return result, fmt.Errorf("%s: must be a mapping: %w", elementField, err)
+			}
+			result.params = append(result.params, generatedGeneratorParams{
+				params: params,
+				path:   elementField,
+			})
+		}
+	case "git":
+		items, ok := generatorValue.(yaml.MapSlice)
+		if !ok {
+			return result, fmt.Errorf("%s.git must be a mapping", field)
+		}
+		git, err := generateGitParams(items, field+".git", resolver, renderer)
+		if err != nil {
+			return result, err
+		}
+		result.params = git.params
+		result.template = git.template
+	case "":
+		return result, fmt.Errorf("%s must contain exactly one generator", field)
+	default:
+		return result, fmt.Errorf("%s.%s generator is not supported", field, generatorName)
+	}
+	return result, nil
 }
 
 type labelSelector struct {
@@ -25,50 +121,6 @@ type labelExpression struct {
 	key      string
 	operator string
 	values   []string
-}
-
-func parseListGenerator(raw yaml.MapSlice, field string) (listGenerator, *labelSelector, error) {
-	var result listGenerator
-	var selector *labelSelector
-	var hasList bool
-	for _, item := range raw {
-		key, ok := item.Key.(string)
-		if !ok {
-			return result, nil, fmt.Errorf("%s contains a non-string field name", field)
-		}
-		switch key {
-		case "list":
-			if hasList {
-				return result, nil, fmt.Errorf("%s.list is duplicated", field)
-			}
-			hasList = true
-			items, ok := item.Value.(yaml.MapSlice)
-			if !ok {
-				return result, nil, fmt.Errorf("%s.list must be a mapping", field)
-			}
-			parsed, err := parseListOptions(items, field+".list")
-			if err != nil {
-				return result, nil, err
-			}
-			result = parsed
-		case "selector":
-			items, ok := item.Value.(yaml.MapSlice)
-			if !ok {
-				return result, nil, fmt.Errorf("%s.selector must be a mapping", field)
-			}
-			parsed, err := parseLabelSelector(items, field+".selector")
-			if err != nil {
-				return result, nil, err
-			}
-			selector = &parsed
-		default:
-			return result, nil, fmt.Errorf("%s.%s generator is not supported", field, key)
-		}
-	}
-	if !hasList {
-		return result, nil, fmt.Errorf("%s must contain exactly one List generator", field)
-	}
-	return result, selector, nil
 }
 
 func parseListOptions(items yaml.MapSlice, field string) (listGenerator, error) {
