@@ -74,40 +74,98 @@ func convertWithSourceMap(input []byte, resolver *sourceResolver) ([]byte, error
 		return nil, fmt.Errorf("document %d: decode Application: %w", documentNumberForError(input, err), err)
 	}
 
-	result := helmfile{}
-	var provenanceComments []string
-	repositoryAliases := make(map[string]string)
-	releaseDocuments := make(map[string]int)
-	var sharedSkipCRDs bool
+	type applicationInput struct {
+		application application
+		origin      inputOrigin
+	}
+	var applications []applicationInput
 	for i, document := range file.Docs {
 		documentNumber := i + 1
 		if document.Body == nil {
-			return nil, fmt.Errorf("document %d: document must contain an Application", documentNumber)
+			return nil, fmt.Errorf("document %d: document must contain an Application or ApplicationSet", documentNumber)
 		}
 
-		var app application
-		if err := yaml.NodeToValue(document.Body, &app, yaml.UseOrderedMap()); err != nil {
-			return nil, fmt.Errorf("document %d: decode Application: %w", documentNumber, err)
+		var header struct {
+			Kind string `yaml:"kind"`
 		}
-		converted, err := convertApplication(app, documentNumber, resolver)
+		if err := yaml.NodeToValue(document.Body, &header); err != nil {
+			return nil, fmt.Errorf("document %d: decode resource: %w", documentNumber, err)
+		}
+		switch header.Kind {
+		case "Application":
+			var app application
+			if err := yaml.NodeToValue(document.Body, &app, yaml.UseOrderedMap()); err != nil {
+				return nil, fmt.Errorf("document %d: decode Application: %w", documentNumber, err)
+			}
+			applications = append(applications, applicationInput{
+				application: app,
+				origin:      inputOrigin{document: documentNumber},
+			})
+		case "ApplicationSet":
+			generated, err := expandApplicationSet(document.Body)
+			if err != nil {
+				return nil, fmt.Errorf("document %d: %w", documentNumber, err)
+			}
+			for _, item := range generated {
+				applications = append(applications, applicationInput{
+					application: item.application,
+					origin: inputOrigin{
+						document: documentNumber,
+						path:     item.path,
+					},
+				})
+			}
+		default:
+			return nil, fmt.Errorf("document %d: kind must be \"Application\" or \"ApplicationSet\"", documentNumber)
+		}
+	}
+	if len(file.Docs) == 0 {
+		return nil, errors.New("document 1: document must contain an Application or ApplicationSet")
+	}
+
+	result := helmfile{}
+	var provenanceComments []string
+	repositoryAliases := make(map[string]string)
+	releaseOrigins := make(map[string]inputOrigin)
+	var sharedSkipCRDs bool
+	var sharedSkipCRDsOrigin inputOrigin
+	for i, item := range applications {
+		converted, err := convertApplication(item.application, item.origin.document, resolver)
 		if err != nil {
-			return nil, fmt.Errorf("document %d: %w", documentNumber, err)
+			return nil, item.origin.wrap(err)
 		}
 
-		if previousDocument, exists := releaseDocuments[converted.release.Name]; exists {
-			return nil, fmt.Errorf(
-				"document %d: release name %q duplicates document %d",
-				documentNumber,
+		if previousOrigin, exists := releaseOrigins[converted.release.Name]; exists {
+			if item.origin.path == "" && previousOrigin.path == "" {
+				return nil, fmt.Errorf(
+					"document %d: release name %q duplicates document %d",
+					item.origin.document,
+					converted.release.Name,
+					previousOrigin.document,
+				)
+			}
+			return nil, item.origin.wrap(fmt.Errorf(
+				"release name %q duplicates %s",
 				converted.release.Name,
-				previousDocument,
-			)
+				previousOrigin,
+			))
 		}
-		releaseDocuments[converted.release.Name] = documentNumber
+		releaseOrigins[converted.release.Name] = item.origin
 
-		if documentNumber == 1 {
+		if i == 0 {
 			sharedSkipCRDs = converted.skipCRDs
+			sharedSkipCRDsOrigin = item.origin
 		} else if converted.skipCRDs != sharedSkipCRDs {
-			return nil, fmt.Errorf("document %d: spec.source.helm.skipCrds conflicts with document 1", documentNumber)
+			if item.origin.path == "" && sharedSkipCRDsOrigin.path == "" && sharedSkipCRDsOrigin.document == 1 {
+				return nil, fmt.Errorf(
+					"document %d: spec.source.helm.skipCrds conflicts with document 1",
+					item.origin.document,
+				)
+			}
+			return nil, item.origin.wrap(fmt.Errorf(
+				"spec.source.helm.skipCrds conflicts with %s",
+				sharedSkipCRDsOrigin,
+			))
 		}
 
 		if converted.repository != nil {
@@ -122,9 +180,6 @@ func convertWithSourceMap(input []byte, resolver *sourceResolver) ([]byte, error
 		}
 		result.Releases = append(result.Releases, converted.release)
 		provenanceComments = append(provenanceComments, converted.provenanceComments...)
-	}
-	if len(file.Docs) == 0 {
-		return nil, errors.New("document 1: document must contain an Application")
 	}
 	if sharedSkipCRDs {
 		result.HelmDefaults = &helmDefaults{SkipCRDs: true}

@@ -1,10 +1,11 @@
 # argocdapp2helmfile
 
-`argocdapp2helmfile` converts one or more Argo CD `Application` resources that
-deploy Helm charts into one helmfile. It is intended to be a small, offline
-Unix filter: it reads a YAML stream from standard input, writes YAML to standard
-output, and does not fetch charts or repositories. A source map describes how
-Git charts and external values repositories should be referenced by helmfile.
+`argocdapp2helmfile` converts one or more Argo CD `Application` resources, or
+`ApplicationSet` resources using the List generator, into one helmfile. It is
+intended to be a small, offline Unix filter: it reads a YAML stream from
+standard input, writes YAML to standard output, and does not fetch charts or
+repositories. A source map describes how Git charts and external values
+repositories should be referenced by helmfile.
 
 ## Usage
 
@@ -156,9 +157,10 @@ spec:
     targetRevision: 4.5.6
 ```
 
-Every YAML document must contain exactly one supported `Application`; empty
-documents are rejected. A failure in any document produces no helmfile output.
-Diagnostics for document-specific failures include a one-based document number.
+Every YAML document must contain exactly one supported `Application` or
+`ApplicationSet`; the two kinds may be mixed in one stream. Empty documents are
+rejected. A failure in any document produces no helmfile output. Diagnostics
+for document-specific failures include a one-based document number.
 
 Argo CD exposes `skipCrds` per Application, while helmfile exposes the matching
 `skipCRDs` setting under the shared top-level `helmDefaults`. Consequently, all
@@ -166,11 +168,70 @@ Applications must have the same effective `skipCrds` value, with an absent value
 treated as `false`. Conflicting values are rejected. Generated files containing
 `helmDefaults.skipCRDs` require helmfile v1.3.0 or newer.
 
+## ApplicationSet List generator
+
+An `ApplicationSet` is expanded locally before its generated Applications are
+converted. ApplicationSets must enable Go templating and use one or more List
+generators:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: services
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - list:
+        elements:
+          - name: frontend
+            chart: nginx
+            version: 18.2.4
+            namespace: web
+          - name: metrics
+            chart: prometheus
+            version: 27.3.1
+            namespace: monitoring
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        namespace: '{{ .namespace }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'
+```
+
+List `elements` may contain nested YAML values. Literal `elementsYaml`,
+generator-level `template` overrides, and post-generator `selector` rules using
+`matchLabels` or the `In`, `NotIn`, `Exists`, and `DoesNotExist` operators are
+also supported. Multiple generators and elements retain their input order.
+
+Templates are evaluated independently for every string field and string mapping
+key. They provide the Sprig function set used by ApplicationSet, except for
+`env`, `expandenv`, and `getHostByName`, plus `normalize`, `slugify`, `toYaml`,
+`fromYaml`, and `fromYamlArray`. Only Go templates are accepted; the legacy
+fasttemplate syntax is rejected. `templatePatch` is not supported.
+
+Generated Applications use the same conversion and validation rules as direct
+Application input. Source maps therefore also apply to rendered Git chart and
+external values sources. If conversion fails, diagnostics identify the
+document, generator, and `elements` or `elementsYaml` index.
+
+List elements commonly contain destination cluster information, but
+`spec.destination.server` and `spec.destination.name` remain operational
+settings that are not converted. Select the kube context when running helmfile.
+Resolved release names must still be unique across direct and generated
+Applications.
+
 ## Supported mapping
 
-Each input document must contain one `argoproj.io/v1alpha1` `Application`. Its
-source must identify either a packaged chart in an HTTP(S) or scheme-less OCI
-Helm repository, or a chart directory in a Git repository.
+Each direct or generated `argoproj.io/v1alpha1` `Application` source must
+identify either a packaged chart in an HTTP(S) or scheme-less OCI Helm
+repository, or a chart directory in a Git repository.
 
 | Argo CD Application | helmfile |
 | --- | --- |
@@ -308,7 +369,9 @@ also not converted: select the intended kube context when running helmfile.
 
 The converter rejects inputs that require any of the following:
 
-- `List` or `ApplicationSet` resources;
+- Kubernetes `List` resources;
+- ApplicationSet generators other than List, legacy fasttemplate rendering, or
+  `templatePatch`;
 - multi-source Applications outside the values-only `ref` form described
   above;
 - non-`$ref` value files for HTTP/OCI charts;
@@ -334,9 +397,8 @@ and error behavior are established. This is not a committed roadmap:
 - commonly used Helm options such as `fileParameters` and `skipTests`;
 - accepting `List` resources as an alternative batch input format.
 
-Generating Applications from an `ApplicationSet` and translating Argo CD
-cluster identities into local kubeconfig contexts are intentional non-goals.
-The tool should consume an already-rendered `Application`, and cluster selection
+Additional ApplicationSet generators and translating Argo CD cluster identities
+into local kubeconfig contexts are not currently planned. Cluster selection
 should remain under the helmfile user's control.
 
 ## License
