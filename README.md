@@ -11,7 +11,7 @@ repositories should be referenced by helmfile.
 
 ```sh
 go install github.com/johejo/argocdapp2helmfile@latest
-argocdapp2helmfile <application.yaml >helmfile.yaml.gotmpl
+argocdapp2helmfile <application.yaml >helmfile.yaml
 ```
 
 When the input uses a Git-hosted chart or external values repository, pass a
@@ -19,18 +19,13 @@ source map:
 
 ```sh
 argocdapp2helmfile --source-map sources.yaml \
-  <application.yaml >helmfile.yaml.gotmpl
+  <application.yaml >helmfile.yaml
 ```
 
 Source-map roots are copied into the generated paths without being evaluated.
-If they contain helmfile template expressions, use the `.gotmpl` suffix and
-provide their inputs when helmfile runs:
-
-```sh
-CHARTS_ROOT="$PWD/checkouts/charts" \
-VALUES_ROOT="$PWD/checkouts/values" \
-helmfile -f helmfile.yaml.gotmpl apply
-```
+They may be fixed absolute or relative paths. They may also contain helmfile
+template expressions when the path needs to be supplied at runtime; see
+[Git source map](#git-source-map).
 
 Diagnostics are written to standard error. If the input cannot be converted
 without losing relevant Helm configuration, the command exits with a non-zero
@@ -268,7 +263,7 @@ into a `set` entry using helmfile's `file` form:
 ```yaml
 set:
   - name: config.raw
-    file: '{{ requiredEnv "PLATFORM_CHARTS_ROOT" }}/charts/my-app/files/config.json'
+    file: checkouts/platform-charts/charts/my-app/files/config.json
 ```
 
 Values retain Argo CD's precedence: chart defaults, `valueFiles`, `values`,
@@ -290,17 +285,36 @@ kind: SourceMap
 sources:
   - repoURL: git@github.com:example/platform-charts.git
     targetRevision: release-1
-    root: '{{ requiredEnv "PLATFORM_CHARTS_ROOT" }}'
+    root: checkouts/platform-charts
   - repoURL: https://github.com/example/values.git
     targetRevision: main
-    root: '{{ requiredEnv "PLATFORM_VALUES_ROOT" }}'
+    root: checkouts/values
 ```
 
 Entries match the Application's literal `repoURL` and `targetRevision` pair.
-`root` is a required, non-empty string; it may be a fixed path, a helmfile
-template expression, or a combination of both. Roots need not be unique. A
-source map may be omitted only when no Git source is needed. A required mapping
-that is absent is an error.
+`root` is a required, non-empty path prefix. It may be absolute or relative;
+relative paths must be valid in the environment where helmfile runs. The
+converter copies it as written and does not expand values such as `~`, `$PWD`,
+or `${HOME}`. Roots need not be unique. A source map may be omitted only when
+no Git source is needed. A required mapping that is absent is an error.
+
+When a root needs to vary between helmfile execution environments, it may
+instead contain a helmfile template expression, or a combination of a template
+expression and a fixed path:
+
+```yaml
+root: '{{ requiredEnv "PLATFORM_CHARTS_ROOT" }}'
+```
+
+In that case, write the generated helmfile with the `.gotmpl` suffix and
+provide the template input when helmfile runs:
+
+```sh
+argocdapp2helmfile --source-map sources.yaml \
+  <application.yaml >helmfile.yaml.gotmpl
+PLATFORM_CHARTS_ROOT="$PWD/checkouts/platform-charts" \
+  helmfile -f helmfile.yaml.gotmpl apply
+```
 
 The converter does not evaluate templates or verify that a root exists,
 contains a Git worktree at `targetRevision`, or has a clean status. Preparing
@@ -328,7 +342,7 @@ The generated release refers directly to that directory:
 # document 1 chart source: repoURL "git@github.com:example/platform-charts.git", path "charts/my-app", targetRevision "release-1"
 releases:
   - name: my-app
-    chart: '{{ requiredEnv "PLATFORM_CHARTS_ROOT" }}/charts/my-app'
+    chart: checkouts/platform-charts/charts/my-app
 ```
 
 No Helm repository or release `version` is emitted: `targetRevision` selects a
@@ -347,7 +361,7 @@ For example, `$values/prod/values.yaml` becomes:
 
 ```yaml
 values:
-  - '{{ requiredEnv "PLATFORM_VALUES_ROOT" }}/prod/values.yaml'
+  - checkouts/values/prod/values.yaml
 ```
 
 The generated file includes comments with each values source's `repoURL` and
