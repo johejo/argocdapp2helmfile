@@ -47,71 +47,45 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 		}
 		switch key {
 		case "releaseName":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			value, ok := item.Value.(string)
-			if !ok {
-				return result, fmt.Errorf("%s.releaseName must be a string", field)
+			value, err := readOptionalStringYAMLOption(item.Value, field+".releaseName")
+			if err != nil {
+				return result, err
 			}
 			result.releaseName = value
 		case "namespace":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			value, ok := item.Value.(string)
-			if !ok {
-				return result, fmt.Errorf("%s.namespace must be a string", field)
+			value, err := readOptionalStringYAMLOption(item.Value, field+".namespace")
+			if err != nil {
+				return result, err
 			}
 			result.namespace = value
 		case "kubeVersion":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			value, ok := item.Value.(string)
-			if !ok {
-				return result, fmt.Errorf("%s.kubeVersion must be a string", field)
+			value, err := readOptionalStringYAMLOption(item.Value, field+".kubeVersion")
+			if err != nil {
+				return result, err
 			}
 			result.kubeVersion = value
 		case "apiVersions":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
+			value, err := readOptionalStringSequenceYAMLOption(
+				item.Value,
+				field+".apiVersions",
+			)
+			if err != nil {
+				return result, err
 			}
-			sequence, ok := item.Value.([]any)
-			if !ok {
-				return result, fmt.Errorf("%s.apiVersions must be a sequence", field)
-			}
-			result.apiVersions = make([]string, 0, len(sequence))
-			for i, raw := range sequence {
-				apiVersion, ok := raw.(string)
-				if !ok {
-					return result, fmt.Errorf("%s.apiVersions[%d] must be a string", field, i)
-				}
-				result.apiVersions = append(result.apiVersions, apiVersion)
-			}
+			result.apiVersions = value
 		case "valueFiles":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
+			value, err := readOptionalStringSequenceYAMLOption(
+				item.Value,
+				field+".valueFiles",
+			)
+			if err != nil {
+				return result, err
 			}
-			sequence, ok := item.Value.([]any)
-			if !ok {
-				return result, fmt.Errorf("%s.valueFiles must be a sequence", field)
-			}
-			result.valueFiles = make([]string, 0, len(sequence))
-			for i, raw := range sequence {
-				valueFile, ok := raw.(string)
-				if !ok {
-					return result, fmt.Errorf("%s.valueFiles[%d] must be a string", field, i)
-				}
-				result.valueFiles = append(result.valueFiles, valueFile)
-			}
+			result.valueFiles = value
 		case "values":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			inline, ok := item.Value.(string)
-			if !ok {
-				return result, fmt.Errorf("%s.values must be a string", field)
+			inline, err := readOptionalStringYAMLOption(item.Value, field+".values")
+			if err != nil {
+				return result, err
 			}
 			value, err := decodeInlineValues(inline, field+".values")
 			if err != nil {
@@ -139,36 +113,33 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 			}
 			result.fileParameters = fileParameters
 		case "ignoreMissingValueFiles":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			value, ok := item.Value.(bool)
-			if !ok {
-				return result, fmt.Errorf("%s.ignoreMissingValueFiles must be a boolean", field)
+			value, err := readOptionalBooleanYAMLOption(
+				item.Value,
+				field+".ignoreMissingValueFiles",
+			)
+			if err != nil {
+				return result, err
 			}
 			result.ignoreMissingValues = value
 		case "skipSchemaValidation":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			value, ok := item.Value.(bool)
-			if !ok {
-				return result, fmt.Errorf("%s.skipSchemaValidation must be a boolean", field)
+			value, err := readOptionalBooleanYAMLOption(
+				item.Value,
+				field+".skipSchemaValidation",
+			)
+			if err != nil {
+				return result, err
 			}
 			result.skipSchemaValidation = value
 		case "skipCrds":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			value, ok := item.Value.(bool)
-			if !ok {
-				return result, fmt.Errorf("%s.skipCrds must be a boolean", field)
+			value, err := readOptionalBooleanYAMLOption(item.Value, field+".skipCrds")
+			if err != nil {
+				return result, err
 			}
 			result.skipCRDs = value
 		case "passCredentials":
-			value, ok := item.Value.(bool)
-			if !ok {
-				return result, fmt.Errorf("%s.passCredentials must be a boolean", field)
+			value, err := readBooleanYAMLOption(item.Value, field+".passCredentials")
+			if err != nil {
+				return result, err
 			}
 			result.passCredentials = value
 		case "skipTests", "version":
@@ -180,6 +151,51 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 				return result, fmt.Errorf("%s.%s is not supported", field, key)
 			}
 		}
+	}
+	return result, nil
+}
+
+func readOptionalStringYAMLOption(value any, field string) (string, error) {
+	if isIgnorableEmptyYAMLOption(value) {
+		return "", nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("%s must be a string", field)
+	}
+	return text, nil
+}
+
+func readOptionalBooleanYAMLOption(value any, field string) (bool, error) {
+	if isIgnorableEmptyYAMLOption(value) {
+		return false, nil
+	}
+	return readBooleanYAMLOption(value, field)
+}
+
+func readBooleanYAMLOption(value any, field string) (bool, error) {
+	enabled, ok := value.(bool)
+	if !ok {
+		return false, fmt.Errorf("%s must be a boolean", field)
+	}
+	return enabled, nil
+}
+
+func readOptionalStringSequenceYAMLOption(value any, field string) ([]string, error) {
+	if isIgnorableEmptyYAMLOption(value) {
+		return nil, nil
+	}
+	sequence, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must be a sequence", field)
+	}
+	result := make([]string, 0, len(sequence))
+	for i, raw := range sequence {
+		element, ok := raw.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s[%d] must be a string", field, i)
+		}
+		result = append(result, element)
 	}
 	return result, nil
 }

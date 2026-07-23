@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"testing"
 
@@ -296,6 +297,89 @@ func TestYAMLEmptyValueClassifications(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOptionalYAMLOptionReaders(t *testing.T) {
+	emptyValues := []any{nil, "", []any{}, yaml.MapSlice{}}
+
+	t.Run("string", func(t *testing.T) {
+		for _, value := range emptyValues {
+			got, err := readOptionalStringYAMLOption(value, "helm.option")
+			if err != nil {
+				t.Errorf("empty value %#v was rejected: %v", value, err)
+			}
+			if got != "" {
+				t.Errorf("empty value %#v produced %q", value, got)
+			}
+		}
+		got, err := readOptionalStringYAMLOption("value", "helm.option")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "value" {
+			t.Errorf("got %q, want value", got)
+		}
+		_, err = readOptionalStringYAMLOption(1, "helm.option")
+		if err == nil || err.Error() != "helm.option must be a string" {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("boolean", func(t *testing.T) {
+		for _, value := range emptyValues {
+			got, err := readOptionalBooleanYAMLOption(value, "helm.option")
+			if err != nil {
+				t.Errorf("empty value %#v was rejected: %v", value, err)
+			}
+			if got {
+				t.Errorf("empty value %#v produced true", value)
+			}
+		}
+		got, err := readOptionalBooleanYAMLOption(false, "helm.option")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got {
+			t.Error("false produced true")
+		}
+		_, err = readOptionalBooleanYAMLOption(0, "helm.option")
+		if err == nil || err.Error() != "helm.option must be a boolean" {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("string sequence", func(t *testing.T) {
+		for _, value := range emptyValues {
+			got, err := readOptionalStringSequenceYAMLOption(value, "helm.option")
+			if err != nil {
+				t.Errorf("empty value %#v was rejected: %v", value, err)
+			}
+			if got != nil {
+				t.Errorf("empty value %#v produced %#v", value, got)
+			}
+		}
+		got, err := readOptionalStringSequenceYAMLOption(
+			[]any{"first", "second"},
+			"helm.option",
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(got, []string{"first", "second"}) {
+			t.Errorf("got %#v, want [first second]", got)
+		}
+		_, err = readOptionalStringSequenceYAMLOption("value", "helm.option")
+		if err == nil || err.Error() != "helm.option must be a sequence" {
+			t.Errorf("unexpected error: %v", err)
+		}
+		_, err = readOptionalStringSequenceYAMLOption(
+			[]any{"first", 2},
+			"helm.option",
+		)
+		if err == nil || err.Error() != "helm.option[1] must be a string" {
+			t.Errorf("unexpected element error: %v", err)
+		}
+	})
 }
 
 func TestConvertIgnoresSkipTestsRegardlessOfValue(t *testing.T) {
