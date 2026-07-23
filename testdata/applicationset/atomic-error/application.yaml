@@ -1,0 +1,15 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - list:
+        elements:
+          - name: first
+          - name: second
+  template:
+    metadata:
+      name: '{{ .missing }}'

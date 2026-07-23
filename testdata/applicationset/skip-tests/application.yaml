@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - name: tests-enabled
+            skipTests: true
+          - name: tests-disabled
+            skipTests: false
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      source:
+        repoURL: https://example.com/charts
+        chart: chart
+        targetRevision: 1.0.0
+        helm:
+          skipTests: '{{ .skipTests }}'

@@ -158,33 +158,7 @@ func TestConvertApplicationSetProjectsPerApplicationLabels(t *testing.T) {
   - name: resource
     query: .apiVersion + "/" + .kind
 `)
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apps
-spec:
-  goTemplate: true
-  generators:
-    - list:
-        elements:
-          - name: enabled
-            skipTests: true
-            project: one
-          - name: disabled
-            skipTests: false
-            project: two
-  template:
-    metadata:
-      name: '{{ .name }}'
-    spec:
-      project: '{{ .project }}'
-      source:
-        repoURL: https://example.com/charts
-        chart: chart
-        targetRevision: 1.0.0
-        helm:
-          skipTests: '{{ .skipTests }}'
-`
+	input := readTestdata(t, "applicationset/release-labels/application.yaml")
 	output, err := convertWithConfig([]byte(input), config)
 	if err != nil {
 		t.Fatal(err)
@@ -204,25 +178,7 @@ func TestConvertApplicationSetLabelFailureReportsElementOrigin(t *testing.T) {
   - name: invalid
     query: .metadata
 `)
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apps
-spec:
-  goTemplate: true
-  generators:
-    - list:
-        elements:
-          - name: generated
-  template:
-    metadata:
-      name: '{{ .name }}'
-    spec:
-      source:
-        repoURL: https://example.com/charts
-        chart: chart
-        targetRevision: 1.0.0
-`
+	input := readTestdata(t, "applicationset/minimal/application.yaml")
 	_, err := convertWithConfig([]byte(input), config)
 	want := "document 1: spec.generators[0].list.elements[0]: release label"
 	if err == nil || !strings.Contains(err.Error(), want) {

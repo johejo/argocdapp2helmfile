@@ -39,30 +39,7 @@ func TestConvertApplicationSetGeneratorTemplateOverridesAndInherits(t *testing.T
 }
 
 func TestConvertApplicationSetIgnoresDifferentSkipTestsValues(t *testing.T) {
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apps
-spec:
-  goTemplate: true
-  generators:
-    - list:
-        elements:
-          - name: tests-enabled
-            skipTests: true
-          - name: tests-disabled
-            skipTests: false
-  template:
-    metadata:
-      name: '{{ .name }}'
-    spec:
-      source:
-        repoURL: https://example.com/charts
-        chart: chart
-        targetRevision: 1.0.0
-        helm:
-          skipTests: '{{ .skipTests }}'
-`
+	input := readTestdata(t, "applicationset/skip-tests/application.yaml")
 	output, err := convert([]byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -78,26 +55,7 @@ spec:
 }
 
 func TestConvertApplicationSetTemplateFunctions(t *testing.T) {
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apps
-spec:
-  goTemplate: true
-  goTemplateOptions: [missingkey=error]
-  generators:
-    - list:
-        elements:
-          - raw: Hello Wide World
-  template:
-    metadata:
-      name: '{{ .raw | slugify 12 }}'
-    spec:
-      source:
-        repoURL: https://example.com/charts
-        chart: '{{ (fromYaml "chart: parsed").chart }}'
-        targetRevision: '{{ default "1.0.0" .version }}'
-`
+	input := readTestdata(t, "applicationset/template-functions/application.yaml")
 	output, err := convert([]byte(input))
 	if err == nil || !strings.Contains(err.Error(), `map has no entry for key "version"`) {
 		t.Fatalf("default unexpectedly bypassed missingkey=error: output=%s error=%v", output, err)
@@ -198,26 +156,7 @@ spec:
 
 func TestConvertMixedApplicationsAndApplicationSets(t *testing.T) {
 	first := strings.Replace(minimalApplication(""), "name: app", "name: first", 1)
-	appSet := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: generated
-spec:
-  goTemplate: true
-  generators:
-    - list:
-        elements:
-          - name: second
-          - name: third
-  template:
-    metadata:
-      name: '{{ .name }}'
-    spec:
-      source:
-        repoURL: https://example.com/charts
-        chart: chart
-        targetRevision: 1.2.3
-`
+	appSet := readTestdata(t, "applicationset/mixed/application-set.yaml")
 	input := first + "---\n" + appSet
 	output, err := convert([]byte(input))
 	if err != nil {
@@ -236,29 +175,7 @@ func TestConvertApplicationSetGitChartWithConfig(t *testing.T) {
 	resolver := testSourceResolver(t, testSource{
 		repoURL: repoURL, targetRevision: "main", root: `{{ requiredEnv "CHARTS_ROOT" }}`,
 	})
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apps
-spec:
-  goTemplate: true
-  generators:
-    - list:
-        elements:
-          - name: frontend
-            directory: frontend
-  template:
-    metadata:
-      name: '{{ .name }}'
-    spec:
-      source:
-        repoURL: ` + repoURL + `
-        path: 'charts/{{ .directory }}'
-        targetRevision: main
-        helm:
-          valueFiles:
-            - environments/prod.yaml
-`
+	input := readTestdata(t, "applicationset/git-chart-with-config/application.yaml")
 	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)
@@ -276,25 +193,7 @@ spec:
 
 func TestConvertApplicationSetDuplicateReleaseReportsOrigins(t *testing.T) {
 	direct := minimalApplication("")
-	appSet := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apps
-spec:
-  goTemplate: true
-  generators:
-    - list:
-        elements:
-          - name: app
-  template:
-    metadata:
-      name: '{{ .name }}'
-    spec:
-      source:
-        repoURL: https://example.com/charts
-        chart: chart
-        targetRevision: 1.0.0
-`
+	appSet := readTestdata(t, "applicationset/minimal/application.yaml")
 	_, err := convert([]byte(direct + "---\n" + appSet))
 	want := `document 2: spec.generators[0].list.elements[0]: release name "app" duplicates document 1`
 	if err == nil || !strings.Contains(err.Error(), want) {
@@ -303,18 +202,7 @@ spec:
 }
 
 func TestConvertEmptyApplicationSet(t *testing.T) {
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: empty
-spec:
-  goTemplate: true
-  generators:
-    - list: {}
-  template:
-    metadata:
-      name: unused
-`
+	input := readTestdata(t, "applicationset/empty/application.yaml")
 	output, err := convert([]byte(input))
 	if err != nil {
 		t.Fatal(err)
@@ -325,7 +213,7 @@ spec:
 }
 
 func TestConvertApplicationSetErrors(t *testing.T) {
-	valid := readTestdata(t, "applicationset/errors-base/application.yaml")
+	valid := readTestdata(t, "applicationset/minimal/application.yaml")
 	tests := map[string]struct {
 		input string
 		want  string
@@ -375,22 +263,7 @@ func TestConvertApplicationSetErrors(t *testing.T) {
 }
 
 func TestRunApplicationSetErrorIsAtomic(t *testing.T) {
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apps
-spec:
-  goTemplate: true
-  goTemplateOptions: [missingkey=error]
-  generators:
-    - list:
-        elements:
-          - name: first
-          - name: second
-  template:
-    metadata:
-      name: '{{ .missing }}'
-`
+	input := readTestdata(t, "applicationset/atomic-error/application.yaml")
 	var stdout, stderr bytes.Buffer
 	if code := run(nil, strings.NewReader(input), &stdout, &stderr); code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)

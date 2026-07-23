@@ -82,23 +82,7 @@ func TestConvertRemoteChartFileParameters(t *testing.T) {
 	})
 
 	t.Run("$ref resolved", func(t *testing.T) {
-		const input = `apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: app
-spec:
-  sources:
-    - repoURL: https://example.com/charts
-      chart: app
-      targetRevision: 1.2.3
-      helm:
-        fileParameters:
-          - name: config
-            path: $files/config/app.json
-    - repoURL: https://github.com/example/files.git
-      targetRevision: main
-      ref: files
-`
+		input := readTestdata(t, "file-parameters/ref/application.yaml")
 		resolver := testSourceResolver(t, testSource{
 			repoURL:        "https://github.com/example/files.git",
 			targetRevision: "main",
@@ -181,30 +165,7 @@ func TestConvertApplicationSetFileParameters(t *testing.T) {
 	resolver := testSourceResolver(t, testSource{
 		repoURL: repoURL, targetRevision: "main", root: `{{ requiredEnv "CHARTS_ROOT" }}`,
 	})
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: apps
-spec:
-  goTemplate: true
-  generators:
-    - list:
-        elements:
-          - name: frontend
-            config: frontend.json
-  template:
-    metadata:
-      name: '{{ .name }}'
-    spec:
-      source:
-        repoURL: ` + repoURL + `
-        path: charts/app
-        targetRevision: main
-        helm:
-          fileParameters:
-            - name: config
-              path: 'files/{{ .config }}'
-`
+	input := readTestdata(t, "applicationset/file-parameters/application.yaml")
 	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)

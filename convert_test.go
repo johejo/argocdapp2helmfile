@@ -132,20 +132,7 @@ func TestConvertMultipleApplications(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `repositories:
-  - name: source
-    url: https://example.com/charts
-  - name: source-2
-    url: registry.example.com/charts
-    oci: true
-releases:
-  - name: app
-    chart: source/chart
-    version: 1.2.3
-  - name: worker
-    chart: source-2/worker
-    version: 4.5.6
-`
+	want := readTestdata(t, "multiple-applications/helmfile.yaml")
 	if string(output) != want {
 		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
 	}

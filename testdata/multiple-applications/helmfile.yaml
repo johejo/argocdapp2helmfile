@@ -1,0 +1,13 @@
+repositories:
+  - name: source
+    url: https://example.com/charts
+  - name: source-2
+    url: registry.example.com/charts
+    oci: true
+releases:
+  - name: app
+    chart: source/chart
+    version: 1.2.3
+  - name: worker
+    chart: source-2/worker
+    version: 4.5.6

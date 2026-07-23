@@ -1,0 +1,11 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: empty
+spec:
+  goTemplate: true
+  generators:
+    - list: {}
+  template:
+    metadata:
+      name: unused

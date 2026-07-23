@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - list:
+        elements:
+          - raw: Hello Wide World
+  template:
+    metadata:
+      name: '{{ .raw | slugify 12 }}'
+    spec:
+      source:
+        repoURL: https://example.com/charts
+        chart: '{{ (fromYaml "chart: parsed").chart }}'
+        targetRevision: '{{ default "1.0.0" .version }}'

@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app
+spec:
+  sources:
+    - repoURL: https://example.com/charts
+      chart: app
+      targetRevision: 1.2.3
+      helm:
+        fileParameters:
+          - name: config
+            path: $files/config/app.json
+    - repoURL: https://github.com/example/files.git
+      targetRevision: main
+      ref: files
