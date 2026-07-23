@@ -130,7 +130,7 @@ func validateRelativeValuePath(valuePath string) error {
 	if strings.ContainsAny(valuePath, "*?[]{}") {
 		return errors.New("glob paths are not supported")
 	}
-	for _, segment := range strings.Split(valuePath, "/") {
+	for segment := range strings.SplitSeq(valuePath, "/") {
 		if segment == "" || segment == "." || segment == ".." {
 			return errors.New("path must contain only non-empty segments other than '.' or '..'")
 		}

@@ -47,11 +47,11 @@ func resolveValuePath(raw string, context valueFileContext) (string, error) {
 	var mapping mappedSource
 	var base, relative string
 	if strings.HasPrefix(raw, "$") {
-		separator := strings.IndexByte(raw, '/')
-		if separator < 0 {
+		before, after, ok := strings.Cut(raw, "/")
+		if !ok {
 			return "", errors.New("a $ref value file must include a path after the reference")
 		}
-		ref := strings.TrimPrefix(raw[:separator], "$")
+		ref := strings.TrimPrefix(before, "$")
 		source, exists := context.refs[ref]
 		if !exists {
 			return "", fmt.Errorf("reference %q is not defined by spec.sources", ref)
@@ -61,7 +61,7 @@ func resolveValuePath(raw string, context valueFileContext) (string, error) {
 			return "", err
 		}
 		mapping = resolved
-		relative = raw[separator+1:]
+		relative = after
 	} else {
 		if context.chartMapping == nil {
 			return "", errors.New("non-$ref valueFiles are not supported for HTTP or OCI Helm charts")

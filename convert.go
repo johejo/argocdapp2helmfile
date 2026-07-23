@@ -353,8 +353,8 @@ func documentNumberForError(input []byte, err error) int {
 			break
 		}
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(line, "---") {
-			remainder := strings.TrimSpace(strings.TrimPrefix(line, "---"))
+		if after, ok := strings.CutPrefix(line, "---"); ok {
+			remainder := strings.TrimSpace(after)
 			if remainder == "" || strings.HasPrefix(remainder, "#") {
 				documentHeaders++
 				continue
