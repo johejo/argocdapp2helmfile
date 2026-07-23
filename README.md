@@ -48,6 +48,8 @@ spec:
         - name: image.tag
           value: "001"
           forceString: true
+      skipSchemaValidation: true
+      skipCrds: true
 ```
 
 `argocdapp2helmfile` produces:
@@ -56,6 +58,8 @@ spec:
 repositories:
   - name: source
     url: https://charts.bitnami.com/bitnami
+helmDefaults:
+  skipCRDs: true
 releases:
   - name: edge
     namespace: web
@@ -73,6 +77,7 @@ releases:
     setString:
       - name: image.tag
         value: "001"
+    skipSchemaValidation: true
 ```
 
 The repository alias is always `source`. If `helm.releaseName` is absent, the
@@ -119,10 +124,16 @@ and either an HTTP(S) Helm repository or a scheme-less OCI Helm repository.
 | `spec.source.helm.values` | Parsed inline `values` entry |
 | `spec.source.helm.valuesObject` | Inline `values` entry |
 | `spec.source.helm.parameters` | Release `set` or `setString` entries |
+| `spec.source.helm.skipSchemaValidation` | Release `skipSchemaValidation` |
+| `spec.source.helm.skipCrds` | `helmDefaults.skipCRDs` |
 
 For each parameter, `name` and the string `value` are preserved. Parameters
 with `forceString: true` are emitted under `setString`; all other parameters
 are emitted under `set`.
+
+`skipCrds` is a release option in an Argo CD Application, but helmfile exposes
+the corresponding `skipCRDs` setting under the top-level `helmDefaults`.
+Generated files containing this setting require helmfile v1.3.0 or newer.
 
 Values retain Argo CD's precedence: chart defaults, `values`, `valuesObject`,
 then `parameters`, from lowest to highest precedence. The generated entries are
@@ -160,9 +171,13 @@ and error behavior are established. This is not a committed roadmap:
 - charts stored in Git repositories;
 - `valueFiles` for a local or already-fetched chart;
 - commonly used Helm options such as `fileParameters`,
-  `ignoreMissingValueFiles`, and `skipCrds`;
+  `ignoreMissingValueFiles`, and `skipTests`;
 - multi-source Applications and cross-repository `$values` references; and
 - aggregating multiple Applications into one helmfile.
+
+When support for multiple releases is added, their `skipCrds` values must
+agree before being promoted to the shared `helmDefaults.skipCRDs` setting.
+Conflicting values must be rejected rather than producing a lossy conversion.
 
 Supporting `valueFiles` is not just a matter of copying the path. Argo CD can
 resolve a relative values path inside a fetched chart, whereas helmfile usually

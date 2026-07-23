@@ -37,8 +37,13 @@ type application struct {
 }
 
 type helmfile struct {
-	Repositories []repository `yaml:"repositories"`
-	Releases     []release    `yaml:"releases"`
+	Repositories []repository  `yaml:"repositories"`
+	HelmDefaults *helmDefaults `yaml:"helmDefaults,omitempty"`
+	Releases     []release     `yaml:"releases"`
+}
+
+type helmDefaults struct {
+	SkipCRDs bool `yaml:"skipCRDs,omitempty"`
 }
 
 type repository struct {
@@ -48,13 +53,14 @@ type repository struct {
 }
 
 type release struct {
-	Name      string         `yaml:"name"`
-	Namespace string         `yaml:"namespace,omitempty"`
-	Chart     string         `yaml:"chart"`
-	Version   string         `yaml:"version"`
-	Values    []any          `yaml:"values,omitempty"`
-	Set       []setParameter `yaml:"set,omitempty"`
-	SetString []setParameter `yaml:"setString,omitempty"`
+	Name                 string         `yaml:"name"`
+	Namespace            string         `yaml:"namespace,omitempty"`
+	Chart                string         `yaml:"chart"`
+	Version              string         `yaml:"version"`
+	Values               []any          `yaml:"values,omitempty"`
+	Set                  []setParameter `yaml:"set,omitempty"`
+	SetString            []setParameter `yaml:"setString,omitempty"`
+	SkipSchemaValidation bool           `yaml:"skipSchemaValidation,omitempty"`
 }
 
 type setParameter struct {
@@ -69,10 +75,12 @@ type helmParameter struct {
 }
 
 type helmOptions struct {
-	releaseName  string
-	values       any
-	valuesObject any
-	parameters   []helmParameter
+	releaseName          string
+	values               any
+	valuesObject         any
+	parameters           []helmParameter
+	skipSchemaValidation bool
+	skipCRDs             bool
 }
 
 func main() {
@@ -184,14 +192,18 @@ func convert(input []byte) ([]byte, error) {
 	result := helmfile{
 		Repositories: []repository{{Name: "source", URL: app.Spec.Source.RepoURL, OCI: oci}},
 		Releases: []release{{
-			Name:      releaseName,
-			Namespace: app.Spec.Destination.Namespace,
-			Chart:     "source/" + app.Spec.Source.Chart,
-			Version:   app.Spec.Source.TargetRevision,
-			Values:    values,
-			Set:       set,
-			SetString: setString,
+			Name:                 releaseName,
+			Namespace:            app.Spec.Destination.Namespace,
+			Chart:                "source/" + app.Spec.Source.Chart,
+			Version:              app.Spec.Source.TargetRevision,
+			Values:               values,
+			Set:                  set,
+			SetString:            setString,
+			SkipSchemaValidation: helm.skipSchemaValidation,
 		}},
+	}
+	if helm.skipCRDs {
+		result.HelmDefaults = &helmDefaults{SkipCRDs: true}
 	}
 
 	var output bytes.Buffer
@@ -258,6 +270,24 @@ func parseHelmOptions(items yaml.MapSlice) (helmOptions, error) {
 				return result, err
 			}
 			result.parameters = parameters
+		case "skipSchemaValidation":
+			if isEmpty(item.Value) {
+				continue
+			}
+			value, ok := item.Value.(bool)
+			if !ok {
+				return result, errors.New("spec.source.helm.skipSchemaValidation must be a boolean")
+			}
+			result.skipSchemaValidation = value
+		case "skipCrds":
+			if isEmpty(item.Value) {
+				continue
+			}
+			value, ok := item.Value.(bool)
+			if !ok {
+				return result, errors.New("spec.source.helm.skipCrds must be a boolean")
+			}
+			result.skipCRDs = value
 		default:
 			if !isEmpty(item.Value) {
 				return result, fmt.Errorf("spec.source.helm.%s is not supported", key)
