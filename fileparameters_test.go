@@ -10,26 +10,7 @@ func TestConvertGitFileParameterPathsAndOrdering(t *testing.T) {
 	resolver := testSourceResolver(t, testSource{
 		repoURL: repoURL, targetRevision: "main", root: `{{ requiredEnv "CHARTS_ROOT" }}`,
 	})
-	input := gitApplication(repoURL, "charts/app", "main", `    helm:
-      parameters:
-        - name: ordinary
-          value: value
-        - name: overridden
-          value: old
-      fileParameters:
-        - name: relative
-          path: files/config.json
-        - name: root
-          path: /shared/config.json
-        - name: parent
-          path: ../common/config.json
-        - name: overridden
-          path: files/new.json
-        - name: duplicate
-          path: files/first.json
-        - name: duplicate
-          path: files/last.json
-`)
+	input := readTestdata(t, "file-parameters/git-paths/application.yaml")
 	output, err := convertWithResolver([]byte(input), resolver)
 	if err != nil {
 		t.Fatal(err)

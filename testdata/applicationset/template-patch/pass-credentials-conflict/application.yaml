@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - list:
+        elements:
+          - name: first
+            passCredentials: true
+          - name: second
+            passCredentials: false
+  templatePatch: |
+    {{- if .passCredentials }}
+    spec:
+      source:
+        helm:
+          passCredentials: true
+    {{- end }}
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        namespace: default
+      source:
+        repoURL: https://example.com/charts
+        chart: base-chart
+        targetRevision: 1.0.0

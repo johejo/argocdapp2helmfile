@@ -1,0 +1,46 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - list:
+        elements:
+          - name: app
+            environment: production
+            owner: platform
+            namespace: workloads
+            chart: patched-chart
+            version: 2.0.0
+            tag: "001"
+            replicas: "3"
+  templatePatch: |
+    metadata:
+      labels:
+        environment: '{{ .environment }}'
+      annotations:
+        owner: '{{ .owner }}'
+    spec:
+      destination:
+        namespace: '{{ .namespace }}'
+      source:
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'
+        helm:
+          parameters:
+            - name: image.tag
+              value: '{{ .tag }}'
+          valuesObject:
+            replicaCount: '{{ .replicas }}'
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        namespace: default
+      source:
+        repoURL: https://example.com/charts
+        chart: base-chart
+        targetRevision: 1.0.0

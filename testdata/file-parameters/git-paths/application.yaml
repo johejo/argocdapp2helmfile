@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app
+spec:
+  source:
+    repoURL: git@github.com:example/charts.git
+    path: charts/app
+    targetRevision: main
+    helm:
+      parameters:
+        - name: ordinary
+          value: value
+        - name: overridden
+          value: old
+      fileParameters:
+        - name: relative
+          path: files/config.json
+        - name: root
+          path: /shared/config.json
+        - name: parent
+          path: ../common/config.json
+        - name: overridden
+          path: files/new.json
+        - name: duplicate
+          path: files/first.json
+        - name: duplicate
+          path: files/last.json

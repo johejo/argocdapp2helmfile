@@ -264,19 +264,7 @@ func TestConvertApplicationSetDuplicateReleaseReportsOrigins(t *testing.T) {
 }
 
 func TestConvertApplicationSetPassCredentialsConflictReportsOrigins(t *testing.T) {
-	input := applicationSetWithTemplatePatch(
-		`{{- if .passCredentials }}
-spec:
-  source:
-    helm:
-      passCredentials: true
-{{- end }}`,
-		`          - name: first
-            passCredentials: true
-          - name: second
-            passCredentials: false
-`,
-	)
+	input := readTestdata(t, "applicationset/template-patch/pass-credentials-conflict/application.yaml")
 	_, err := convert([]byte(input))
 	want := "document 1: spec.generators[0].list.elements[1]: " +
 		"spec.source.helm.passCredentials conflicts with " +
@@ -344,25 +332,6 @@ func TestConvertApplicationSetErrors(t *testing.T) {
 }
 
 func TestConvertApplicationSetTemplatePatchYAMLAndJSON(t *testing.T) {
-	const yamlPatch = `metadata:
-  labels:
-    environment: '{{ .environment }}'
-  annotations:
-    owner: '{{ .owner }}'
-spec:
-  destination:
-    namespace: '{{ .namespace }}'
-  source:
-    chart: '{{ .chart }}'
-    targetRevision: '{{ .version }}'
-    helm:
-      parameters:
-        - name: image.tag
-          value: '{{ .tag }}'
-      valuesObject:
-        replicaCount: '{{ .replicas }}'
-`
-	const jsonPatch = `{"metadata":{"labels":{"environment":"{{ .environment }}"},"annotations":{"owner":"{{ .owner }}"}},"spec":{"destination":{"namespace":"{{ .namespace }}"},"source":{"chart":"{{ .chart }}","targetRevision":"{{ .version }}","helm":{"parameters":[{"name":"image.tag","value":"{{ .tag }}"}],"valuesObject":{"replicaCount":"{{ .replicas }}"}}}}}`
 	config := testConfig(t, `releaseLabels:
   - name: environment
     query: .metadata.labels.environment
@@ -371,16 +340,8 @@ spec:
 `)
 
 	var outputs [][]byte
-	for _, patch := range []string{yamlPatch, jsonPatch} {
-		input := applicationSetWithTemplatePatch(patch, `          - name: app
-            environment: production
-            owner: platform
-            namespace: workloads
-            chart: patched-chart
-            version: 2.0.0
-            tag: "001"
-            replicas: "3"
-`)
+	for _, format := range []string{"yaml", "json"} {
+		input := readTestdata(t, "applicationset/template-patch/"+format+"/application.yaml")
 		output, err := convertWithConfig([]byte(input), config)
 		if err != nil {
 			t.Fatal(err)
@@ -405,25 +366,7 @@ spec:
 }
 
 func TestConvertApplicationSetTemplatePatchConditionalAndGeneratorTemplateOrder(t *testing.T) {
-	const patch = `{{- if .patch }}
-spec:
-  destination:
-    namespace: patched
-  source:
-    chart: patched-chart
-{{- end }}
-`
-	input := applicationSetWithTemplatePatch(patch, `          - name: enabled
-            patch: true
-          - name: disabled
-            patch: false
-        template:
-          spec:
-            destination:
-              namespace: generator
-            source:
-              chart: generator-chart
-`)
+	input := readTestdata(t, "applicationset/template-patch/conditional-generator-template-order/application.yaml")
 	output, err := convert([]byte(input))
 	if err != nil {
 		t.Fatal(err)
