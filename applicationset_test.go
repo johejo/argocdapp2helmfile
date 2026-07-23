@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"testing"
 
@@ -148,7 +149,7 @@ spec:
 			}
 			for _, name := range []string{"dev", "prod", "missing"} {
 				contains := strings.Contains(string(output), "  - name: "+name+"\n")
-				if contains != stringSliceContains(test.want, name) {
+				if contains != slices.Contains(test.want, name) {
 					t.Errorf("release %q presence = %v, want %v:\n%s", name, contains, !contains, output)
 				}
 			}

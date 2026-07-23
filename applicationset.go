@@ -683,7 +683,7 @@ func (selector labelSelector) matches(params map[string]any) (bool, error) {
 	}
 	for _, expression := range selector.matchExpressions {
 		value, exists := flat[expression.key]
-		contains := stringSliceContains(expression.values, value)
+		contains := slices.Contains(expression.values, value)
 		switch expression.operator {
 		case "In":
 			if !exists || !contains {
@@ -735,8 +735,4 @@ func flattenParameters(output map[string]string, prefix string, value any) error
 		output[prefix] = fmt.Sprintf("%v", value)
 	}
 	return nil
-}
-
-func stringSliceContains(values []string, target string) bool {
-	return slices.Contains(values, target)
 }
