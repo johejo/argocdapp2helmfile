@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 
 	"github.com/goccy/go-yaml"
-	"github.com/goccy/go-yaml/parser"
 )
 
 type applicationDestination struct {
@@ -80,169 +78,18 @@ func convert(input []byte) ([]byte, error) {
 }
 
 func convertWithConfig(input []byte, config *conversionConfig) ([]byte, error) {
-	file, err := parser.ParseBytes(input, 0)
+	applications, err := decodeApplicationInputs(input)
 	if err != nil {
-		return nil, fmt.Errorf("document %d: decode Application: %w", documentNumberForError(input, err), err)
+		return nil, err
 	}
 
-	type applicationInput struct {
-		application application
-		data        any
-		origin      inputOrigin
-	}
-	var applications []applicationInput
-	for i, document := range file.Docs {
-		documentNumber := i + 1
-		if document.Body == nil {
-			return nil, fmt.Errorf("document %d: document must contain an Application or ApplicationSet", documentNumber)
-		}
-
-		var header struct {
-			Kind string `yaml:"kind"`
-		}
-		if err := yaml.NodeToValue(document.Body, &header); err != nil {
-			return nil, fmt.Errorf("document %d: decode resource: %w", documentNumber, err)
-		}
-		switch header.Kind {
-		case "Application":
-			var app application
-			if err := yaml.NodeToValue(document.Body, &app, yaml.UseOrderedMap()); err != nil {
-				return nil, fmt.Errorf("document %d: decode Application: %w", documentNumber, err)
-			}
-			var data any
-			if err := yaml.NodeToValue(document.Body, &data, yaml.UseOrderedMap()); err != nil {
-				return nil, fmt.Errorf("document %d: decode Application data: %w", documentNumber, err)
-			}
-			data, err = normalizeTemplateValue(data)
-			if err != nil {
-				return nil, fmt.Errorf("document %d: normalize Application data: %w", documentNumber, err)
-			}
-			applications = append(applications, applicationInput{
-				application: app,
-				data:        data,
-				origin:      inputOrigin{document: documentNumber},
-			})
-		case "ApplicationSet":
-			generated, err := expandApplicationSet(document.Body)
-			if err != nil {
-				return nil, fmt.Errorf("document %d: %w", documentNumber, err)
-			}
-			for _, item := range generated {
-				applications = append(applications, applicationInput{
-					application: item.application,
-					data:        item.data,
-					origin: inputOrigin{
-						document: documentNumber,
-						path:     item.path,
-					},
-				})
-			}
-		default:
-			return nil, fmt.Errorf("document %d: kind must be \"Application\" or \"ApplicationSet\"", documentNumber)
+	builder := newHelmfileBuilder(config)
+	for _, item := range applications {
+		if err := builder.add(item); err != nil {
+			return nil, err
 		}
 	}
-	if len(file.Docs) == 0 {
-		return nil, errors.New("document 1: document must contain an Application or ApplicationSet")
-	}
-
-	result := helmfile{}
-	var provenanceComments []string
-	repositoryAliases := make(map[string]string)
-	repositoryPassCredentials := make(map[string]bool)
-	repositoryOrigins := make(map[string]inputOrigin)
-	usedRepositoryAliases := make(map[string]struct{})
-	releaseOrigins := make(map[string]inputOrigin)
-	var sharedSkipCRDs bool
-	var sharedSkipCRDsOrigin inputOrigin
-	var resolver *sourceResolver
-	var destinationResolver *destinationResolver
-	var projector *releaseLabelProjector
-	if config != nil {
-		resolver = config.sourceResolver
-		destinationResolver = config.destinationResolver
-		projector = config.labelProjector
-	}
-	for i, item := range applications {
-		converted, err := convertApplication(
-			item.application,
-			item.origin.document,
-			resolver,
-			destinationResolver,
-		)
-		if err != nil {
-			return nil, item.origin.wrap(err)
-		}
-		converted.release.Labels, err = projector.project(item.data)
-		if err != nil {
-			return nil, item.origin.wrap(err)
-		}
-
-		if previousOrigin, exists := releaseOrigins[converted.release.Name]; exists {
-			if item.origin.path == "" && previousOrigin.path == "" {
-				return nil, fmt.Errorf(
-					"document %d: release name %q duplicates document %d",
-					item.origin.document,
-					converted.release.Name,
-					previousOrigin.document,
-				)
-			}
-			return nil, item.origin.wrap(fmt.Errorf(
-				"release name %q duplicates %s",
-				converted.release.Name,
-				previousOrigin,
-			))
-		}
-		releaseOrigins[converted.release.Name] = item.origin
-
-		if i == 0 {
-			sharedSkipCRDs = converted.skipCRDs
-			sharedSkipCRDsOrigin = item.origin
-		} else if converted.skipCRDs != sharedSkipCRDs {
-			if item.origin.path == "" && sharedSkipCRDsOrigin.path == "" && sharedSkipCRDsOrigin.document == 1 {
-				return nil, fmt.Errorf(
-					"document %d: spec.source.helm.skipCrds conflicts with document 1",
-					item.origin.document,
-				)
-			}
-			return nil, item.origin.wrap(fmt.Errorf(
-				"spec.source.helm.skipCrds conflicts with %s",
-				sharedSkipCRDsOrigin,
-			))
-		}
-
-		if converted.repository != nil {
-			alias, exists := repositoryAliases[converted.repository.URL]
-			if !exists {
-				alias = uniqueRepositoryAlias(repositoryAlias(converted.repository.URL), usedRepositoryAliases)
-				repositoryAliases[converted.repository.URL] = alias
-				repositoryPassCredentials[converted.repository.URL] = converted.repository.PassCredentials
-				repositoryOrigins[converted.repository.URL] = item.origin
-				usedRepositoryAliases[alias] = struct{}{}
-				converted.repository.Name = alias
-				result.Repositories = append(result.Repositories, *converted.repository)
-			} else if converted.repository.PassCredentials != repositoryPassCredentials[converted.repository.URL] {
-				return nil, item.origin.wrap(fmt.Errorf(
-					"spec.source.helm.passCredentials conflicts with %s",
-					repositoryOrigins[converted.repository.URL],
-				))
-			}
-			converted.release.Chart = alias + "/" + converted.chart
-		}
-		result.Releases = append(result.Releases, converted.release)
-		provenanceComments = append(provenanceComments, converted.provenanceComments...)
-	}
-	if sharedSkipCRDs {
-		result.HelmDefaults = &helmDefaults{SkipCRDs: true}
-	}
-
-	var output bytes.Buffer
-	for _, comment := range provenanceComments {
-		fmt.Fprintf(&output, "# %s\n", comment)
-	}
-	if err := yaml.NewEncoder(&output, yaml.Indent(2), yaml.IndentSequence(true)).Encode(result); err != nil {
-		return nil, fmt.Errorf("encode helmfile: %w", err)
-	}
-	return output.Bytes(), nil
+	return builder.finalize()
 }
 
 type convertedApplication struct {
