@@ -107,6 +107,8 @@ An Application must identify either:
 | `metadata.name` | Release `name` when `helm.releaseName` is absent |
 | `spec.source.helm.releaseName` | Release `name` |
 | `spec.destination.namespace` | Release `namespace` |
+| `spec.source.helm.namespace` | Accepted only when it exactly matches `spec.destination.namespace`; no additional output |
+| `spec.source.helm.version` | Accepted and intentionally ignored |
 | `spec.source.repoURL` | Repository `url`; scheme-less OCI also sets `oci: true` |
 | Packaged chart `spec.source.helm.passCredentials` | Repository `passCredentials: true` when true |
 | `spec.source.chart` | Release chart as `<alias>/<chart>` |
@@ -139,6 +141,14 @@ Multiple value files and parameters retain input order.
 `passCredentials: false` and omission both omit the repository field.
 For a Git chart source, `passCredentials` is type-checked and accepted.
 It has no output effect because no helmfile repository entry is generated.
+
+Argo CD uses `helm.namespace` as the namespace passed to Helm template operations,
+falling back to `spec.destination.namespace` when it is absent.
+The converter accepts a non-empty `helm.namespace` only when it exactly matches
+`spec.destination.namespace`.
+It rejects a mismatch because helmfile cannot safely represent separate template
+and release namespaces.
+Empty `helm.namespace` values are ignored.
 
 `fileParameters` use Helm's `--set-file` behavior and are emitted after ordinary
 parameters in `set`, so a same-name file parameter wins within that list.
@@ -353,6 +363,8 @@ helmfile --selector argocd.skipTests=true template --skip-tests
 This projection is opt-in.
 `spec.source.helm.skipTests` is otherwise accepted and intentionally ignored
 because it controls Argo CD's Helm invocation, not a helmfile release.
+`spec.source.helm.version` is also accepted regardless of its value or type
+and intentionally ignored as an Argo CD backward-compatibility field.
 
 ## Conversion behavior and constraints
 
@@ -388,8 +400,11 @@ The converter rejects:
 - unsafe Git paths, refs, or paths that escape a configured source;
 - configured Application destinations without a matching Config entry;
 - Applications that set both destination `name` and `server`;
+- Applications whose non-empty `helm.namespace` does not exactly match
+  `spec.destination.namespace`;
 - same-name file parameters and `forceString` parameters; and
-- non-empty Helm options not listed in the mapping, except ignored `skipTests`.
+- non-empty Helm options not listed in the mapping,
+  except ignored `skipTests` and `version`.
 
 Unsupported inputs fail instead of producing an incomplete helmfile.
 Empty unsupported Helm options are ignored.

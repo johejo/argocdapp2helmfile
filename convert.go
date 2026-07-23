@@ -316,6 +316,12 @@ func convertApplication(
 	if err != nil {
 		return converted, err
 	}
+	if helm.namespace != "" && helm.namespace != app.Spec.Destination.Namespace {
+		return converted, fmt.Errorf(
+			"%s.helm.namespace %q must match spec.destination.namespace %q",
+			chartSourceField, helm.namespace, app.Spec.Destination.Namespace,
+		)
+	}
 	for _, parameter := range helm.parameters {
 		if !parameter.ForceString {
 			continue

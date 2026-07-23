@@ -24,6 +24,7 @@ type helmFileParameter struct {
 
 type helmOptions struct {
 	releaseName          string
+	namespace            string
 	kubeVersion          string
 	apiVersions          []string
 	valueFiles           []string
@@ -54,6 +55,15 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 				return result, fmt.Errorf("%s.releaseName must be a string", field)
 			}
 			result.releaseName = value
+		case "namespace":
+			if isEmpty(item.Value) {
+				continue
+			}
+			value, ok := item.Value.(string)
+			if !ok {
+				return result, fmt.Errorf("%s.namespace must be a string", field)
+			}
+			result.namespace = value
 		case "kubeVersion":
 			if isEmpty(item.Value) {
 				continue
@@ -161,8 +171,8 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 				return result, fmt.Errorf("%s.passCredentials must be a boolean", field)
 			}
 			result.passCredentials = value
-		case "skipTests":
-			// skipTests controls Argo CD's Helm invocation rather than the
+		case "skipTests", "version":
+			// These compatibility and invocation options do not change the
 			// release definition represented by the generated helmfile.
 			continue
 		default:

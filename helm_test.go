@@ -231,6 +231,97 @@ func TestConvertIgnoresSkipTestsRegardlessOfValue(t *testing.T) {
 	}
 }
 
+func TestConvertAcceptsHelmVersionAndMatchingNamespace(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expected       string
+		namespaceCount int
+	}{
+		{
+			name:     "version",
+			input:    "helm-options/version/application.yaml",
+			expected: "helm-options/version/helmfile.yaml",
+		},
+		{
+			name:     "non-string version",
+			input:    "helm-options/version-non-string/application.yaml",
+			expected: "helm-options/version/helmfile.yaml",
+		},
+		{
+			name:           "namespace",
+			input:          "helm-options/namespace/application.yaml",
+			expected:       "helm-options/namespace/helmfile.yaml",
+			namespaceCount: 1,
+		},
+		{
+			name:           "combined",
+			input:          "helm-options/combined/application.yaml",
+			expected:       "helm-options/namespace/helmfile.yaml",
+			namespaceCount: 1,
+		},
+		{
+			name:     "empty options",
+			input:    "helm-options/empty/application.yaml",
+			expected: "helm-options/version/helmfile.yaml",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output, err := convert([]byte(readTestdata(t, test.input)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := readTestdata(t, test.expected)
+			if string(output) != want {
+				t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+			}
+			namespaceCount := strings.Count(string(output), "    namespace:")
+			if namespaceCount != test.namespaceCount {
+				t.Fatalf(
+					"release namespace count = %d, want %d:\n%s",
+					namespaceCount, test.namespaceCount, output,
+				)
+			}
+		})
+	}
+}
+
+func TestConvertRejectsUnsupportedHelmNamespace(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "mismatch",
+			input: "helm-options/mismatched-namespace/application.yaml",
+			want:  `document 1: spec.source.helm.namespace "staging" must match spec.destination.namespace "production"`,
+		},
+		{
+			name:  "empty destination",
+			input: "helm-options/empty-destination-namespace/application.yaml",
+			want:  `document 1: spec.source.helm.namespace "staging" must match spec.destination.namespace ""`,
+		},
+		{
+			name:  "non-string",
+			input: "helm-options/non-string-namespace/application.yaml",
+			want:  "document 1: spec.source.helm.namespace must be a string",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output, err := convert([]byte(readTestdata(t, test.input)))
+			if err == nil {
+				t.Fatalf("convert succeeded with output:\n%s", output)
+			}
+			if err.Error() != test.want {
+				t.Fatalf("unexpected error: %v\nwant: %s", err, test.want)
+			}
+		})
+	}
+}
+
 func TestConvertPreservesValuesTypesOrderAndPrecedence(t *testing.T) {
 	input := minimalApplication(`    helm:
       values: |
