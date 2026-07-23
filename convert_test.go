@@ -236,6 +236,29 @@ func TestConvertAggregatesSkipCRDs(t *testing.T) {
 	})
 }
 
+func TestConvertAcceptsDifferentSkipTestsValues(t *testing.T) {
+	first := minimalApplication("    helm:\n      skipTests: true\n")
+	second := strings.Replace(
+		minimalApplication("    helm:\n      skipTests: false\n"),
+		"name: app",
+		"name: second",
+		1,
+	)
+
+	output, err := convert([]byte(first + "---\n" + second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(output), "skipTests") {
+		t.Fatalf("skipTests was emitted:\n%s", output)
+	}
+	for _, name := range []string{"app", "second"} {
+		if !strings.Contains(string(output), "  - name: "+name+"\n") {
+			t.Errorf("output does not contain release %q:\n%s", name, output)
+		}
+	}
+}
+
 func TestConvertRejectsEmptyDocuments(t *testing.T) {
 	tests := map[string]string{
 		"only":     "",

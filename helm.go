@@ -127,6 +127,10 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 				return result, fmt.Errorf("%s.skipCrds must be a boolean", field)
 			}
 			result.skipCRDs = value
+		case "skipTests":
+			// skipTests controls Argo CD's Helm invocation rather than the
+			// release definition represented by the generated helmfile.
+			continue
 		default:
 			if !isEmpty(item.Value) {
 				return result, fmt.Errorf("%s.%s is not supported", field, key)

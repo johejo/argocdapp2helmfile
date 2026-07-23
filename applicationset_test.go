@@ -38,6 +38,45 @@ func TestConvertApplicationSetGeneratorTemplateOverridesAndInherits(t *testing.T
 	}
 }
 
+func TestConvertApplicationSetIgnoresDifferentSkipTestsValues(t *testing.T) {
+	input := `apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - name: tests-enabled
+            skipTests: true
+          - name: tests-disabled
+            skipTests: false
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      source:
+        repoURL: https://example.com/charts
+        chart: chart
+        targetRevision: 1.0.0
+        helm:
+          skipTests: '{{ .skipTests }}'
+`
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(output), "skipTests") {
+		t.Fatalf("skipTests was emitted:\n%s", output)
+	}
+	for _, name := range []string{"tests-enabled", "tests-disabled"} {
+		if !strings.Contains(string(output), "  - name: "+name+"\n") {
+			t.Errorf("output does not contain release %q:\n%s", name, output)
+		}
+	}
+}
+
 func TestConvertApplicationSetTemplateFunctions(t *testing.T) {
 	input := `apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet

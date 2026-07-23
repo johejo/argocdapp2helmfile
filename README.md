@@ -170,6 +170,15 @@ Applications must have the same effective `skipCrds` value, with an absent value
 treated as `false`. Conflicting values are rejected. Generated files containing
 `helmDefaults.skipCRDs` require helmfile v1.3.0 or newer.
 
+`spec.source.helm.skipTests` is accepted but intentionally ignored because it
+controls an Argo CD Helm invocation rather than the release used by
+`helmfile apply` or `helmfile sync`. To omit test manifests when rendering, run
+`helmfile template --skip-tests`; this is a runtime flag shared by all releases
+in that invocation. A single `helmfile template` invocation therefore does not
+guarantee faithful reproduction of a group of Applications whose `skipTests`
+values differ. Choosing how to run helmfile and whether to include test
+manifests is the user's responsibility.
+
 ## ApplicationSet List generator
 
 An `ApplicationSet` is expanded locally before its generated Applications are
@@ -412,13 +421,15 @@ The converter rejects inputs that require any of the following:
 - Argo CD build-environment substitutions and remote URLs in `valueFiles` or
   `fileParameters`;
 - same-name `fileParameters` and `parameters` using `forceString: true`; or
-- non-empty Helm options not listed in the supported mapping above.
+- non-empty Helm options not listed in the supported mapping above, other than
+  the intentionally ignored `skipTests`.
 
 The required fields are `metadata.name`, the chart source's `repoURL` and
 `targetRevision`, plus `chart` for a Helm repository or `path` for a Git
 repository. Helm repository URLs must be HTTP(S) or scheme-less OCI references;
 in particular, `oci://` must not be included. Git chart URLs may use HTTP(S),
 SCP-like, or `ssh://` syntax. Empty unsupported Helm options are ignored.
+`skipTests` is ignored regardless of its value.
 
 These inputs fail explicitly instead of producing an incomplete helmfile.
 Fields unrelated to describing or rendering the Helm release are ignored as
@@ -428,8 +439,6 @@ described above.
 
 The following capabilities may be useful additions after the initial format
 and error behavior are established. This is not a committed roadmap:
-
-- commonly used Helm options such as `skipTests`.
 
 Additional ApplicationSet generators and translating Argo CD cluster identities
 into local kubeconfig contexts are not currently planned. Cluster selection

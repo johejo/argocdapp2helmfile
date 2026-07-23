@@ -72,6 +72,35 @@ func TestConvertHelmBooleanOptionsIndependently(t *testing.T) {
 	}
 }
 
+func TestConvertIgnoresSkipTestsRegardlessOfValue(t *testing.T) {
+	baseline, err := convert([]byte(minimalApplication("")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	values := map[string]string{
+		"true":     "true",
+		"false":    "false",
+		"null":     "null",
+		"string":   "enabled",
+		"number":   "1",
+		"sequence": "[true, false]",
+		"mapping":  "{enabled: true}",
+	}
+	for name, value := range values {
+		t.Run(name, func(t *testing.T) {
+			input := minimalApplication("    helm:\n      skipTests: " + value + "\n")
+			output, err := convert([]byte(input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(output) != string(baseline) {
+				t.Fatalf("skipTests changed output:\n%s\nwant:\n%s", output, baseline)
+			}
+		})
+	}
+}
+
 func TestConvertPreservesValuesTypesOrderAndPrecedence(t *testing.T) {
 	input := minimalApplication(`    helm:
       values: |
