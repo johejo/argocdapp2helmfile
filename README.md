@@ -9,8 +9,12 @@ output, and does not fetch charts or repositories.
 
 ```sh
 go install github.com/johejo/argocdapp2helmfile@latest
-argocdapp2helmfile <application.yaml >helmfile.yaml
+argocdapp2helmfile <application.yaml >helmfile.yaml.gotmpl
 ```
+
+Use the `.gotmpl` suffix whenever the input contains `helm.valueFiles`. Those
+entries use helmfile's `requiredEnv` template function, so helmfile must render
+the generated file as a template.
 
 Diagnostics are written to standard error. If the input cannot be converted
 without losing relevant Helm configuration, the command exits with a non-zero
@@ -161,9 +165,11 @@ scheme-less OCI Helm repository.
 | `spec.source.repoURL` | Repository `url`; scheme-less OCI repositories also set `oci: true` |
 | `spec.source.chart` | Release chart as `source/<chart>` |
 | `spec.source.targetRevision` | Release `version` |
+| `spec.source.helm.valueFiles` | Files below `document-N/chart/` under the configured values root |
 | `spec.source.helm.values` | Parsed inline `values` entry |
 | `spec.source.helm.valuesObject` | Inline `values` entry |
 | `spec.source.helm.parameters` | Release `set` or `setString` entries |
+| `spec.source.helm.ignoreMissingValueFiles` | Release `missingFileHandler: Warn` when true |
 | `spec.source.helm.skipSchemaValidation` | Release `skipSchemaValidation` |
 | `spec.source.helm.skipCrds` | `helmDefaults.skipCRDs` |
 
@@ -171,9 +177,75 @@ For each parameter, `name` and the string `value` are preserved. Parameters
 with `forceString: true` are emitted under `setString`; all other parameters
 are emitted under `set`.
 
-Values retain Argo CD's precedence: chart defaults, `values`, `valuesObject`,
-then `parameters`, from lowest to highest precedence. The generated entries are
-ordered so that helmfile applies the same precedence.
+Values retain Argo CD's precedence: chart defaults, `valueFiles`, `values`,
+`valuesObject`, then `parameters`, from lowest to highest precedence. Multiple
+`valueFiles` retain their input order. The generated entries are ordered so
+that helmfile applies the same precedence.
+
+## External values files
+
+The converter remains an offline Unix filter. It does not fetch, check out, or
+copy a chart or values repository. Before running helmfile, arrange the files
+under a values root using this public layout:
+
+```text
+$ARGOCDAPP2HELMFILE_VALUES_ROOT/
+├── document-1/
+│   ├── chart/
+│   └── refs/
+│       └── <ref>/
+├── document-2/
+│   ├── chart/
+│   └── refs/
+│       └── <ref>/
+└── ...
+```
+
+`document-N` uses the one-based position of the Application in the input YAML
+stream. Place the chart root beneath `chart/`, and place each referenced
+repository root beneath `refs/<ref>/`. A regular value file such as
+`environments/prod.yaml` is emitted as:
+
+```yaml
+values:
+  - '{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-1/chart/environments/prod.yaml'
+```
+
+Set the root when invoking helmfile:
+
+```sh
+ARGOCDAPP2HELMFILE_VALUES_ROOT="$PWD/values" helmfile -f helmfile.yaml.gotmpl apply
+```
+
+The environment variable is required instead of defaulting to an empty value.
+With the default Argo CD behavior, a missing values file remains an error. When
+`ignoreMissingValueFiles: true` is set, the release instead gets
+`missingFileHandler: Warn`; the root environment variable is still required.
+
+Only safe relative file paths are accepted. Empty and absolute paths, `.` or
+`..` path segments, empty segments, backslashes, and glob syntax are rejected.
+
+### Multi-source values repositories
+
+A multi-source Application is supported when it has exactly one Helm chart
+source and all other sources are values-only sources with a unique `ref`. A
+value file beginning with `$ref/` is resolved from the corresponding
+`document-N/refs/<ref>/` directory. The `$ref` token is accepted only at the
+start of the value file path, matching Argo CD's convention.
+
+For example, `$values/prod/values.yaml` becomes:
+
+```yaml
+values:
+  - '{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-1/refs/values/prod/values.yaml'
+```
+
+The generated file includes comments with each values source's `repoURL` and
+`targetRevision`. Use that provenance to check out and place the correct
+revision yourself. Undefined or duplicate refs and unsafe ref names are
+rejected. A second chart source, a source without a ref, or a values source
+with `path` is also rejected; the latter could generate additional manifests
+that cannot be represented by this conversion.
 
 Argo CD operational settings that do not describe a Helm release, such as
 `project` and `syncPolicy`, are not included in the generated helmfile. The
@@ -186,14 +258,15 @@ The converter rejects inputs that require any of the following:
 
 - `List` or `ApplicationSet` resources;
 - Git-hosted charts selected with `spec.source.path`;
-- multi-source Applications using `spec.sources`;
-- `valueFiles` or `fileParameters`; or
+- multi-source Applications outside the values-only `ref` form described
+  above;
+- `fileParameters`; or
 - non-empty Helm options not listed in the supported mapping above.
 
-The required fields are `metadata.name`, `spec.source.repoURL`,
-`spec.source.chart`, and `spec.source.targetRevision`. The repository URL must
-be an HTTP(S) URL or a scheme-less OCI registry reference. In particular,
-`oci://` must not be included. Empty unsupported Helm options are ignored.
+The required fields are `metadata.name` and the chart source's `repoURL`,
+`chart`, and `targetRevision`. The repository URL must be an HTTP(S) URL or a
+scheme-less OCI registry reference. In particular, `oci://` must not be
+included. Empty unsupported Helm options are ignored.
 
 These inputs fail explicitly instead of producing an incomplete helmfile.
 Fields unrelated to describing or rendering the Helm release are ignored as
@@ -205,17 +278,8 @@ The following capabilities may be useful additions after the initial format
 and error behavior are established. This is not a committed roadmap:
 
 - charts stored in Git repositories;
-- `valueFiles` for a local or already-fetched chart;
-- commonly used Helm options such as `fileParameters`,
-  `ignoreMissingValueFiles`, and `skipTests`;
-- multi-source Applications and cross-repository `$values` references; and
+- commonly used Helm options such as `fileParameters` and `skipTests`;
 - accepting `List` resources as an alternative batch input format.
-
-Supporting `valueFiles` is not just a matter of copying the path. Argo CD can
-resolve a relative values path inside a fetched chart, whereas helmfile usually
-resolves a values path from the local filesystem. Git-hosted charts and
-multi-source `$values` references would therefore require explicit rules for
-fetching repositories, pinning revisions, and resolving paths.
 
 Generating Applications from an `ApplicationSet` and translating Argo CD
 cluster identities into local kubeconfig contexts are intentional non-goals.

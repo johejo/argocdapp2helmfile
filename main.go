@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"reflect"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -25,15 +27,21 @@ type application struct {
 		Destination struct {
 			Namespace string `yaml:"namespace"`
 		} `yaml:"destination"`
-		Source struct {
-			RepoURL        string        `yaml:"repoURL"`
-			Chart          string        `yaml:"chart"`
-			TargetRevision string        `yaml:"targetRevision"`
-			Path           string        `yaml:"path"`
-			Helm           yaml.MapSlice `yaml:"helm"`
-		} `yaml:"source"`
-		Sources []any `yaml:"sources"`
+		Source  *applicationSource  `yaml:"source"`
+		Sources []applicationSource `yaml:"sources"`
 	} `yaml:"spec"`
+}
+
+type applicationSource struct {
+	RepoURL        string        `yaml:"repoURL"`
+	Chart          string        `yaml:"chart"`
+	TargetRevision string        `yaml:"targetRevision"`
+	Path           string        `yaml:"path"`
+	Ref            string        `yaml:"ref"`
+	Helm           yaml.MapSlice `yaml:"helm"`
+	Directory      yaml.MapSlice `yaml:"directory"`
+	Kustomize      yaml.MapSlice `yaml:"kustomize"`
+	Plugin         yaml.MapSlice `yaml:"plugin"`
 }
 
 type helmfile struct {
@@ -60,6 +68,7 @@ type release struct {
 	Values               []any          `yaml:"values,omitempty"`
 	Set                  []setParameter `yaml:"set,omitempty"`
 	SetString            []setParameter `yaml:"setString,omitempty"`
+	MissingFileHandler   string         `yaml:"missingFileHandler,omitempty"`
 	SkipSchemaValidation bool           `yaml:"skipSchemaValidation,omitempty"`
 }
 
@@ -76,11 +85,19 @@ type helmParameter struct {
 
 type helmOptions struct {
 	releaseName          string
+	valueFiles           []string
 	values               any
 	valuesObject         any
 	parameters           []helmParameter
+	ignoreMissingValues  bool
 	skipSchemaValidation bool
 	skipCRDs             bool
+}
+
+type templatePath string
+
+func (value templatePath) MarshalYAML() ([]byte, error) {
+	return []byte("'" + strings.ReplaceAll(string(value), "'", "''") + "'"), nil
 }
 
 func main() {
@@ -124,6 +141,7 @@ func convert(input []byte) ([]byte, error) {
 	}
 
 	result := helmfile{}
+	var provenanceComments []string
 	repositoryAliases := make(map[string]string)
 	releaseDocuments := make(map[string]int)
 	var sharedSkipCRDs bool
@@ -137,7 +155,7 @@ func convert(input []byte) ([]byte, error) {
 		if err := yaml.NodeToValue(document.Body, &app, yaml.UseOrderedMap()); err != nil {
 			return nil, fmt.Errorf("document %d: decode Application: %w", documentNumber, err)
 		}
-		converted, err := convertApplication(app)
+		converted, err := convertApplication(app, documentNumber)
 		if err != nil {
 			return nil, fmt.Errorf("document %d: %w", documentNumber, err)
 		}
@@ -167,6 +185,7 @@ func convert(input []byte) ([]byte, error) {
 		}
 		converted.release.Chart = alias + "/" + converted.chart
 		result.Releases = append(result.Releases, converted.release)
+		provenanceComments = append(provenanceComments, converted.provenanceComments...)
 	}
 	if len(file.Docs) == 0 {
 		return nil, errors.New("document 1: document must contain an Application")
@@ -176,6 +195,9 @@ func convert(input []byte) ([]byte, error) {
 	}
 
 	var output bytes.Buffer
+	for _, comment := range provenanceComments {
+		fmt.Fprintf(&output, "# %s\n", comment)
+	}
 	if err := yaml.NewEncoder(&output, yaml.Indent(2), yaml.IndentSequence(true)).Encode(result); err != nil {
 		return nil, fmt.Errorf("encode helmfile: %w", err)
 	}
@@ -183,13 +205,14 @@ func convert(input []byte) ([]byte, error) {
 }
 
 type convertedApplication struct {
-	repository repository
-	release    release
-	chart      string
-	skipCRDs   bool
+	repository         repository
+	release            release
+	chart              string
+	skipCRDs           bool
+	provenanceComments []string
 }
 
-func convertApplication(app application) (convertedApplication, error) {
+func convertApplication(app application, documentNumber int) (convertedApplication, error) {
 	var converted convertedApplication
 
 	if app.APIVersion != "argoproj.io/v1alpha1" {
@@ -201,24 +224,22 @@ func convertApplication(app application) (convertedApplication, error) {
 	if strings.TrimSpace(app.Metadata.Name) == "" {
 		return converted, errors.New("metadata.name is required")
 	}
-	if app.Spec.Sources != nil {
-		return converted, errors.New("spec.sources is not supported")
-	}
-	if strings.TrimSpace(app.Spec.Source.Path) != "" {
-		return converted, errors.New("spec.source.path is not supported")
-	}
-	oci, err := classifyRepositoryURL(app.Spec.Source.RepoURL)
+	chartSource, chartSourceField, refs, provenance, err := resolveSources(app, documentNumber)
 	if err != nil {
 		return converted, err
 	}
-	if strings.TrimSpace(app.Spec.Source.Chart) == "" {
-		return converted, errors.New("spec.source.chart is required")
+	oci, err := classifyRepositoryURL(chartSource.RepoURL)
+	if err != nil {
+		return converted, err
 	}
-	if strings.TrimSpace(app.Spec.Source.TargetRevision) == "" {
-		return converted, errors.New("spec.source.targetRevision is required")
+	if strings.TrimSpace(chartSource.Chart) == "" {
+		return converted, fmt.Errorf("%s.chart is required", chartSourceField)
+	}
+	if strings.TrimSpace(chartSource.TargetRevision) == "" {
+		return converted, fmt.Errorf("%s.targetRevision is required", chartSourceField)
 	}
 
-	helm, err := parseHelmOptions(app.Spec.Source.Helm)
+	helm, err := parseHelmOptions(chartSource.Helm, chartSourceField+".helm")
 	if err != nil {
 		return converted, err
 	}
@@ -226,7 +247,14 @@ func convertApplication(app application) (convertedApplication, error) {
 	if releaseName == "" {
 		releaseName = app.Metadata.Name
 	}
-	values := make([]any, 0, 2)
+	values := make([]any, 0, len(helm.valueFiles)+2)
+	for i, valueFile := range helm.valueFiles {
+		resolved, err := resolveValueFile(valueFile, documentNumber, refs)
+		if err != nil {
+			return converted, fmt.Errorf("%s.helm.valueFiles[%d]: %w", chartSourceField, i, err)
+		}
+		values = append(values, templatePath(resolved))
+	}
 	if !isEmpty(helm.values) {
 		values = append(values, helm.values)
 	}
@@ -245,16 +273,18 @@ func convertApplication(app application) (convertedApplication, error) {
 	}
 
 	converted = convertedApplication{
-		repository: repository{URL: app.Spec.Source.RepoURL, OCI: oci},
-		chart:      app.Spec.Source.Chart,
-		skipCRDs:   helm.skipCRDs,
+		repository:         repository{URL: chartSource.RepoURL, OCI: oci},
+		chart:              chartSource.Chart,
+		skipCRDs:           helm.skipCRDs,
+		provenanceComments: provenance,
 		release: release{
 			Name:                 releaseName,
 			Namespace:            app.Spec.Destination.Namespace,
-			Version:              app.Spec.Source.TargetRevision,
+			Version:              chartSource.TargetRevision,
 			Values:               values,
 			Set:                  set,
 			SetString:            setString,
+			MissingFileHandler:   missingFileHandler(helm.ignoreMissingValues),
 			SkipSchemaValidation: helm.skipSchemaValidation,
 		},
 	}
@@ -266,6 +296,157 @@ func repositoryAlias(index int) string {
 		return "source"
 	}
 	return fmt.Sprintf("source-%d", index+1)
+}
+
+var safeReferenceName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+func resolveSources(app application, documentNumber int) (applicationSource, string, map[string]struct{}, []string, error) {
+	if app.Spec.Source != nil && app.Spec.Sources != nil {
+		return applicationSource{}, "", nil, nil, errors.New("spec.source and spec.sources cannot both be set")
+	}
+	if app.Spec.Source != nil {
+		if strings.TrimSpace(app.Spec.Source.Path) != "" {
+			return applicationSource{}, "", nil, nil, errors.New("spec.source.path is not supported")
+		}
+		if strings.TrimSpace(app.Spec.Source.Ref) != "" {
+			return applicationSource{}, "", nil, nil, errors.New("spec.source.ref is only supported in spec.sources")
+		}
+		return *app.Spec.Source, "spec.source", nil, nil, nil
+	}
+	if app.Spec.Sources == nil {
+		return applicationSource{}, "", nil, nil, errors.New("spec.source or spec.sources is required")
+	}
+	if len(app.Spec.Sources) == 0 {
+		return applicationSource{}, "", nil, nil, errors.New("spec.sources must contain one Helm chart source")
+	}
+
+	refs := make(map[string]struct{})
+	var chartSource applicationSource
+	chartSourceField := ""
+	var comments []string
+	for i, source := range app.Spec.Sources {
+		field := fmt.Sprintf("spec.sources[%d]", i)
+		if strings.TrimSpace(source.Chart) != "" {
+			if chartSourceField != "" {
+				return applicationSource{}, "", nil, nil, errors.New("spec.sources must contain exactly one Helm chart source")
+			}
+			if strings.TrimSpace(source.Path) != "" {
+				return applicationSource{}, "", nil, nil, fmt.Errorf("%s.path is not supported", field)
+			}
+			if strings.TrimSpace(source.Ref) != "" {
+				return applicationSource{}, "", nil, nil, fmt.Errorf("%s.ref is not supported on the Helm chart source", field)
+			}
+			if source.Directory != nil || source.Kustomize != nil || source.Plugin != nil {
+				return applicationSource{}, "", nil, nil, fmt.Errorf("%s contains a non-Helm source configuration", field)
+			}
+			chartSource = source
+			chartSourceField = field
+			continue
+		}
+
+		if strings.TrimSpace(source.Path) != "" {
+			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.path would generate manifests and is not supported", field)
+		}
+		if !isEmpty(source.Helm) {
+			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.helm is only supported on the Helm chart source", field)
+		}
+		if source.Directory != nil || source.Kustomize != nil || source.Plugin != nil {
+			return applicationSource{}, "", nil, nil, fmt.Errorf("%s is not a values-only ref source", field)
+		}
+		if err := validateReferenceName(source.Ref); err != nil {
+			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.ref: %w", field, err)
+		}
+		if _, exists := refs[source.Ref]; exists {
+			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.ref %q is duplicated", field, source.Ref)
+		}
+		if strings.TrimSpace(source.RepoURL) == "" {
+			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.repoURL is required", field)
+		}
+		if strings.TrimSpace(source.TargetRevision) == "" {
+			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.targetRevision is required", field)
+		}
+		refs[source.Ref] = struct{}{}
+		comments = append(comments, fmt.Sprintf(
+			"document %d values source ref %q: repoURL %q, targetRevision %q",
+			documentNumber, source.Ref, source.RepoURL, source.TargetRevision,
+		))
+	}
+	if chartSourceField == "" {
+		return applicationSource{}, "", nil, nil, errors.New("spec.sources must contain exactly one Helm chart source")
+	}
+	return chartSource, chartSourceField, refs, comments, nil
+}
+
+func validateReferenceName(ref string) error {
+	if !safeReferenceName.MatchString(ref) || ref == "." || ref == ".." {
+		return errors.New("must be a safe single path segment containing only letters, digits, '.', '_', or '-'")
+	}
+	return nil
+}
+
+func resolveValueFile(valueFile string, documentNumber int, refs map[string]struct{}) (string, error) {
+	base := fmt.Sprintf(`{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-%d`, documentNumber)
+	if strings.HasPrefix(valueFile, "$") {
+		separator := strings.IndexByte(valueFile, '/')
+		if separator < 0 {
+			return "", errors.New("a $ref value file must include a path after the reference")
+		}
+		ref := strings.TrimPrefix(valueFile[:separator], "$")
+		if err := validateReferenceName(ref); err != nil {
+			return "", fmt.Errorf("reference %q is unsafe: %w", ref, err)
+		}
+		if _, exists := refs[ref]; !exists {
+			return "", fmt.Errorf("reference %q is not defined by spec.sources", ref)
+		}
+		relative := valueFile[separator+1:]
+		if err := validateRelativeValuePath(relative); err != nil {
+			return "", err
+		}
+		return base + "/refs/" + ref + "/" + relative, nil
+	}
+	if err := validateRelativeValuePath(valueFile); err != nil {
+		return "", err
+	}
+	return base + "/chart/" + valueFile, nil
+}
+
+func validateRelativeValuePath(valuePath string) error {
+	if valuePath == "" {
+		return errors.New("path must not be empty")
+	}
+	if strings.Contains(valuePath, `\`) {
+		return errors.New("backslashes are not supported")
+	}
+	if strings.IndexFunc(valuePath, unicode.IsControl) >= 0 {
+		return errors.New("control characters are not supported")
+	}
+	if path.IsAbs(valuePath) || isWindowsAbsolutePath(valuePath) {
+		return errors.New("absolute paths are not supported")
+	}
+	if strings.ContainsAny(valuePath, "*?[]{}") {
+		return errors.New("glob paths are not supported")
+	}
+	for _, segment := range strings.Split(valuePath, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return errors.New("path must contain only non-empty segments other than '.' or '..'")
+		}
+	}
+	return nil
+}
+
+func isWindowsAbsolutePath(valuePath string) bool {
+	if len(valuePath) < 3 || valuePath[1] != ':' || valuePath[2] != '/' {
+		return false
+	}
+	drive := valuePath[0]
+	return drive >= 'A' && drive <= 'Z' || drive >= 'a' && drive <= 'z'
+}
+
+func missingFileHandler(ignoreMissing bool) string {
+	if ignoreMissing {
+		return "Warn"
+	}
+	return ""
 }
 
 func documentNumberForError(input []byte, err error) int {
@@ -318,12 +499,12 @@ func classifyRepositoryURL(raw string) (bool, error) {
 	return true, nil
 }
 
-func parseHelmOptions(items yaml.MapSlice) (helmOptions, error) {
+func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 	var result helmOptions
 	for _, item := range items {
 		key, ok := item.Key.(string)
 		if !ok {
-			return result, errors.New("spec.source.helm contains a non-string option name")
+			return result, fmt.Errorf("%s contains a non-string option name", field)
 		}
 		switch key {
 		case "releaseName":
@@ -332,18 +513,34 @@ func parseHelmOptions(items yaml.MapSlice) (helmOptions, error) {
 			}
 			value, ok := item.Value.(string)
 			if !ok {
-				return result, errors.New("spec.source.helm.releaseName must be a string")
+				return result, fmt.Errorf("%s.releaseName must be a string", field)
 			}
 			result.releaseName = value
+		case "valueFiles":
+			if isEmpty(item.Value) {
+				continue
+			}
+			sequence, ok := item.Value.([]any)
+			if !ok {
+				return result, fmt.Errorf("%s.valueFiles must be a sequence", field)
+			}
+			result.valueFiles = make([]string, 0, len(sequence))
+			for i, raw := range sequence {
+				valueFile, ok := raw.(string)
+				if !ok {
+					return result, fmt.Errorf("%s.valueFiles[%d] must be a string", field, i)
+				}
+				result.valueFiles = append(result.valueFiles, valueFile)
+			}
 		case "values":
 			if isEmpty(item.Value) {
 				continue
 			}
 			inline, ok := item.Value.(string)
 			if !ok {
-				return result, errors.New("spec.source.helm.values must be a string")
+				return result, fmt.Errorf("%s.values must be a string", field)
 			}
-			value, err := decodeInlineValues(inline)
+			value, err := decodeInlineValues(inline, field+".values")
 			if err != nil {
 				return result, err
 			}
@@ -354,18 +551,27 @@ func parseHelmOptions(items yaml.MapSlice) (helmOptions, error) {
 			if isEmpty(item.Value) {
 				continue
 			}
-			parameters, err := parseParameters(item.Value)
+			parameters, err := parseParameters(item.Value, field+".parameters")
 			if err != nil {
 				return result, err
 			}
 			result.parameters = parameters
+		case "ignoreMissingValueFiles":
+			if isEmpty(item.Value) {
+				continue
+			}
+			value, ok := item.Value.(bool)
+			if !ok {
+				return result, fmt.Errorf("%s.ignoreMissingValueFiles must be a boolean", field)
+			}
+			result.ignoreMissingValues = value
 		case "skipSchemaValidation":
 			if isEmpty(item.Value) {
 				continue
 			}
 			value, ok := item.Value.(bool)
 			if !ok {
-				return result, errors.New("spec.source.helm.skipSchemaValidation must be a boolean")
+				return result, fmt.Errorf("%s.skipSchemaValidation must be a boolean", field)
 			}
 			result.skipSchemaValidation = value
 		case "skipCrds":
@@ -374,23 +580,23 @@ func parseHelmOptions(items yaml.MapSlice) (helmOptions, error) {
 			}
 			value, ok := item.Value.(bool)
 			if !ok {
-				return result, errors.New("spec.source.helm.skipCrds must be a boolean")
+				return result, fmt.Errorf("%s.skipCrds must be a boolean", field)
 			}
 			result.skipCRDs = value
 		default:
 			if !isEmpty(item.Value) {
-				return result, fmt.Errorf("spec.source.helm.%s is not supported", key)
+				return result, fmt.Errorf("%s.%s is not supported", field, key)
 			}
 		}
 	}
 	return result, nil
 }
 
-func decodeInlineValues(inline string) (any, error) {
+func decodeInlineValues(inline, field string) (any, error) {
 	if strings.TrimSpace(inline) == "" {
 		return nil, nil
 	}
-	if err := requireSingleDocument([]byte(inline), "spec.source.helm.values"); err != nil {
+	if err := requireSingleDocument([]byte(inline), field); err != nil {
 		return nil, err
 	}
 	decoder := yaml.NewDecoder(strings.NewReader(inline), yaml.UseOrderedMap())
@@ -399,14 +605,14 @@ func decodeInlineValues(inline string) (any, error) {
 		if errors.Is(err, io.EOF) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("decode spec.source.helm.values: %w", err)
+		return nil, fmt.Errorf("decode %s: %w", field, err)
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		if err != nil {
-			return nil, fmt.Errorf("decode additional spec.source.helm.values document: %w", err)
+			return nil, fmt.Errorf("decode additional %s document: %w", field, err)
 		}
-		return nil, errors.New("spec.source.helm.values must contain exactly one YAML document")
+		return nil, fmt.Errorf("%s must contain exactly one YAML document", field)
 	}
 	return value, nil
 }
@@ -422,55 +628,55 @@ func requireSingleDocument(input []byte, field string) error {
 	return nil
 }
 
-func parseParameters(value any) ([]helmParameter, error) {
+func parseParameters(value any, field string) ([]helmParameter, error) {
 	sequence, ok := value.([]any)
 	if !ok {
-		return nil, errors.New("spec.source.helm.parameters must be a sequence")
+		return nil, fmt.Errorf("%s must be a sequence", field)
 	}
 	parameters := make([]helmParameter, 0, len(sequence))
 	for i, raw := range sequence {
 		items, ok := raw.(yaml.MapSlice)
 		if !ok {
-			return nil, fmt.Errorf("spec.source.helm.parameters[%d] must be a mapping", i)
+			return nil, fmt.Errorf("%s[%d] must be a mapping", field, i)
 		}
 		var parameter helmParameter
 		var hasValue bool
 		for _, item := range items {
 			key, ok := item.Key.(string)
 			if !ok {
-				return nil, fmt.Errorf("spec.source.helm.parameters[%d] contains a non-string field name", i)
+				return nil, fmt.Errorf("%s[%d] contains a non-string field name", field, i)
 			}
 			switch key {
 			case "name":
 				name, ok := item.Value.(string)
 				if !ok {
-					return nil, fmt.Errorf("spec.source.helm.parameters[%d].name must be a string", i)
+					return nil, fmt.Errorf("%s[%d].name must be a string", field, i)
 				}
 				parameter.Name = name
 			case "value":
 				parameterValue, ok := item.Value.(string)
 				if !ok {
-					return nil, fmt.Errorf("spec.source.helm.parameters[%d].value must be a string", i)
+					return nil, fmt.Errorf("%s[%d].value must be a string", field, i)
 				}
 				parameter.Value = parameterValue
 				hasValue = true
 			case "forceString":
 				forceString, ok := item.Value.(bool)
 				if !ok {
-					return nil, fmt.Errorf("spec.source.helm.parameters[%d].forceString must be a boolean", i)
+					return nil, fmt.Errorf("%s[%d].forceString must be a boolean", field, i)
 				}
 				parameter.ForceString = forceString
 			default:
 				if !isEmpty(item.Value) {
-					return nil, fmt.Errorf("spec.source.helm.parameters[%d].%s is not supported", i, key)
+					return nil, fmt.Errorf("%s[%d].%s is not supported", field, i, key)
 				}
 			}
 		}
 		if strings.TrimSpace(parameter.Name) == "" {
-			return nil, fmt.Errorf("spec.source.helm.parameters[%d].name is required", i)
+			return nil, fmt.Errorf("%s[%d].name is required", field, i)
 		}
 		if !hasValue {
-			return nil, fmt.Errorf("spec.source.helm.parameters[%d].value is required", i)
+			return nil, fmt.Errorf("%s[%d].value is required", field, i)
 		}
 		parameters = append(parameters, parameter)
 	}
