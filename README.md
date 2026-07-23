@@ -5,7 +5,9 @@
 It is an offline Unix filter: it reads a YAML stream from standard input,
 writes YAML to standard output, and never fetches charts or repositories.
 
-An optional config maps Argo CD destinations to helmfile kube contexts, maps Git sources to paths available when helmfile runs, and projects Application fields into release labels.
+An optional config maps Argo CD destinations to helmfile kube contexts,
+maps Git sources to paths available when helmfile runs,
+and projects Application fields into release labels.
 
 ## Quick start
 
@@ -14,7 +16,8 @@ go install github.com/johejo/argocdapp2helmfile@latest
 argocdapp2helmfile <application.yaml >helmfile.yaml
 ```
 
-Use `--config` for destination kube contexts, Git-hosted charts, external values repositories, or release labels:
+Use `--config` for destination kube contexts, Git-hosted charts,
+external values repositories, or release labels:
 
 ```sh
 argocdapp2helmfile --config config.yaml \
@@ -210,15 +213,22 @@ They also provide `normalize`, `slugify`, `toYaml`, `fromYaml`, and `fromYamlArr
 Supported Go template options are `missingkey=default`, `missingkey=invalid`,
 `missingkey=zero`, and `missingkey=error`.
 
-`templatePatch` is rendered once per selected List element with the same parameters, functions, and Go template options as `template`.
+`templatePatch` is rendered once per selected List element
+with the same parameters, functions, and Go template options as `template`.
 An empty or whitespace-only rendered patch has no effect.
-Mappings merge recursively, while scalars and sequences replace the template value; `null` deletes a field.
+Mappings merge recursively,
+while scalars and sequences replace the template value;
+`null` deletes a field.
 New mapping keys are appended in patch order.
-The patch is applied after generator-level and spec-level templates are merged and rendered, so patched metadata is also available to `releaseLabels` queries.
+The patch is applied after generator-level and spec-level templates are merged and rendered,
+so patched metadata is also available to `releaseLabels` queries.
 As in Argo CD, the pre-patch `spec.project` is always retained.
 
 The rendered patch must be exactly one YAML or JSON document with a mapping at its root.
-Strategic Merge Patch directives are not implemented: `$patch`, `$retainKeys`, `$setElementOrder/...`, and `$deleteFromPrimitiveList/...` are rejected wherever they occur instead of being interpreted with different semantics.
+Strategic Merge Patch directives are not implemented:
+`$patch`, `$retainKeys`, `$setElementOrder/...`, and `$deleteFromPrimitiveList/...`
+are rejected wherever they occur
+instead of being interpreted with different semantics.
 
 ## Conversion config
 
@@ -253,9 +263,12 @@ The config may be omitted when none of these features is needed.
 
 ### Destination kube contexts
 
-Each `destinations` item must contain exactly one non-empty `name` or `server` and a non-empty `kubeContext`.
-Entries match the corresponding literal `spec.destination.name` or `spec.destination.server` by exact string equality.
-The configured `kubeContext` is copied unchanged to the generated helmfile release; the converter does not read a kubeconfig or verify that the context exists.
+Each `destinations` item must contain exactly one non-empty `name` or `server`
+and a non-empty `kubeContext`.
+Entries match the corresponding literal `spec.destination.name`
+or `spec.destination.server` by exact string equality.
+The configured `kubeContext` is copied unchanged to the generated helmfile release;
+the converter does not read a kubeconfig or verify that the context exists.
 
 For example, this Application destination:
 
@@ -276,7 +289,8 @@ Destination resolution is fail closed.
 If an Application sets `name` or `server`, `--config` is required and a matching entry must exist.
 Setting both `name` and `server` is rejected in both Config entries and Applications.
 Duplicate Config entries with the same selector type and value are also rejected.
-If both Application selector fields are empty, `kubeContext` is omitted for compatibility with inputs that do not identify a cluster.
+If both Application selector fields are empty,
+`kubeContext` is omitted for compatibility with inputs that do not identify a cluster.
 For an ApplicationSet, resolution happens after template rendering and `templatePatch` application.
 
 ### Git charts, external values, and paths
@@ -373,9 +387,11 @@ and intentionally ignored as an Argo CD backward-compatibility field.
   Query strings, fragments, and trailing slashes are ignored.
   An empty result falls back to `source`.
   Exact matching `repoURL` strings share an alias.
-  Applications sharing a `repoURL` must also have the same effective `helm.passCredentials` value.
+  Applications sharing a `repoURL` must also have
+  the same effective `helm.passCredentials` value.
   Omission is treated as `false`.
-  When aliases for different URLs collide, later aliases receive the first available numeric suffix
+  When aliases for different URLs collide,
+  later aliases receive the first available numeric suffix
   (`charts-2`, `charts-3`, and so on) within the generated Helmfile.
 - A release name defaults to `metadata.name` unless `helm.releaseName` is set.
   Resolved names must be unique across all namespaces and generated Applications.
@@ -411,9 +427,14 @@ Empty unsupported Helm options are ignored.
 
 For upstream behavior, see also
 
-- [Argo CD Helm documentation](https://argo-cd.readthedocs.io/en/latest/user-guide/helm/)
-- [Argo CD Go Template documentation](https://argo-cd.readthedocs.io/en/latest/operator-manual/applicationset/GoTemplate/)
-- [helmfile configuration reference](https://helmfile.readthedocs.io/en/latest/configuration/)
+- [Argo CD Helm documentation][argocd-helm]
+- [Argo CD Go Template documentation][argocd-go-template]
+- [helmfile configuration reference][helmfile-configuration]
+
+[argocd-helm]: https://argo-cd.readthedocs.io/en/latest/user-guide/helm/
+[argocd-go-template]:
+  https://argo-cd.readthedocs.io/en/latest/operator-manual/applicationset/GoTemplate/
+[helmfile-configuration]: https://helmfile.readthedocs.io/en/latest/configuration/
 
 ## License
 
