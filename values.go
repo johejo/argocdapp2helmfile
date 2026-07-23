@@ -28,6 +28,10 @@ func resolveValueFiles(valueFiles []string, context valueFileContext) ([]any, er
 }
 
 func resolveValuePath(raw string, context valueFileContext) (string, error) {
+	return resolveSourcePath(raw, context, "valueFiles")
+}
+
+func resolveSourcePath(raw string, context valueFileContext, option string) (string, error) {
 	if raw == "" {
 		return "", errors.New("path must not be empty")
 	}
@@ -38,10 +42,10 @@ func resolveValuePath(raw string, context valueFileContext) (string, error) {
 		return "", errors.New("control characters are not supported")
 	}
 	if strings.Contains(raw, "://") {
-		return "", errors.New("remote values file URLs are not supported")
+		return "", fmt.Errorf("remote URLs in %s are not supported", option)
 	}
 	if strings.Contains(raw, "$ARGOCD_") {
-		return "", errors.New("Argo CD build environment variables in valueFiles are not supported")
+		return "", fmt.Errorf("Argo CD build environment variables in %s are not supported", option)
 	}
 
 	var mapping mappedSource
@@ -64,7 +68,7 @@ func resolveValuePath(raw string, context valueFileContext) (string, error) {
 		relative = after
 	} else {
 		if context.chartMapping == nil {
-			return "", errors.New("non-$ref valueFiles are not supported for HTTP or OCI Helm charts")
+			return "", fmt.Errorf("non-$ref %s are not supported for HTTP or OCI Helm charts", option)
 		}
 		mapping = *context.chartMapping
 		base = context.chartRoot

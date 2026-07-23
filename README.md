@@ -248,18 +248,29 @@ repository, or a chart directory in a Git repository.
 | `spec.source.helm.values` | Parsed inline `values` entry |
 | `spec.source.helm.valuesObject` | Inline `values` entry |
 | `spec.source.helm.parameters` | Release `set` or `setString` entries |
+| `spec.source.helm.fileParameters` | Release `set` entries using `file` |
 | `spec.source.helm.ignoreMissingValueFiles` | Release `missingFileHandler: Warn` when true |
 | `spec.source.helm.skipSchemaValidation` | Release `skipSchemaValidation` |
 | `spec.source.helm.skipCrds` | `helmDefaults.skipCRDs` |
 
 For each parameter, `name` and the string `value` are preserved. Parameters
 with `forceString: true` are emitted under `setString`; all other parameters
-are emitted under `set`.
+are emitted under `set`. File parameters preserve `name` and resolve `path`
+into a `set` entry using helmfile's `file` form:
+
+```yaml
+set:
+  - name: config.raw
+    file: '{{ requiredEnv "PLATFORM_CHARTS_ROOT" }}/charts/my-app/files/config.json'
+```
 
 Values retain Argo CD's precedence: chart defaults, `valueFiles`, `values`,
-`valuesObject`, then `parameters`, from lowest to highest precedence. Multiple
-`valueFiles` retain their input order. The generated entries are ordered so
-that helmfile applies the same precedence.
+`valuesObject`, `parameters`, then `fileParameters`, from lowest to highest
+precedence. Multiple `valueFiles` and file parameters retain their input order.
+Normal parameters are emitted before file parameters in `set`, so a file
+parameter with the same name wins. A file parameter that has the same name as
+a parameter with `forceString: true` is rejected because helmfile cannot
+reproduce Argo CD's precedence across `set` and `setString`.
 
 ## Git source map
 
@@ -321,9 +332,9 @@ configuration remain the responsibility of the helmfile execution environment.
 
 A multi-source Application is supported when it has exactly one Helm chart
 source and all other sources are values-only sources with a unique `ref`. A
-value file beginning with `$ref/` is resolved from the root of the corresponding
-mapped source. The `$ref` token is accepted only at the start of the value
-file path.
+value file or file-parameter path beginning with `$ref/` is resolved from the
+root of the corresponding mapped source. The `$ref` token is accepted only at
+the start of the path.
 
 For example, `$values/prod/values.yaml` becomes:
 
@@ -338,9 +349,10 @@ A second chart source, a source without a ref, or a values source with `path` is
 also rejected; the latter could generate additional manifests that cannot be
 represented by this conversion.
 
-### Value file path behavior
+### Value and file-parameter path behavior
 
-Value paths retain Argo CD's source-relative interpretation:
+Value-file and file-parameter paths retain Argo CD's source-relative
+interpretation:
 
 - a relative path is based at the Git chart directory;
 - a leading `/` is based at that Git repository's root, not the OS root;
@@ -348,17 +360,19 @@ Value paths retain Argo CD's source-relative interpretation:
 - input order is preserved; and
 - normalized paths must not escape their mapped source.
 
-The converter emits value paths and glob patterns without inspecting or
-expanding them. Helmfile resolves them at execution time using its native glob
+The converter does not inspect files or expand paths. It emits value paths and
+glob patterns for helmfile to resolve at execution time using its native glob
 behavior. This is not identical to Argo CD's doublestar behavior: recursive
 `**` matching and deduplication across explicit paths and globs are not
-guaranteed. When `ignoreMissingValueFiles: true` is set, the converter emits
-`missingFileHandler: Warn`; otherwise helmfile's default missing-file behavior
-applies.
+guaranteed. File-parameter paths are passed to helmfile as files without glob
+expansion by the converter. When `ignoreMissingValueFiles: true` is set, the
+converter emits `missingFileHandler: Warn`; otherwise helmfile's default
+missing-file behavior applies. This setting does not apply to file parameters.
 
-Non-`$ref` value files are not supported for HTTP/OCI charts because those
-charts remain remote. Argo CD build-environment substitutions in value paths and
-remote values-file URLs are also rejected explicitly.
+Non-`$ref` value files and file parameters are not supported for HTTP/OCI
+charts because those charts remain remote and the converter does not unpack
+them. Argo CD build-environment substitutions and remote URLs in either kind of
+path are also rejected explicitly.
 
 Argo CD operational settings that do not describe a Helm release, such as
 `project` and `syncPolicy`, are not included in the generated helmfile. The
@@ -374,9 +388,10 @@ The converter rejects inputs that require any of the following:
   `templatePatch`;
 - multi-source Applications outside the values-only `ref` form described
   above;
-- non-`$ref` value files for HTTP/OCI charts;
-- Argo CD build-environment substitutions and remote URLs in `valueFiles`;
-- `fileParameters`; or
+- non-`$ref` value files or file parameters for HTTP/OCI charts;
+- Argo CD build-environment substitutions and remote URLs in `valueFiles` or
+  `fileParameters`;
+- same-name `fileParameters` and `parameters` using `forceString: true`; or
 - non-empty Helm options not listed in the supported mapping above.
 
 The required fields are `metadata.name`, the chart source's `repoURL` and
@@ -394,7 +409,7 @@ described above.
 The following capabilities may be useful additions after the initial format
 and error behavior are established. This is not a committed roadmap:
 
-- commonly used Helm options such as `fileParameters` and `skipTests`;
+- commonly used Helm options such as `skipTests`;
 - accepting `List` resources as an alternative batch input format.
 
 Additional ApplicationSet generators and translating Argo CD cluster identities

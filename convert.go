@@ -54,8 +54,9 @@ type release struct {
 }
 
 type setParameter struct {
-	Name  string `yaml:"name"`
-	Value string `yaml:"value"`
+	Name  string       `yaml:"name"`
+	Value *string      `yaml:"value,omitempty"`
+	File  templatePath `yaml:"file,omitempty"`
 }
 
 type templatePath string
@@ -257,6 +258,19 @@ func convertApplication(app application, documentNumber int, resolver *sourceRes
 	if err != nil {
 		return converted, err
 	}
+	for _, parameter := range helm.parameters {
+		if !parameter.ForceString {
+			continue
+		}
+		for _, fileParameter := range helm.fileParameters {
+			if parameter.Name == fileParameter.Name {
+				return converted, fmt.Errorf(
+					"%s.helm.fileParameters name %q conflicts with a forceString parameter",
+					chartSourceField, parameter.Name,
+				)
+			}
+		}
+	}
 	releaseName := helm.releaseName
 	if releaseName == "" {
 		releaseName = app.Metadata.Name
@@ -286,15 +300,28 @@ func convertApplication(app application, documentNumber int, resolver *sourceRes
 	if !isEmpty(helm.valuesObject) {
 		values = append(values, helm.valuesObject)
 	}
-	set := make([]setParameter, 0, len(helm.parameters))
+	set := make([]setParameter, 0, len(helm.parameters)+len(helm.fileParameters))
 	setString := make([]setParameter, 0, len(helm.parameters))
 	for _, parameter := range helm.parameters {
-		outputParameter := setParameter{Name: parameter.Name, Value: parameter.Value}
+		value := parameter.Value
+		outputParameter := setParameter{Name: parameter.Name, Value: &value}
 		if parameter.ForceString {
 			setString = append(setString, outputParameter)
 		} else {
 			set = append(set, outputParameter)
 		}
+	}
+	for i, parameter := range helm.fileParameters {
+		resolved, err := resolveSourcePath(parameter.Path, valueFileContext{
+			chartMapping: chartMapping,
+			chartRoot:    chartRoot,
+			refs:         refs,
+			resolver:     resolver,
+		}, "fileParameters")
+		if err != nil {
+			return converted, fmt.Errorf("%s.helm.fileParameters[%d].path: %w", chartSourceField, i, err)
+		}
+		set = append(set, setParameter{Name: parameter.Name, File: templatePath(resolved)})
 	}
 
 	converted = convertedApplication{

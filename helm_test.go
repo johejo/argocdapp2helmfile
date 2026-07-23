@@ -14,6 +14,7 @@ func TestConvertDefaultsAndOmitsEmptyFields(t *testing.T) {
       values: ""
       valuesObject: {}
       parameters: []
+      fileParameters: []
       valueFiles: []
       skipCrds: false
       skipSchemaValidation: false
@@ -144,6 +145,21 @@ func TestConvertParameters(t *testing.T) {
 	}
 }
 
+func TestConvertPreservesEmptyParameterValue(t *testing.T) {
+	input := minimalApplication(`    helm:
+      parameters:
+        - name: empty
+          value: ""
+`)
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(output), "      - name: empty\n        value: \"\"\n") {
+		t.Fatalf("empty parameter value was not emitted:\n%s", output)
+	}
+}
+
 func TestConvertOmitsEmptyParameterGroups(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -224,7 +240,6 @@ func TestConvertRejectsInvalidInput(t *testing.T) {
 		"missing revision":            strings.Replace(exampleApplication, "targetRevision: 18.2.4", "targetRevision: ''", 1),
 		"path":                        strings.Replace(exampleApplication, "chart: nginx", "chart: nginx\n    path: charts/nginx", 1),
 		"sources":                     strings.Replace(exampleApplication, "  source:\n", "  sources: []\n  source:\n", 1),
-		"fileParameters":              strings.Replace(exampleApplication, "      releaseName: edge", "      releaseName: edge\n      fileParameters: [{name: x, path: x}]", 1),
 		"unknown Helm option":         strings.Replace(exampleApplication, "      releaseName: edge", "      releaseName: edge\n      unsupportedOption: true", 1),
 		"non-boolean skipCrds":        strings.Replace(exampleApplication, "      skipCrds: true", "      skipCrds: enabled", 1),
 		"non-boolean schema skip":     strings.Replace(exampleApplication, "      skipSchemaValidation: true", "      skipSchemaValidation: 1", 1),

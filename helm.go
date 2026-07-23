@@ -17,12 +17,18 @@ type helmParameter struct {
 	ForceString bool
 }
 
+type helmFileParameter struct {
+	Name string
+	Path string
+}
+
 type helmOptions struct {
 	releaseName          string
 	valueFiles           []string
 	values               any
 	valuesObject         any
 	parameters           []helmParameter
+	fileParameters       []helmFileParameter
 	ignoreMissingValues  bool
 	skipSchemaValidation bool
 	skipCRDs             bool
@@ -85,6 +91,15 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 				return result, err
 			}
 			result.parameters = parameters
+		case "fileParameters":
+			if isEmpty(item.Value) {
+				continue
+			}
+			fileParameters, err := parseFileParameters(item.Value, field+".fileParameters")
+			if err != nil {
+				return result, err
+			}
+			result.fileParameters = fileParameters
 		case "ignoreMissingValueFiles":
 			if isEmpty(item.Value) {
 				continue
@@ -206,6 +221,55 @@ func parseParameters(value any, field string) ([]helmParameter, error) {
 		}
 		if !hasValue {
 			return nil, fmt.Errorf("%s[%d].value is required", field, i)
+		}
+		parameters = append(parameters, parameter)
+	}
+	return parameters, nil
+}
+
+func parseFileParameters(value any, field string) ([]helmFileParameter, error) {
+	sequence, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must be a sequence", field)
+	}
+	parameters := make([]helmFileParameter, 0, len(sequence))
+	for i, raw := range sequence {
+		items, ok := raw.(yaml.MapSlice)
+		if !ok {
+			return nil, fmt.Errorf("%s[%d] must be a mapping", field, i)
+		}
+		var parameter helmFileParameter
+		var hasPath bool
+		for _, item := range items {
+			key, ok := item.Key.(string)
+			if !ok {
+				return nil, fmt.Errorf("%s[%d] contains a non-string field name", field, i)
+			}
+			switch key {
+			case "name":
+				name, ok := item.Value.(string)
+				if !ok {
+					return nil, fmt.Errorf("%s[%d].name must be a string", field, i)
+				}
+				parameter.Name = name
+			case "path":
+				parameterPath, ok := item.Value.(string)
+				if !ok {
+					return nil, fmt.Errorf("%s[%d].path must be a string", field, i)
+				}
+				parameter.Path = parameterPath
+				hasPath = true
+			default:
+				if !isEmpty(item.Value) {
+					return nil, fmt.Errorf("%s[%d].%s is not supported", field, i, key)
+				}
+			}
+		}
+		if strings.TrimSpace(parameter.Name) == "" {
+			return nil, fmt.Errorf("%s[%d].name is required", field, i)
+		}
+		if !hasPath || strings.TrimSpace(parameter.Path) == "" {
+			return nil, fmt.Errorf("%s[%d].path is required", field, i)
 		}
 		parameters = append(parameters, parameter)
 	}
