@@ -12,6 +12,7 @@ spec:
     targetRevision: 18.2.4
     helm:
       releaseName: edge
+      passCredentials: true
       values: |
         service:
           type: ClusterIP

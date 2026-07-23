@@ -62,6 +62,27 @@ func TestConvertValueFilesShareMappedSourceAcrossDocuments(t *testing.T) {
 	}
 }
 
+func TestConvertGitChartAcceptsPassCredentialsWithoutRepositoryOutput(t *testing.T) {
+	const repoURL = "git@github.com:example/charts.git"
+	resolver := testSourceResolver(t, testSource{
+		repoURL: repoURL, targetRevision: "main", root: `{{ requiredEnv "TEST_CHART_ROOT" }}`,
+	})
+	input := gitApplication(
+		repoURL,
+		"charts/app",
+		"main",
+		"    helm:\n      passCredentials: true\n",
+	)
+	output, err := convertWithResolver([]byte(input), resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(output), "repositories:") ||
+		strings.Contains(string(output), "passCredentials:") {
+		t.Fatalf("Git passCredentials affected repository output:\n%s", output)
+	}
+}
+
 func TestConvertIgnoreMissingValueFiles(t *testing.T) {
 	repoURL := "git@github.com:example/charts.git"
 	resolver := testSourceResolver(t, testSource{

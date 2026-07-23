@@ -50,6 +50,7 @@ spec:
     targetRevision: 18.2.4
     helm:
       releaseName: edge
+      passCredentials: true
       values: |
         service:
           type: ClusterIP
@@ -68,6 +69,7 @@ Output:
 repositories:
   - name: bitnami
     url: https://charts.bitnami.com/bitnami
+    passCredentials: true
 releases:
   - name: edge
     namespace: web
@@ -106,6 +108,7 @@ An Application must identify either:
 | `spec.source.helm.releaseName` | Release `name` |
 | `spec.destination.namespace` | Release `namespace` |
 | `spec.source.repoURL` | Repository `url`; scheme-less OCI also sets `oci: true` |
+| Packaged chart `spec.source.helm.passCredentials` | Repository `passCredentials: true` when true |
 | `spec.source.chart` | Release chart as `<alias>/<chart>` |
 | `spec.source.targetRevision` for a packaged chart | Release `version` |
 | Git `spec.source.repoURL` | Config source identity; HTTP(S), `git@host:path`, or `ssh://user@host/path` |
@@ -132,6 +135,10 @@ Argo CD documents Helm value precedence, from lowest to highest, as
 The converter preserves that ordering in the generated `values`, `set`, and `setString`
 entries.
 Multiple value files and parameters retain input order.
+
+`passCredentials: false` and omission both omit the repository field.
+For a Git chart source, `passCredentials` is type-checked and accepted.
+It has no output effect because no helmfile repository entry is generated.
 
 `fileParameters` use Helm's `--set-file` behavior and are emitted after ordinary
 parameters in `set`, so a same-name file parameter wins within that list.
@@ -354,6 +361,8 @@ because it controls Argo CD's Helm invocation, not a helmfile release.
   Query strings, fragments, and trailing slashes are ignored.
   An empty result falls back to `source`.
   Exact matching `repoURL` strings share an alias.
+  Applications sharing a `repoURL` must also have the same effective `helm.passCredentials` value.
+  Omission is treated as `false`.
   When aliases for different URLs collide, later aliases receive the first available numeric suffix
   (`charts-2`, `charts-3`, and so on) within the generated Helmfile.
 - A release name defaults to `metadata.name` unless `helm.releaseName` is set.

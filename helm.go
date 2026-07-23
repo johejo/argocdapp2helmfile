@@ -34,6 +34,7 @@ type helmOptions struct {
 	ignoreMissingValues  bool
 	skipSchemaValidation bool
 	skipCRDs             bool
+	passCredentials      bool
 }
 
 func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
@@ -154,6 +155,12 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 				return result, fmt.Errorf("%s.skipCrds must be a boolean", field)
 			}
 			result.skipCRDs = value
+		case "passCredentials":
+			value, ok := item.Value.(bool)
+			if !ok {
+				return result, fmt.Errorf("%s.passCredentials must be a boolean", field)
+			}
+			result.passCredentials = value
 		case "skipTests":
 			// skipTests controls Argo CD's Helm invocation rather than the
 			// release definition represented by the generated helmfile.

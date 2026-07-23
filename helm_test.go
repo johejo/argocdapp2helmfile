@@ -156,6 +156,52 @@ func TestConvertHelmBooleanOptionsIndependently(t *testing.T) {
 	}
 }
 
+func TestConvertPassCredentials(t *testing.T) {
+	tests := []struct {
+		name string
+		helm string
+		want bool
+	}{
+		{
+			name: "true",
+			helm: "    helm:\n      passCredentials: true\n",
+			want: true,
+		},
+		{
+			name: "false",
+			helm: "    helm:\n      passCredentials: false\n",
+		},
+		{
+			name: "absent",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output, err := convert([]byte(minimalApplication(test.helm)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			contains := strings.Contains(string(output), "    passCredentials: true\n")
+			if contains != test.want {
+				t.Fatalf("passCredentials presence = %v, want %v:\n%s", contains, test.want, output)
+			}
+		})
+	}
+}
+
+func TestConvertRejectsNonBooleanPassCredentials(t *testing.T) {
+	for _, value := range []string{"enabled", "1", "null", `""`, "[]", "{}"} {
+		t.Run(value, func(t *testing.T) {
+			_, err := convert([]byte(minimalApplication(
+				"    helm:\n      passCredentials: " + value + "\n",
+			)))
+			if err == nil || err.Error() != "document 1: spec.source.helm.passCredentials must be a boolean" {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestConvertIgnoresSkipTestsRegardlessOfValue(t *testing.T) {
 	baseline, err := convert([]byte(minimalApplication("")))
 	if err != nil {

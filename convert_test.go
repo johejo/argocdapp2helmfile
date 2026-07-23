@@ -380,6 +380,98 @@ func TestConvertAggregatesSkipCRDs(t *testing.T) {
 	})
 }
 
+func TestConvertAggregatesRepositoryPassCredentials(t *testing.T) {
+	app := func(name, repositoryURL, helm string) string {
+		return strings.NewReplacer(
+			"name: app", "name: "+name,
+			"https://example.com/charts", repositoryURL,
+		).Replace(minimalApplication(helm))
+	}
+
+	t.Run("true and true", func(t *testing.T) {
+		input := app("first", "https://example.com/charts", "    helm:\n      passCredentials: true\n") +
+			"---\n" +
+			app("second", "https://example.com/charts", "    helm:\n      passCredentials: true\n")
+		output, err := convert([]byte(input))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Count(string(output), "  - name: charts\n") != 1 ||
+			strings.Count(string(output), "    passCredentials: true\n") != 1 {
+			t.Fatalf("repository was not shared with passCredentials:\n%s", output)
+		}
+	})
+
+	t.Run("false and absent", func(t *testing.T) {
+		input := app("first", "https://example.com/charts", "    helm:\n      passCredentials: false\n") +
+			"---\n" +
+			app("second", "https://example.com/charts", "")
+		output, err := convert([]byte(input))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Count(string(output), "  - name: charts\n") != 1 {
+			t.Fatalf("repository was not shared:\n%s", output)
+		}
+		if strings.Contains(string(output), "passCredentials:") {
+			t.Fatalf("false passCredentials was emitted:\n%s", output)
+		}
+	})
+
+	for _, secondHelm := range []string{"", "    helm:\n      passCredentials: false\n"} {
+		t.Run("conflict", func(t *testing.T) {
+			input := app("first", "https://example.com/charts", "    helm:\n      passCredentials: true\n") +
+				"---\n" +
+				app("second", "https://example.com/charts", secondHelm)
+			_, err := convert([]byte(input))
+			if err == nil || !strings.Contains(
+				err.Error(),
+				"document 2: spec.source.helm.passCredentials conflicts with document 1",
+			) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+
+	t.Run("different URLs", func(t *testing.T) {
+		input := app("first", "https://one.example/charts", "    helm:\n      passCredentials: true\n") +
+			"---\n" +
+			app("second", "https://two.example/charts", "")
+		output, err := convert([]byte(input))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Count(string(output), "passCredentials: true") != 1 ||
+			strings.Count(string(output), "url: https://") != 2 {
+			t.Fatalf("different repository settings were not retained:\n%s", output)
+		}
+	})
+}
+
+func TestConvertOCIPassCredentials(t *testing.T) {
+	input := strings.Replace(
+		minimalApplication("    helm:\n      passCredentials: true\n"),
+		"https://example.com/charts",
+		"registry.example.com/charts",
+		1,
+	)
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "    url: registry.example.com/charts\n    oci: true\n    passCredentials: true\n"
+	if !strings.Contains(string(output), want) {
+		t.Fatalf("OCI passCredentials was not emitted:\n%s", output)
+	}
+
+	second := strings.Replace(input, "name: app", "name: second", 1)
+	second = strings.Replace(second, "      passCredentials: true\n", "", 1)
+	_, err = convert([]byte(input + "---\n" + second))
+	if err == nil || !strings.Contains(err.Error(), "spec.source.helm.passCredentials conflicts with document 1") {
+		t.Fatalf("unexpected OCI conflict error: %v", err)
+	}
+}
+
 func TestConvertAcceptsDifferentSkipTestsValues(t *testing.T) {
 	first := minimalApplication("    helm:\n      skipTests: true\n")
 	second := strings.Replace(

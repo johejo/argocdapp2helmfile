@@ -263,6 +263,29 @@ func TestConvertApplicationSetDuplicateReleaseReportsOrigins(t *testing.T) {
 	}
 }
 
+func TestConvertApplicationSetPassCredentialsConflictReportsOrigins(t *testing.T) {
+	input := applicationSetWithTemplatePatch(
+		`{{- if .passCredentials }}
+spec:
+  source:
+    helm:
+      passCredentials: true
+{{- end }}`,
+		`          - name: first
+            passCredentials: true
+          - name: second
+            passCredentials: false
+`,
+	)
+	_, err := convert([]byte(input))
+	want := "document 1: spec.generators[0].list.elements[1]: " +
+		"spec.source.helm.passCredentials conflicts with " +
+		"document 1: spec.generators[0].list.elements[0]"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestConvertEmptyApplicationSet(t *testing.T) {
 	input := readTestdata(t, "applicationset/empty/application.yaml")
 	output, err := convert([]byte(input))

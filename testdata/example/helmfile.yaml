@@ -1,6 +1,7 @@
 repositories:
   - name: bitnami
     url: https://charts.bitnami.com/bitnami
+    passCredentials: true
 helmDefaults:
   skipCRDs: true
 releases:

@@ -41,9 +41,10 @@ type helmDefaults struct {
 }
 
 type repository struct {
-	Name string `yaml:"name"`
-	URL  string `yaml:"url"`
-	OCI  bool   `yaml:"oci,omitempty"`
+	Name            string `yaml:"name"`
+	URL             string `yaml:"url"`
+	OCI             bool   `yaml:"oci,omitempty"`
+	PassCredentials bool   `yaml:"passCredentials,omitempty"`
 }
 
 type release struct {
@@ -147,6 +148,8 @@ func convertWithConfig(input []byte, config *conversionConfig) ([]byte, error) {
 	result := helmfile{}
 	var provenanceComments []string
 	repositoryAliases := make(map[string]string)
+	repositoryPassCredentials := make(map[string]bool)
+	repositoryOrigins := make(map[string]inputOrigin)
 	usedRepositoryAliases := make(map[string]struct{})
 	releaseOrigins := make(map[string]inputOrigin)
 	var sharedSkipCRDs bool
@@ -212,9 +215,16 @@ func convertWithConfig(input []byte, config *conversionConfig) ([]byte, error) {
 			if !exists {
 				alias = uniqueRepositoryAlias(repositoryAlias(converted.repository.URL), usedRepositoryAliases)
 				repositoryAliases[converted.repository.URL] = alias
+				repositoryPassCredentials[converted.repository.URL] = converted.repository.PassCredentials
+				repositoryOrigins[converted.repository.URL] = item.origin
 				usedRepositoryAliases[alias] = struct{}{}
 				converted.repository.Name = alias
 				result.Repositories = append(result.Repositories, *converted.repository)
+			} else if converted.repository.PassCredentials != repositoryPassCredentials[converted.repository.URL] {
+				return nil, item.origin.wrap(fmt.Errorf(
+					"spec.source.helm.passCredentials conflicts with %s",
+					repositoryOrigins[converted.repository.URL],
+				))
 			}
 			converted.release.Chart = alias + "/" + converted.chart
 		}
@@ -396,7 +406,11 @@ func convertApplication(
 			documentNumber, chartSource.RepoURL, chartSource.Path, chartSource.TargetRevision,
 		)}, converted.provenanceComments...)
 	} else {
-		repository := repository{URL: chartSource.RepoURL, OCI: repositoryType == ociRepository}
+		repository := repository{
+			URL:             chartSource.RepoURL,
+			OCI:             repositoryType == ociRepository,
+			PassCredentials: helm.passCredentials,
+		}
 		converted.repository = &repository
 		converted.release.Version = chartSource.TargetRevision
 	}
