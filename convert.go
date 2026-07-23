@@ -26,7 +26,7 @@ type application struct {
 }
 
 type helmfile struct {
-	Repositories []repository  `yaml:"repositories"`
+	Repositories []repository  `yaml:"repositories,omitempty"`
 	HelmDefaults *helmDefaults `yaml:"helmDefaults,omitempty"`
 	Releases     []release     `yaml:"releases"`
 }
@@ -44,8 +44,8 @@ type repository struct {
 type release struct {
 	Name                 string         `yaml:"name"`
 	Namespace            string         `yaml:"namespace,omitempty"`
-	Chart                string         `yaml:"chart"`
-	Version              string         `yaml:"version"`
+	Chart                any            `yaml:"chart"`
+	Version              string         `yaml:"version,omitempty"`
 	Values               []any          `yaml:"values,omitempty"`
 	Set                  []setParameter `yaml:"set,omitempty"`
 	SetString            []setParameter `yaml:"setString,omitempty"`
@@ -106,14 +106,16 @@ func convert(input []byte) ([]byte, error) {
 			return nil, fmt.Errorf("document %d: spec.source.helm.skipCrds conflicts with document 1", documentNumber)
 		}
 
-		alias, exists := repositoryAliases[converted.repository.URL]
-		if !exists {
-			alias = repositoryAlias(len(result.Repositories))
-			repositoryAliases[converted.repository.URL] = alias
-			converted.repository.Name = alias
-			result.Repositories = append(result.Repositories, converted.repository)
+		if converted.repository != nil {
+			alias, exists := repositoryAliases[converted.repository.URL]
+			if !exists {
+				alias = repositoryAlias(len(result.Repositories))
+				repositoryAliases[converted.repository.URL] = alias
+				converted.repository.Name = alias
+				result.Repositories = append(result.Repositories, *converted.repository)
+			}
+			converted.release.Chart = alias + "/" + converted.chart
 		}
-		converted.release.Chart = alias + "/" + converted.chart
 		result.Releases = append(result.Releases, converted.release)
 		provenanceComments = append(provenanceComments, converted.provenanceComments...)
 	}
@@ -135,7 +137,7 @@ func convert(input []byte) ([]byte, error) {
 }
 
 type convertedApplication struct {
-	repository         repository
+	repository         *repository
 	release            release
 	chart              string
 	skipCRDs           bool
@@ -158,12 +160,32 @@ func convertApplication(app application, documentNumber int) (convertedApplicati
 	if err != nil {
 		return converted, err
 	}
-	oci, err := classifyRepositoryURL(chartSource.RepoURL)
+	repositoryType, err := classifyRepositoryURL(chartSource.RepoURL)
 	if err != nil {
 		return converted, err
 	}
-	if strings.TrimSpace(chartSource.Chart) == "" {
-		return converted, fmt.Errorf("%s.chart is required", chartSourceField)
+	hasChart := strings.TrimSpace(chartSource.Chart) != ""
+	hasPath := strings.TrimSpace(chartSource.Path) != ""
+	if hasChart && hasPath {
+		return converted, fmt.Errorf("%s.chart and %s.path cannot both be set", chartSourceField, chartSourceField)
+	}
+	if repositoryType == gitRepository {
+		if hasChart {
+			return converted, fmt.Errorf("%s.chart is not supported for a Git repository; use path", chartSourceField)
+		}
+		if !hasPath {
+			return converted, fmt.Errorf("%s.path is required for a Git repository", chartSourceField)
+		}
+		if err := validateGitChartPath(chartSource.Path); err != nil {
+			return converted, fmt.Errorf("%s.path %q: %w", chartSourceField, chartSource.Path, err)
+		}
+	} else {
+		if hasPath {
+			return converted, fmt.Errorf("%s.path is only supported for a Git repository", chartSourceField)
+		}
+		if !hasChart {
+			return converted, fmt.Errorf("%s.chart is required", chartSourceField)
+		}
 	}
 	if strings.TrimSpace(chartSource.TargetRevision) == "" {
 		return converted, fmt.Errorf("%s.targetRevision is required", chartSourceField)
@@ -203,20 +225,32 @@ func convertApplication(app application, documentNumber int) (convertedApplicati
 	}
 
 	converted = convertedApplication{
-		repository:         repository{URL: chartSource.RepoURL, OCI: oci},
 		chart:              chartSource.Chart,
 		skipCRDs:           helm.skipCRDs,
 		provenanceComments: provenance,
 		release: release{
 			Name:                 releaseName,
 			Namespace:            app.Spec.Destination.Namespace,
-			Version:              chartSource.TargetRevision,
 			Values:               values,
 			Set:                  set,
 			SetString:            setString,
 			MissingFileHandler:   missingFileHandler(helm.ignoreMissingValues),
 			SkipSchemaValidation: helm.skipSchemaValidation,
 		},
+	}
+	if repositoryType == gitRepository {
+		converted.release.Chart = templatePath(fmt.Sprintf(
+			`{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-%d/chart`,
+			documentNumber,
+		))
+		converted.provenanceComments = append([]string{fmt.Sprintf(
+			"document %d chart source: repoURL %q, path %q, targetRevision %q",
+			documentNumber, chartSource.RepoURL, chartSource.Path, chartSource.TargetRevision,
+		)}, converted.provenanceComments...)
+	} else {
+		repository := repository{URL: chartSource.RepoURL, OCI: repositoryType == ociRepository}
+		converted.repository = &repository
+		converted.release.Version = chartSource.TargetRevision
 	}
 	return converted, nil
 }

@@ -154,8 +154,8 @@ treated as `false`. Conflicting values are rejected. Generated files containing
 ## Supported mapping
 
 Each input document must contain one `argoproj.io/v1alpha1` `Application`. Its
-source must use `spec.source.chart` and either an HTTP(S) Helm repository or a
-scheme-less OCI Helm repository.
+source must identify either a packaged chart in an HTTP(S) or scheme-less OCI
+Helm repository, or a chart directory in an SSH Git repository.
 
 | Argo CD Application | helmfile |
 | --- | --- |
@@ -165,6 +165,9 @@ scheme-less OCI Helm repository.
 | `spec.source.repoURL` | Repository `url`; scheme-less OCI repositories also set `oci: true` |
 | `spec.source.chart` | Release chart as `source/<chart>` |
 | `spec.source.targetRevision` | Release `version` |
+| SSH Git `spec.source.repoURL` | Checkout provenance; accepts `git@host:path` and `ssh://user@host/path` |
+| Git `spec.source.path` | Chart root placed at `document-N/chart/` |
+| Git `spec.source.targetRevision` | Checkout provenance; not emitted as a Helm chart version |
 | `spec.source.helm.valueFiles` | Files below `document-N/chart/` under the configured values root |
 | `spec.source.helm.values` | Parsed inline `values` entry |
 | `spec.source.helm.valuesObject` | Inline `values` entry |
@@ -182,7 +185,7 @@ Values retain Argo CD's precedence: chart defaults, `valueFiles`, `values`,
 `valueFiles` retain their input order. The generated entries are ordered so
 that helmfile applies the same precedence.
 
-## External values files
+## Git-hosted charts and external values files
 
 The converter remains an offline Unix filter. It does not fetch, check out, or
 copy a chart or values repository. Before running helmfile, arrange the files
@@ -222,8 +225,38 @@ With the default Argo CD behavior, a missing values file remains an error. When
 `ignoreMissingValueFiles: true` is set, the release instead gets
 `missingFileHandler: Warn`; the root environment variable is still required.
 
-Only safe relative file paths are accepted. Empty and absolute paths, `.` or
-`..` path segments, empty segments, backslashes, and glob syntax are rejected.
+Only safe relative value file paths are accepted. Empty and absolute paths, `.`
+or `..` path segments, empty segments, backslashes, and glob syntax are
+rejected.
+
+### Git-hosted charts
+
+For a Git-hosted chart, use the Argo CD form with `path` instead of `chart`:
+
+```yaml
+source:
+  repoURL: git@github.com:example/platform-charts.git
+  path: charts/my-app
+  targetRevision: release-1
+```
+
+SCP-like `user@host:path` and standard `ssh://user@host/path` URLs are accepted;
+use the latter for a non-default SSH port. Check out `targetRevision` and copy
+the chart root selected by `path` into `document-N/chart/`. A `path` of `.` is
+accepted for a chart at the repository root.
+
+The generated release refers directly to that directory:
+
+```yaml
+# document 1 chart source: repoURL "git@github.com:example/platform-charts.git", path "charts/my-app", targetRevision "release-1"
+releases:
+  - name: my-app
+    chart: '{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-1/chart'
+```
+
+No Helm repository or release `version` is emitted: `targetRevision` selects a
+Git revision, not the version in `Chart.yaml`. SSH keys, agents, and known-hosts
+configuration remain the responsibility of the checkout environment.
 
 ### Multi-source values repositories
 
@@ -257,16 +290,16 @@ also not converted: select the intended kube context when running helmfile.
 The converter rejects inputs that require any of the following:
 
 - `List` or `ApplicationSet` resources;
-- Git-hosted charts selected with `spec.source.path`;
 - multi-source Applications outside the values-only `ref` form described
   above;
 - `fileParameters`; or
 - non-empty Helm options not listed in the supported mapping above.
 
-The required fields are `metadata.name` and the chart source's `repoURL`,
-`chart`, and `targetRevision`. The repository URL must be an HTTP(S) URL or a
-scheme-less OCI registry reference. In particular, `oci://` must not be
-included. Empty unsupported Helm options are ignored.
+The required fields are `metadata.name`, the chart source's `repoURL` and
+`targetRevision`, plus `chart` for a Helm repository or `path` for an SSH Git
+repository. Helm repository URLs must be HTTP(S) or scheme-less OCI references;
+in particular, `oci://` must not be included. Git chart URLs must use SCP-like
+or `ssh://` syntax. Empty unsupported Helm options are ignored.
 
 These inputs fail explicitly instead of producing an incomplete helmfile.
 Fields unrelated to describing or rendering the Helm release are ignored as
@@ -277,7 +310,6 @@ described above.
 The following capabilities may be useful additions after the initial format
 and error behavior are established. This is not a committed roadmap:
 
-- charts stored in Git repositories;
 - commonly used Helm options such as `fileParameters` and `skipTests`;
 - accepting `List` resources as an alternative batch input format.
 

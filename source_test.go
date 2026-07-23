@@ -136,6 +136,70 @@ func TestConvertRejectsInvalidMultiSources(t *testing.T) {
 	}
 }
 
+func TestConvertGitChartWithExternalValuesSource(t *testing.T) {
+	input := `apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app
+spec:
+  sources:
+    - repoURL: git@github.com:example/charts.git
+      path: charts/app
+      targetRevision: release-1
+      helm:
+        valueFiles: [$values/prod/values.yaml]
+    - repoURL: git@git.example.com:platform/values.git
+      targetRevision: main
+      ref: values
+`
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(output)
+	for _, want := range []string{
+		`# document 1 chart source: repoURL "git@github.com:example/charts.git", path "charts/app", targetRevision "release-1"`,
+		`# document 1 values source ref "values": repoURL "git@git.example.com:platform/values.git", targetRevision "main"`,
+		`document-1/refs/values/prod/values.yaml`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output does not contain %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestConvertRejectsInvalidGitCharts(t *testing.T) {
+	tests := map[string]string{
+		"chart instead of path": strings.Replace(
+			gitApplication("git@github.com:example/charts.git", "charts/app", "main", ""),
+			"path: charts/app", "chart: app", 1,
+		),
+		"chart and path": strings.Replace(
+			gitApplication("git@github.com:example/charts.git", "charts/app", "main", ""),
+			"path: charts/app", "chart: app\n    path: charts/app", 1,
+		),
+		"HTTP repository with path": strings.Replace(
+			gitApplication("git@github.com:example/charts.git", "charts/app", "main", ""),
+			"git@github.com:example/charts.git", "https://github.com/example/charts.git", 1,
+		),
+		"unsafe path":           gitApplication("git@github.com:example/charts.git", "../charts/app", "main", ""),
+		"empty revision":        gitApplication("git@github.com:example/charts.git", "charts/app", "''", ""),
+		"missing SCP separator": gitApplication("git@github.com/example/charts.git", "charts/app", "main", ""),
+		"empty SCP path":        gitApplication("git@github.com:/", "charts/app", "main", ""),
+		"SSH password":          gitApplication("ssh://git:secret@git.example.com/example/charts.git", "charts/app", "main", ""),
+		"SSH query":             gitApplication("ssh://git@git.example.com/example/charts.git?ref=main", "charts/app", "main", ""),
+		"SSH fragment":          gitApplication("ssh://git@git.example.com/example/charts.git#main", "charts/app", "main", ""),
+		"SSH empty query":       gitApplication("ssh://git@git.example.com/example/charts.git?", "charts/app", "main", ""),
+	}
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			if output, err := convert([]byte(input)); err == nil {
+				t.Fatalf("convert succeeded with output:\n%s", output)
+			}
+		})
+	}
+}
+
 func chartWithValueFile(valueFile string) string {
 	return `    - repoURL: https://example.com/charts
       chart: chart

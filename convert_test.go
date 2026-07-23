@@ -40,6 +40,68 @@ func TestConvertOCIRepositoryWithPort(t *testing.T) {
 	}
 }
 
+func TestConvertGitChart(t *testing.T) {
+	tests := []struct {
+		name      string
+		repoURL   string
+		chartPath string
+		revision  string
+	}{
+		{
+			name:      "SCP-like",
+			repoURL:   "git@github.com:example/charts.git",
+			chartPath: "deploy/charts/app",
+			revision:  "release-1",
+		},
+		{
+			name:      "SSH URL with port and root chart",
+			repoURL:   "ssh://git@git.example.com:2222/example/chart.git",
+			chartPath: ".",
+			revision:  "0123456789abcdef",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := gitApplication(test.repoURL, test.chartPath, test.revision, `    helm:
+      valueFiles: [environments/prod.yaml]
+`)
+			output, err := convert([]byte(input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := string(output)
+			for _, want := range []string{
+				`# document 1 chart source: repoURL "` + test.repoURL + `", path "` + test.chartPath + `", targetRevision "` + test.revision + `"`,
+				`chart: '{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-1/chart'`,
+				`'{{ requiredEnv "ARGOCDAPP2HELMFILE_VALUES_ROOT" }}/document-1/chart/environments/prod.yaml'`,
+			} {
+				if !strings.Contains(text, want) {
+					t.Errorf("output does not contain %q:\n%s", want, output)
+				}
+			}
+			for _, unwanted := range []string{"repositories:", "version:"} {
+				if strings.Contains(text, unwanted) {
+					t.Errorf("output unexpectedly contains %q:\n%s", unwanted, output)
+				}
+			}
+		})
+	}
+}
+
+func TestConvertGitChartDoesNotConsumeRepositoryAlias(t *testing.T) {
+	gitInput := gitApplication("git@github.com:example/charts.git", "charts/app", "main", "")
+	httpInput := strings.Replace(minimalApplication(""), "name: app", "name: packaged", 1)
+	output, err := convert([]byte(gitInput + "---\n" + httpInput))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(output)
+	if !strings.Contains(text, "  - name: source\n    url: https://example.com/charts\n") ||
+		!strings.Contains(text, "  - name: packaged\n    chart: source/chart\n") {
+		t.Fatalf("HTTP repository did not retain the first alias:\n%s", output)
+	}
+}
+
 func TestConvertMultipleApplications(t *testing.T) {
 	second := strings.NewReplacer(
 		"name: app", "name: worker",
@@ -70,6 +132,19 @@ releases:
 	if string(output) != want {
 		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
 	}
+}
+
+func gitApplication(repoURL, chartPath, revision, helm string) string {
+	return `apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app
+spec:
+  source:
+    repoURL: ` + repoURL + `
+    path: ` + chartPath + `
+    targetRevision: ` + revision + `
+` + helm
 }
 
 func TestConvertSharesOnlyExactlyMatchingRepositories(t *testing.T) {

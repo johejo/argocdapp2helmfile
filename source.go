@@ -26,14 +26,19 @@ type applicationSource struct {
 
 var safeReferenceName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
+type repositoryKind int
+
+const (
+	httpRepository repositoryKind = iota
+	ociRepository
+	gitRepository
+)
+
 func resolveSources(app application, documentNumber int) (applicationSource, string, map[string]struct{}, []string, error) {
 	if app.Spec.Source != nil && app.Spec.Sources != nil {
 		return applicationSource{}, "", nil, nil, errors.New("spec.source and spec.sources cannot both be set")
 	}
 	if app.Spec.Source != nil {
-		if strings.TrimSpace(app.Spec.Source.Path) != "" {
-			return applicationSource{}, "", nil, nil, errors.New("spec.source.path is not supported")
-		}
 		if strings.TrimSpace(app.Spec.Source.Ref) != "" {
 			return applicationSource{}, "", nil, nil, errors.New("spec.source.ref is only supported in spec.sources")
 		}
@@ -52,12 +57,11 @@ func resolveSources(app application, documentNumber int) (applicationSource, str
 	var comments []string
 	for i, source := range app.Spec.Sources {
 		field := fmt.Sprintf("spec.sources[%d]", i)
-		if strings.TrimSpace(source.Chart) != "" {
+		isChartSource := strings.TrimSpace(source.Chart) != "" ||
+			strings.TrimSpace(source.Path) != "" && strings.TrimSpace(source.Ref) == ""
+		if isChartSource {
 			if chartSourceField != "" {
 				return applicationSource{}, "", nil, nil, errors.New("spec.sources must contain exactly one Helm chart source")
-			}
-			if strings.TrimSpace(source.Path) != "" {
-				return applicationSource{}, "", nil, nil, fmt.Errorf("%s.path is not supported", field)
 			}
 			if strings.TrimSpace(source.Ref) != "" {
 				return applicationSource{}, "", nil, nil, fmt.Errorf("%s.ref is not supported on the Helm chart source", field)
@@ -168,18 +172,66 @@ func isWindowsAbsolutePath(valuePath string) bool {
 	return drive >= 'A' && drive <= 'Z' || drive >= 'a' && drive <= 'z'
 }
 
-func classifyRepositoryURL(raw string) (bool, error) {
+func classifyRepositoryURL(raw string) (repositoryKind, error) {
 	parsed, err := url.Parse(raw)
 	if err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" {
-		return false, nil
+		return httpRepository, nil
+	}
+	if err == nil && parsed.Scheme == "ssh" {
+		if parsed.User == nil || parsed.User.Username() == "" || parsed.Hostname() == "" ||
+			parsed.Path == "" || parsed.Path == "/" || strings.ContainsAny(raw, "?#") {
+			return 0, invalidRepositoryURLError()
+		}
+		if _, hasPassword := parsed.User.Password(); hasPassword {
+			return 0, invalidRepositoryURLError()
+		}
+		return gitRepository, nil
+	}
+	if isSCPStyleGitURL(raw) {
+		return gitRepository, nil
 	}
 
 	if raw == "" || strings.IndexFunc(raw, unicode.IsSpace) >= 0 || strings.Contains(raw, "://") {
-		return false, errors.New("spec.source.repoURL must be a valid HTTP, HTTPS, or scheme-less OCI repository URL")
+		return 0, invalidRepositoryURLError()
 	}
 	parsed, err = url.Parse("//" + raw)
 	if err != nil || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return false, errors.New("spec.source.repoURL must be a valid HTTP, HTTPS, or scheme-less OCI repository URL")
+		return 0, invalidRepositoryURLError()
 	}
-	return true, nil
+	return ociRepository, nil
+}
+
+func isSCPStyleGitURL(raw string) bool {
+	if strings.Contains(raw, "://") || strings.IndexFunc(raw, unicode.IsSpace) >= 0 ||
+		strings.IndexFunc(raw, unicode.IsControl) >= 0 ||
+		strings.ContainsAny(raw, "?#") {
+		return false
+	}
+	at := strings.IndexByte(raw, '@')
+	if at <= 0 || strings.LastIndexByte(raw, '@') != at {
+		return false
+	}
+	separator := strings.IndexByte(raw[at+1:], ':')
+	if separator <= 0 {
+		return false
+	}
+	separator += at + 1
+	user, host, repositoryPath := raw[:at], raw[at+1:separator], raw[separator+1:]
+	return strings.Trim(repositoryPath, "/") != "" &&
+		!strings.ContainsAny(user, "/:") &&
+		!strings.ContainsAny(host, "/:")
+}
+
+func validateGitChartPath(chartPath string) error {
+	if chartPath == "." {
+		return nil
+	}
+	if err := validateRelativeValuePath(chartPath); err != nil {
+		return fmt.Errorf("must be a safe repository-relative directory: %w", err)
+	}
+	return nil
+}
+
+func invalidRepositoryURLError() error {
+	return errors.New("spec.source.repoURL must be a valid HTTP, HTTPS, SSH Git, SCP-like Git, or scheme-less OCI repository URL")
 }
