@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: matrix-error
+spec:
+  goTemplate: true
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/example/first.git
+              revision: main
+              files:
+                - path: first/*.yaml
+          - git:
+              repoURL: https://github.com/example/second.git
+              revision: main
+              files:
+                - path: second/*.yaml
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: nginx
+        targetRevision: 1.0.0

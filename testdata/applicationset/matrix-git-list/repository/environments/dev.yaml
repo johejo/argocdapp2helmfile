@@ -1,0 +1,9 @@
+environment: dev
+namespace: development
+components:
+  - name: api
+    chart: nginx
+    version: 1.0.0
+  - name: worker
+    chart: redis
+    version: 2.0.0

@@ -1,7 +1,8 @@
 # argocdapp2helmfile
 
 `argocdapp2helmfile` converts Argo CD `Application` resources and
-`ApplicationSet` resources using the List or Git generator into one helmfile.
+`ApplicationSet` resources using List, Git, or supported Matrix generators
+into one helmfile.
 It is an offline Unix filter: it reads a YAML stream from standard input,
 writes YAML to standard output, and never fetches charts or repositories.
 
@@ -201,7 +202,7 @@ Supported List features are:
 
 - nested YAML values in `elements`;
 - literal `elementsYaml`;
-- generator-level `template` overrides;
+- generator-level `template` overrides outside Matrix;
 - selectors using `matchLabels` and the `In`, `NotIn`, `Exists`, and
   `DoesNotExist` operators;
 - templating of every string field and string mapping key; and
@@ -223,7 +224,7 @@ and results are generated in lexical order.
 Templates receive Argo CD-compatible path parameters.
 File generators read YAML or JSON mappings and mapping sequences.
 `pathParamPrefix`, generator `values`, selectors,
-generator-level templates, and `templatePatch` are supported.
+generator-level templates outside Matrix, and `templatePatch` are supported.
 
 The root must be an existing non-symlink directory without helmfile template expressions.
 Hidden directories are skipped by directory generators;
@@ -233,6 +234,18 @@ checkout revisions, authenticate, poll, or verify Git state.
 See the
 [Argo CD Git generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/)
 for the upstream generator model.
+
+#### Matrix generator
+
+Matrix supports List × List, Git × List, and List × Git with exactly two children.
+The first child's parameters may be used to render the second child,
+including dynamic List `elementsYaml` and Git fields.
+Results retain child order,
+and the first child's values take precedence when parameter maps overlap.
+
+Selectors are supported.
+Git × Git, nested Matrix generators,
+and template overrides on Matrix or its children are rejected.
 
 Templates provide the Sprig functions used by ApplicationSet except `env`,
 `expandenv`, and `getHostByName`.
@@ -434,9 +447,10 @@ and intentionally ignored as an Argo CD backward-compatibility field.
 
 The converter rejects:
 
-- ApplicationSet generators other than List and Git,
+- ApplicationSet generators other than List, Git, and the supported Matrix combinations,
   and legacy fasttemplate syntax;
-- ApplicationSet Matrix and Merge generators,
+- ApplicationSet Merge generators, nested Matrix generators,
+  unsupported Matrix children and template overrides,
   remote repository access, polling, webhooks, signature verification,
   revision checkout, and authentication;
 - Strategic Merge Patch directives in ApplicationSet `templatePatch`;

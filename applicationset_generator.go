@@ -33,8 +33,26 @@ func parseApplicationSetGenerator(
 	field string,
 	resolver *sourceResolver,
 	renderer *template.Template,
+	parentParams map[string]any,
+	matrixChild bool,
 ) (applicationSetGenerator, error) {
 	var result applicationSetGenerator
+	if matrixChild {
+		if err := rejectMatrixChildTemplate(raw, field); err != nil {
+			return result, err
+		}
+	}
+	if len(parentParams) != 0 {
+		rendered, err := renderGeneratorValue(raw, parentParams, renderer, nil)
+		if err != nil {
+			return result, fmt.Errorf("%s: render generator: %w", field, err)
+		}
+		var ok bool
+		raw, ok = rendered.(yaml.MapSlice)
+		if !ok {
+			return result, fmt.Errorf("%s must be a mapping", field)
+		}
+	}
 	var generatorName string
 	var generatorValue any
 	for _, item := range raw {
@@ -54,7 +72,7 @@ func parseApplicationSetGenerator(
 			result.selector = &selector
 			continue
 		}
-		if key != "list" && key != "git" {
+		if key != "list" && key != "git" && key != "matrix" {
 			return result, fmt.Errorf("%s.%s generator is not supported", field, key)
 		}
 		if generatorName != "" {
@@ -104,12 +122,57 @@ func parseApplicationSetGenerator(
 		}
 		result.params = git.params
 		result.template = git.template
+	case "matrix":
+		if matrixChild {
+			return result, fmt.Errorf("%s.matrix nesting is not supported", field)
+		}
+		items, ok := generatorValue.(yaml.MapSlice)
+		if !ok {
+			return result, fmt.Errorf("%s.matrix must be a mapping", field)
+		}
+		matrix, err := generateMatrixParams(items, field+".matrix", resolver, renderer)
+		if err != nil {
+			return result, err
+		}
+		result.params = matrix
 	case "":
 		return result, fmt.Errorf("%s must contain exactly one generator", field)
 	default:
 		return result, fmt.Errorf("%s.%s generator is not supported", field, generatorName)
 	}
+	if result.selector != nil {
+		filtered := make([]generatedGeneratorParams, 0, len(result.params))
+		for _, generatedParams := range result.params {
+			matches, err := result.selector.matches(generatedParams.params)
+			if err != nil {
+				return result, fmt.Errorf("%s.selector: %w", field, err)
+			}
+			if matches {
+				filtered = append(filtered, generatedParams)
+			}
+		}
+		result.params = filtered
+	}
 	return result, nil
+}
+
+func rejectMatrixChildTemplate(raw yaml.MapSlice, field string) error {
+	for _, item := range raw {
+		key, ok := item.Key.(string)
+		if !ok || key == "selector" {
+			continue
+		}
+		options, ok := item.Value.(yaml.MapSlice)
+		if !ok {
+			continue
+		}
+		for _, option := range options {
+			if option.Key == "template" {
+				return fmt.Errorf("%s.%s.template is not supported in a matrix generator", field, key)
+			}
+		}
+	}
+	return nil
 }
 
 type labelSelector struct {

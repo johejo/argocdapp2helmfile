@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: list-git
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - environment: dev
+                  repository: https://github.com/example/clusters.git
+                  revision: main
+                  valuesKey: environment
+                - environment: prod
+                  repository: https://github.com/example/clusters.git
+                  revision: main
+                  valuesKey: environment
+          - git:
+              repoURL: '{{ .repository }}'
+              revision: '{{ .revision }}'
+              files:
+                - path: 'clusters/{{ .environment }}.yaml'
+              values:
+                '{{ .valuesKey }}': '{{ .environment }}'
+                sourceFile: '{{ .path.filename }}'
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        namespace: '{{ .values.environment }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'
+        helm:
+          valuesObject:
+            sourceFile: '{{ .values.sourceFile }}'

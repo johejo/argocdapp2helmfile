@@ -1,0 +1,16 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+releases:
+  - name: development
+    namespace: dev
+    chart: source/nginx
+    version: 1.0.0
+    values:
+      - sourceFile: dev.yaml
+  - name: production
+    namespace: prod
+    chart: source/redis
+    version: 2.0.0
+    values:
+      - sourceFile: prod.yaml

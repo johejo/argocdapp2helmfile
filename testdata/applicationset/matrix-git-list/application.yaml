@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: git-list
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/example/environments.git
+              revision: main
+              files:
+                - path: environments/*.yaml
+          - list:
+              elementsYaml: '{{ .components | toJson }}'
+  template:
+    metadata:
+      name: '{{ .environment }}-{{ .name }}'
+    spec:
+      destination:
+        namespace: '{{ .namespace }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'

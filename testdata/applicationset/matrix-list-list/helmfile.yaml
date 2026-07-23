@@ -1,0 +1,32 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+releases:
+  - name: dev-frontend
+    namespace: dev
+    chart: source/nginx
+    version: 1.0.0
+    values:
+      - owner: platform
+        tier: web
+  - name: dev-backend
+    namespace: dev
+    chart: source/redis
+    version: 2.0.0
+    values:
+      - owner: platform
+        tier: data
+  - name: prod-frontend
+    namespace: prod
+    chart: source/nginx
+    version: 1.0.0
+    values:
+      - owner: operations
+        tier: web
+  - name: prod-backend
+    namespace: prod
+    chart: source/redis
+    version: 2.0.0
+    values:
+      - owner: operations
+        tier: data

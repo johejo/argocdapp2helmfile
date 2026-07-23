@@ -82,21 +82,14 @@ func expandApplicationSet(node ast.Node, resolver *sourceResolver) ([]generatedA
 			field,
 			resolver,
 			renderer,
+			nil,
+			false,
 		)
 		if err != nil {
 			return nil, err
 		}
 		mergedTemplate := mergeTemplate(generator.template, appSet.Spec.Template)
 		for _, generatedParams := range generator.params {
-			if generator.selector != nil {
-				matches, err := generator.selector.matches(generatedParams.params)
-				if err != nil {
-					return nil, fmt.Errorf("%s.selector: %w", field, err)
-				}
-				if !matches {
-					continue
-				}
-			}
 			rendered, data, err := renderApplicationTemplate(
 				mergedTemplate,
 				appSet.Spec.TemplatePatch,

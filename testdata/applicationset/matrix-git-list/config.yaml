@@ -1,0 +1,6 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+sources:
+  - repoURL: https://github.com/example/environments.git
+    targetRevision: main
+    root: testdata/applicationset/matrix-git-list/repository

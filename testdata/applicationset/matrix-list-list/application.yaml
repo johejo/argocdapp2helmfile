@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: list-list
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - environment: dev
+                  namespace: dev
+                  values:
+                    owner: platform
+                - environment: prod
+                  namespace: prod
+                  values:
+                    owner: operations
+          - list:
+              elements:
+                - name: frontend
+                  namespace: must-lose
+                  chart: nginx
+                  version: 1.0.0
+                  enabled: "true"
+                  values:
+                    tier: web
+                - name: backend
+                  namespace: must-lose
+                  chart: redis
+                  version: 2.0.0
+                  enabled: "true"
+                  values:
+                    tier: data
+                - name: ignored
+                  namespace: ignored
+                  chart: ignored
+                  version: 0.0.0
+                  enabled: "false"
+                  values:
+                    tier: ignored
+            selector:
+              matchLabels:
+                enabled: "true"
+      selector:
+        matchExpressions:
+          - key: values.tier
+            operator: Exists
+  template:
+    metadata:
+      name: '{{ .environment }}-{{ .name }}'
+    spec:
+      destination:
+        namespace: '{{ .namespace }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'
+        helm:
+          valuesObject:
+            owner: '{{ .values.owner }}'
+            tier: '{{ .values.tier }}'
