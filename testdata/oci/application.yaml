@@ -1,0 +1,11 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx
+spec:
+  destination:
+    namespace: nginx
+  source:
+    repoURL: registry-1.docker.io/bitnamicharts
+    chart: nginx
+    targetRevision: 15.9.0

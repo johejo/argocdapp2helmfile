@@ -89,27 +89,7 @@ func TestConvertRejectsUnsafeValueFilePaths(t *testing.T) {
 }
 
 func TestConvertMultiSourceValueReferences(t *testing.T) {
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: app
-spec:
-  sources:
-    - repoURL: https://example.com/charts
-      chart: chart
-      targetRevision: 1.2.3
-      helm:
-        valueFiles:
-          - defaults.yaml
-          - $values/environments/prod.yaml
-          - $secrets/team/values.yaml
-    - repoURL: https://github.com/example/values.git
-      targetRevision: 0123456789abcdef
-      ref: values
-    - repoURL: ssh://git@example.com/secrets.git
-      targetRevision: release-1
-      ref: secrets
-`
+	input := readTestdata(t, "multi-source/application.yaml")
 	output, err := convert([]byte(input))
 	if err != nil {
 		t.Fatal(err)

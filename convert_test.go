@@ -5,92 +5,25 @@ import (
 	"testing"
 )
 
-const exampleApplication = `apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: nginx
-spec:
-  destination:
-    namespace: web
-    server: https://kubernetes.default.svc
-  source:
-    repoURL: https://charts.bitnami.com/bitnami
-    chart: nginx
-    targetRevision: 18.2.4
-    helm:
-      releaseName: edge
-      values: |
-        service:
-          type: ClusterIP
-      valuesObject:
-        service:
-          annotations:
-            example.com/owner: platform
-      parameters:
-        - name: replicaCount
-          value: "2"
-      skipSchemaValidation: true
-      skipCrds: true
-`
-
 func TestConvertExample(t *testing.T) {
-	output, err := convert([]byte(exampleApplication))
+	input := readTestdata(t, "example/application.yaml")
+	output, err := convert([]byte(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `repositories:
-  - name: source
-    url: https://charts.bitnami.com/bitnami
-helmDefaults:
-  skipCRDs: true
-releases:
-  - name: edge
-    namespace: web
-    chart: source/nginx
-    version: 18.2.4
-    values:
-      - service:
-          type: ClusterIP
-      - service:
-          annotations:
-            example.com/owner: platform
-    set:
-      - name: replicaCount
-        value: "2"
-    skipSchemaValidation: true
-`
+	want := readTestdata(t, "example/helmfile.yaml")
 	if string(output) != want {
 		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
 	}
 }
 
 func TestConvertOCIRepository(t *testing.T) {
-	input := `apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: nginx
-spec:
-  destination:
-    namespace: nginx
-  source:
-    repoURL: registry-1.docker.io/bitnamicharts
-    chart: nginx
-    targetRevision: 15.9.0
-`
+	input := readTestdata(t, "oci/application.yaml")
 	output, err := convert([]byte(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `repositories:
-  - name: source
-    url: registry-1.docker.io/bitnamicharts
-    oci: true
-releases:
-  - name: nginx
-    namespace: nginx
-    chart: source/nginx
-    version: 15.9.0
-`
+	want := readTestdata(t, "oci/helmfile.yaml")
 	if string(output) != want {
 		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
 	}

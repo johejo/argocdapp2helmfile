@@ -1,0 +1,20 @@
+repositories:
+  - name: source
+    url: https://charts.bitnami.com/bitnami
+helmDefaults:
+  skipCRDs: true
+releases:
+  - name: edge
+    namespace: web
+    chart: source/nginx
+    version: 18.2.4
+    values:
+      - service:
+          type: ClusterIP
+      - service:
+          annotations:
+            example.com/owner: platform
+    set:
+      - name: replicaCount
+        value: "2"
+    skipSchemaValidation: true

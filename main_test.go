@@ -7,6 +7,7 @@ import (
 )
 
 func TestRunErrorsAreAtomic(t *testing.T) {
+	exampleApplication := readTestdata(t, "example/application.yaml")
 	tests := []struct {
 		name  string
 		args  []string

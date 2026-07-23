@@ -202,6 +202,7 @@ func TestConvertInlineScalar(t *testing.T) {
 }
 
 func TestConvertRejectsInvalidInput(t *testing.T) {
+	exampleApplication := readTestdata(t, "example/application.yaml")
 	tests := map[string]string{
 		"empty":                       "",
 		"invalid YAML":                "apiVersion: [",
