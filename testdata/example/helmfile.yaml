@@ -4,6 +4,7 @@ repositories:
     passCredentials: true
 helmDefaults:
   skipCRDs: true
+  createNamespace: false
 releases:
   - name: edge
     namespace: web

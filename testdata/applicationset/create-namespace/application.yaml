@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: create-namespace
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - list:
+        elements:
+          - name: disabled
+            createNamespace: "false"
+          - name: enabled
+            createNamespace: "true"
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=false
+      source:
+        repoURL: https://example.com/charts
+        chart: chart
+        targetRevision: 1.2.3
+  templatePatch: |
+    {{- if eq .createNamespace "true" }}
+    spec:
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+    {{- end }}

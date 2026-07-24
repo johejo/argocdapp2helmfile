@@ -1,15 +1,13 @@
 repositories:
   - name: charts
     url: https://example.com/charts
-  - name: charts-2
-    url: registry.example.com/charts
-    oci: true
 helmDefaults:
   createNamespace: false
 releases:
-  - name: app
+  - name: disabled
     chart: charts/chart
     version: 1.2.3
-  - name: worker
-    chart: charts-2/worker
-    version: 4.5.6
+  - name: enabled
+    chart: charts/chart
+    version: 1.2.3
+    createNamespace: true

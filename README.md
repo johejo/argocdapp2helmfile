@@ -74,6 +74,8 @@ repositories:
   - name: bitnami
     url: https://charts.bitnami.com/bitnami
     passCredentials: true
+helmDefaults:
+  createNamespace: false
 releases:
   - name: edge
     namespace: web
@@ -130,6 +132,7 @@ An Application must identify either:
 | `spec.source.helm.kubeVersion` | Release `kubeVersion` |
 | `spec.source.helm.apiVersions` | Release `apiVersions` |
 | `spec.source.helm.skipCrds` | Shared `helmDefaults.skipCRDs` |
+| `spec.syncPolicy.syncOptions` | Shared `helmDefaults.createNamespace: false`; exact `CreateNamespace=true` also sets release `createNamespace: true` |
 | `spec.destination.name` or `spec.destination.server` | Release `kubeContext` through Config `destinations` |
 | Config `releaseLabels` query result | Release `labels` entry |
 
@@ -471,7 +474,8 @@ and intentionally ignored as an Argo CD backward-compatibility field.
 - Empty YAML documents are rejected.
   Errors identify the one-based document number and, for ApplicationSets, the
   generator and element.
-- Argo CD operational fields such as `project` and `syncPolicy` are not converted.
+- Apart from `CreateNamespace=true`, operational fields such as `project`
+  and other sync options are not converted.
 
 The converter rejects:
 
@@ -505,11 +509,14 @@ For upstream behavior, see also
 
 - [Argo CD Helm documentation][argocd-helm]
 - [Argo CD Go Template documentation][argocd-go-template]
+- [Argo CD sync option documentation][argocd-create-namespace]
 - [helmfile configuration reference][helmfile-configuration]
 
 [argocd-helm]: https://argo-cd.readthedocs.io/en/latest/user-guide/helm/
 [argocd-go-template]:
   https://argo-cd.readthedocs.io/en/latest/operator-manual/applicationset/GoTemplate/
+[argocd-create-namespace]:
+  https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/#create-namespace
 [helmfile-configuration]: https://helmfile.readthedocs.io/en/latest/configuration/
 
 ## License

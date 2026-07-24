@@ -32,7 +32,7 @@ func TestConvertDefaultsAndOmitsEmptyFields(t *testing.T) {
 			t.Errorf("output does not contain %q:\n%s", want, text)
 		}
 	}
-	for _, omitted := range []string{"namespace:", "values:", "set:", "setString:", "forceString:", "missingFileHandler:", "helmDefaults:", "skipCRDs:", "skipSchemaValidation:", "kubeVersion:", "apiVersions:"} {
+	for _, omitted := range []string{"namespace:", "values:", "set:", "setString:", "forceString:", "missingFileHandler:", "skipCRDs:", "skipSchemaValidation:", "kubeVersion:", "apiVersions:"} {
 		if strings.Contains(text, omitted) {
 			t.Errorf("output unexpectedly contains %q:\n%s", omitted, text)
 		}
@@ -132,7 +132,7 @@ func TestConvertHelmBooleanOptionsIndependently(t *testing.T) {
 			name:    "skip schema validation",
 			helm:    "    helm:\n      skipSchemaValidation: true\n",
 			present: "    skipSchemaValidation: true\n",
-			absent:  "helmDefaults:\n",
+			absent:  "  skipCRDs: true\n",
 		},
 		{
 			name:    "skip CRDs",

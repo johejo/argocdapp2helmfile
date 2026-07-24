@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -25,6 +26,9 @@ type application struct {
 		Destination applicationDestination `yaml:"destination"`
 		Source      *applicationSource     `yaml:"source"`
 		Sources     []applicationSource    `yaml:"sources"`
+		SyncPolicy  struct {
+			SyncOptions []string `yaml:"syncOptions"`
+		} `yaml:"syncPolicy"`
 	} `yaml:"spec"`
 }
 
@@ -35,7 +39,8 @@ type helmfile struct {
 }
 
 type helmDefaults struct {
-	SkipCRDs bool `yaml:"skipCRDs,omitempty"`
+	SkipCRDs        bool `yaml:"skipCRDs,omitempty"`
+	CreateNamespace bool `yaml:"createNamespace"`
 }
 
 type repository struct {
@@ -59,6 +64,7 @@ type release struct {
 	SetString            []setParameter `yaml:"setString,omitempty"`
 	MissingFileHandler   string         `yaml:"missingFileHandler,omitempty"`
 	SkipSchemaValidation bool           `yaml:"skipSchemaValidation,omitempty"`
+	CreateNamespace      bool           `yaml:"createNamespace,omitempty"`
 }
 
 type setParameter struct {
@@ -254,6 +260,7 @@ func convertApplication(
 			SkipSchemaValidation: helm.skipSchemaValidation,
 			KubeVersion:          helm.kubeVersion,
 			APIVersions:          helm.apiVersions,
+			CreateNamespace:      slices.Contains(app.Spec.SyncPolicy.SyncOptions, "CreateNamespace=true"),
 		},
 	}
 	if repositoryType == gitRepository {

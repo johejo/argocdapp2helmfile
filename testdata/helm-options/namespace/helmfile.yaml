@@ -1,6 +1,8 @@
 repositories:
   - name: charts
     url: https://example.com/charts
+helmDefaults:
+  createNamespace: false
 releases:
   - name: app
     namespace: web

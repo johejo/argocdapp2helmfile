@@ -21,6 +21,18 @@ func TestConvertExample(t *testing.T) {
 	}
 }
 
+func TestConvertCreateNamespace(t *testing.T) {
+	input := readTestdata(t, "create-namespace/application.yaml")
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := readTestdata(t, "create-namespace/helmfile.yaml")
+	if string(output) != want {
+		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+	}
+}
+
 func TestConvertDestinationToKubeContext(t *testing.T) {
 	config := testConfig(t, `destinations:
   - name: production
@@ -365,7 +377,10 @@ func TestConvertAggregatesSkipCRDs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(output), "helmDefaults:") {
+		if !strings.Contains(string(output), "helmDefaults:\n  createNamespace: false\n") {
+			t.Fatalf("shared createNamespace default was not emitted:\n%s", output)
+		}
+		if strings.Contains(string(output), "skipCRDs:") {
 			t.Fatalf("false shared skipCRDs was emitted:\n%s", output)
 		}
 	})

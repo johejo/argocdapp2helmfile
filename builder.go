@@ -122,8 +122,9 @@ func (builder *helmfileBuilder) add(item applicationInput) error {
 }
 
 func (builder *helmfileBuilder) finalize() ([]byte, error) {
-	if builder.sharedSkipCRDs {
-		builder.result.HelmDefaults = &helmDefaults{SkipCRDs: true}
+	builder.result.HelmDefaults = &helmDefaults{
+		SkipCRDs:        builder.sharedSkipCRDs,
+		CreateNamespace: false,
 	}
 
 	var output bytes.Buffer

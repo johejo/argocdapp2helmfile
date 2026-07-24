@@ -22,6 +22,18 @@ func TestConvertApplicationSetList(t *testing.T) {
 	}
 }
 
+func TestConvertApplicationSetCreateNamespace(t *testing.T) {
+	input := readTestdata(t, "applicationset/create-namespace/application.yaml")
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := readTestdata(t, "applicationset/create-namespace/helmfile.yaml")
+	if string(output) != want {
+		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+	}
+}
+
 func TestConvertApplicationSetResolvesPatchedDestination(t *testing.T) {
 	input := readTestdata(t, "applicationset/minimal/application.yaml")
 	input = strings.Replace(
@@ -280,7 +292,7 @@ func TestConvertEmptyApplicationSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(output) != "releases: []\n" {
+	if string(output) != "helmDefaults:\n  createNamespace: false\nreleases: []\n" {
 		t.Fatalf("unexpected output: %s", output)
 	}
 }

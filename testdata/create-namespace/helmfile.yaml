@@ -1,0 +1,19 @@
+repositories:
+  - name: charts
+    url: https://example.com/charts
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: omitted
+    chart: charts/chart
+    version: 1.2.3
+  - name: "false"
+    chart: charts/chart
+    version: 1.2.3
+  - name: inexact
+    chart: charts/chart
+    version: 1.2.3
+  - name: enabled
+    chart: charts/chart
+    version: 1.2.3
+    createNamespace: true

@@ -1,6 +1,8 @@
 repositories:
   - name: source
     url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
 releases:
   - name: dev-frontend
     namespace: dev

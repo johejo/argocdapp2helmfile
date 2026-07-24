@@ -2,6 +2,8 @@ repositories:
   - name: bitnamicharts
     url: registry-1.docker.io/bitnamicharts
     oci: true
+helmDefaults:
+  createNamespace: false
 releases:
   - name: nginx
     namespace: nginx

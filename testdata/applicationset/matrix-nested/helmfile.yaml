@@ -1,6 +1,8 @@
 repositories:
   - name: source
     url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
 releases:
   - name: matrix-list-a-x-one
     chart: source/nginx
