@@ -7,44 +7,56 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+type matrixGeneratorResult struct {
+	params   []generatedGeneratorParams
+	template yaml.MapSlice
+}
+
 func generateMatrixParams(
 	items yaml.MapSlice,
 	field string,
 	resolver *sourceResolver,
 	renderer *template.Template,
-) ([]generatedGeneratorParams, error) {
+	parentParams map[string]any,
+	matrixDepth int,
+) (matrixGeneratorResult, error) {
+	var result matrixGeneratorResult
 	var children []any
 	for _, item := range items {
 		key, ok := item.Key.(string)
 		if !ok {
-			return nil, fmt.Errorf("%s contains a non-string field name", field)
+			return result, fmt.Errorf("%s contains a non-string field name", field)
 		}
 		switch key {
 		case "generators":
 			var sequenceOK bool
 			children, sequenceOK = item.Value.([]any)
 			if !sequenceOK {
-				return nil, fmt.Errorf("%s.generators must be a sequence", field)
+				return result, fmt.Errorf("%s.generators must be a sequence", field)
 			}
 		case "template":
-			return nil, fmt.Errorf("%s.template is not supported", field)
+			if matrixDepth > 0 {
+				return result, fmt.Errorf("%s.template is not supported in a nested matrix generator", field)
+			}
+			value, ok := item.Value.(yaml.MapSlice)
+			if !ok {
+				return result, fmt.Errorf("%s.template must be a mapping", field)
+			}
+			result.template = value
 		default:
-			return nil, fmt.Errorf("%s.%s is not supported", field, key)
+			return result, fmt.Errorf("%s.%s is not supported", field, key)
 		}
 	}
 	if len(children) != 2 {
-		return nil, fmt.Errorf("%s.generators must contain exactly two generators", field)
+		return result, fmt.Errorf("%s.generators must contain exactly two generators", field)
 	}
 	firstRaw, ok := children[0].(yaml.MapSlice)
 	if !ok {
-		return nil, fmt.Errorf("%s.generators[0] must be a mapping", field)
+		return result, fmt.Errorf("%s.generators[0] must be a mapping", field)
 	}
 	secondRaw, ok := children[1].(yaml.MapSlice)
 	if !ok {
-		return nil, fmt.Errorf("%s.generators[1] must be a mapping", field)
-	}
-	if matrixChildKind(firstRaw) == "git" && matrixChildKind(secondRaw) == "git" {
-		return nil, fmt.Errorf("%s Git × Git is not supported", field)
+		return result, fmt.Errorf("%s.generators[1] must be a mapping", field)
 	}
 
 	firstField := field + ".generators[0]"
@@ -53,60 +65,45 @@ func generateMatrixParams(
 		firstField,
 		resolver,
 		renderer,
-		nil,
-		true,
+		parentParams,
+		matrixDepth+1,
 	)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 	if len(first.params) == 0 {
-		return nil, fmt.Errorf("%s generated no parameters", firstField)
+		return result, fmt.Errorf("%s generated no parameters", firstField)
 	}
 
 	secondField := field + ".generators[1]"
-	var result []generatedGeneratorParams
 	for _, firstParams := range first.params {
+		context := mergeMatrixParams(parentParams, firstParams.params)
 		second, err := parseApplicationSetGenerator(
 			secondRaw,
 			secondField,
 			resolver,
 			renderer,
-			firstParams.params,
-			true,
+			context,
+			matrixDepth+1,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("%s -> %w", firstParams.path, err)
+			return result, fmt.Errorf("%s -> %w", firstParams.path, err)
 		}
 		if len(second.params) == 0 {
-			return nil, fmt.Errorf(
+			return result, fmt.Errorf(
 				"%s -> %s generated no parameters",
 				firstParams.path,
 				secondField,
 			)
 		}
 		for _, secondParams := range second.params {
-			result = append(result, generatedGeneratorParams{
+			result.params = append(result.params, generatedGeneratorParams{
 				params: mergeMatrixParams(firstParams.params, secondParams.params),
 				path:   firstParams.path + " × " + secondParams.path,
 			})
 		}
 	}
 	return result, nil
-}
-
-func matrixChildKind(raw yaml.MapSlice) string {
-	var result string
-	for _, item := range raw {
-		key, ok := item.Key.(string)
-		if !ok || key == "selector" {
-			continue
-		}
-		if result != "" {
-			return ""
-		}
-		result = key
-	}
-	return result
 }
 
 func mergeMatrixParams(first, second map[string]any) map[string]any {
@@ -209,5 +206,5 @@ func appendPath(path []string, element string) []string {
 }
 
 func isGitValuesPath(path []string) bool {
-	return len(path) == 2 && path[0] == "git" && path[1] == "values"
+	return len(path) >= 2 && path[len(path)-2] == "git" && path[len(path)-1] == "values"
 }

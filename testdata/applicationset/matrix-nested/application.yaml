@@ -1,0 +1,72 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: nested
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - matrix:
+        generators:
+          - matrix:
+              generators:
+                - list:
+                    elements:
+                      - case: matrix-list
+                        left: a
+                      - case: matrix-list
+                        left: b
+                - list:
+                    elements:
+                      - middle: x
+          - list:
+              elements:
+                - right: one
+                - right: two
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - case: list-matrix
+                  left: a
+                - case: list-matrix
+                  left: b
+          - matrix:
+              generators:
+                - list:
+                    elements:
+                      - middle: x
+                - list:
+                    elements:
+                      - right: one
+                      - right: two
+    - matrix:
+        generators:
+          - matrix:
+              generators:
+                - list:
+                    elements:
+                      - case: matrix-matrix
+                        left: a
+                - list:
+                    elements:
+                      - middle: x
+                      - middle: "y"
+          - matrix:
+              generators:
+                - list:
+                    elements:
+                      - right: one
+                - list:
+                    elements:
+                      - tail: i
+                      - tail: j
+  template:
+    metadata:
+      name: >-
+        {{ .case }}-{{ .left }}-{{ .middle }}-{{ .right }}{{ default "" (index . "tail") }}
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: nginx
+        targetRevision: 1.0.0

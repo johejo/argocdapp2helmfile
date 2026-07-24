@@ -1,0 +1,11 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+releases:
+  - name: matrix-frontend
+    namespace: matrix-dev
+    chart: source/patched
+    version: 1.0.0
+    values:
+      - order: patch
+        inherited: spec

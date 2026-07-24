@@ -7,20 +7,23 @@ spec:
   generators:
     - matrix:
         generators:
+          - list:
+              elements:
+                - outer: outer
           - matrix:
               generators:
                 - list:
                     elements:
-                      - environment: dev
+                      - innerFirst: first
                 - list:
                     elements:
-                      - name: nested
-          - list:
-              elements:
-                - name: app
+                      - innerSecond: second
   template:
     metadata:
-      name: '{{ .name }}'
+      name: nested-origin
+      labels:
+        '{{ .outer }}': outer
+        '{{ printf "%s" .outer }}': duplicate
     spec:
       source:
         repoURL: https://charts.example.com

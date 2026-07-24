@@ -224,7 +224,7 @@ and results are generated in lexical order.
 Templates receive Argo CD-compatible path parameters.
 File generators read YAML or JSON mappings and mapping sequences.
 `pathParamPrefix`, generator `values`, selectors,
-generator-level templates outside Matrix, and `templatePatch` are supported.
+top-level generator templates, and `templatePatch` are supported.
 
 The root must be an existing non-symlink directory without helmfile template expressions.
 Hidden directories are skipped by directory generators;
@@ -237,16 +237,43 @@ for the upstream generator model.
 
 #### Matrix generator
 
-Matrix supports List × List, Git × List, and List × Git with exactly two children.
+Matrix supports every two-child combination of List, Git, and a one-level nested Matrix.
+Each nested Matrix must itself have exactly two List or Git children;
+a third Matrix level is rejected.
+
+| First child | List second | Git second | Matrix second |
+| --- | --- | --- | --- |
+| List | Supported | Supported | Supported at top level |
+| Git | Supported | Supported | Supported at top level |
+| Matrix | Supported at top level | Supported at top level | Supported at top level |
+
 The first child's parameters may be used to render the second child,
 including dynamic List `elementsYaml` and Git fields.
 Git `values` may reference parent, Git path, and Git parameter-file fields together.
 Results retain child order,
-and the first child's values take precedence when parameter maps overlap.
+and the first child's values take precedence recursively when parameter maps overlap.
+This generation and merge order applies independently at both Matrix levels.
 
-Selectors are supported.
-Git × Git, nested Matrix generators,
-and template overrides on Matrix or its children are rejected.
+For Git × Git,
+`pathParamPrefix` is recommended when both children need to retain their path parameters.
+Without prefixes,
+the normal first-child-wins merge behavior applies to the shared `path` key.
+The two Git generators may resolve to the same or different configured sources.
+
+A top-level Matrix `template` recursively overrides `spec.template`
+and is rendered before `templatePatch` is applied.
+As in Argo CD,
+List and Git child templates are not processed and are rejected.
+A nested Matrix template is also rejected.
+
+Selectors are applied to terminal generators,
+nested Matrix results,
+and top-level Matrix results.
+The deprecated `spec.applyNestedSelectors` compatibility field is accepted but ignored;
+selectors are always applied whether the field is omitted, `false`, or `true`.
+See the
+[Argo CD Matrix generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Matrix/)
+for the upstream generator constraints and parameter model.
 
 Templates provide the Sprig functions used by ApplicationSet except `env`,
 `expandenv`, and `getHostByName`.
@@ -450,8 +477,8 @@ The converter rejects:
 
 - ApplicationSet generators other than List, Git, and the supported Matrix combinations,
   and legacy fasttemplate syntax;
-- ApplicationSet Merge generators, nested Matrix generators,
-  unsupported Matrix children and template overrides,
+- ApplicationSet Merge generators, Matrix nesting deeper than one level,
+  unsupported Matrix children, List or Git child templates, and nested Matrix templates,
   remote repository access, polling, webhooks, signature verification,
   revision checkout, and authentication;
 - Strategic Merge Patch directives in ApplicationSet `templatePatch`;

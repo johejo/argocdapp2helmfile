@@ -1,0 +1,52 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: git-git
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/example/clusters.git
+              revision: main
+              files:
+                - path: clusters/*.yaml
+              pathParamPrefix: cluster
+              values:
+                nextRepoURL: '{{ .repoURL }}'
+                nextRevision: '{{ .revision }}'
+                nextPattern: '{{ .pattern }}'
+                wanted: '{{ .wanted }}'
+                owner: '{{ .settings.owner }}'
+          - git:
+              repoURL: '{{ .values.nextRepoURL }}'
+              revision: '{{ .values.nextRevision }}'
+              files:
+                - path: '{{ .values.nextPattern }}'
+              pathParamPrefix: app
+              values:
+                clusterFile: '{{ .cluster.path.filename }}'
+                appFile: '{{ .app.path.filename }}'
+                owner: must-lose
+            selector:
+              matchLabels:
+                enabled: '{{ .values.wanted }}'
+  template:
+    metadata:
+      name: '{{ .environment }}-{{ .name }}'
+    spec:
+      destination:
+        namespace: '{{ .environment }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'
+        helm:
+          valuesObject:
+            clusterPath: '{{ .cluster.path.path }}'
+            appPath: '{{ .app.path.path }}'
+            clusterFile: '{{ .values.clusterFile }}'
+            appFile: '{{ .values.appFile }}'
+            owner: '{{ .values.owner }}'

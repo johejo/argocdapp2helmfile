@@ -17,6 +17,36 @@ func TestConvertApplicationSetMatrixListGit(t *testing.T) {
 	testConvertApplicationSetMatrixFixture(t, "matrix-list-git", true)
 }
 
+func TestConvertApplicationSetMatrixTemplate(t *testing.T) {
+	testConvertApplicationSetMatrixFixture(t, "matrix-template", false)
+}
+
+func TestConvertApplicationSetMatrixGitGit(t *testing.T) {
+	testConvertApplicationSetMatrixFixture(t, "matrix-git-git", true)
+}
+
+func TestConvertApplicationSetNestedMatrix(t *testing.T) {
+	testConvertApplicationSetMatrixFixture(t, "matrix-nested", false)
+}
+
+func TestConvertApplicationSetNestedSelectorsAlwaysApply(t *testing.T) {
+	const fixture = "applicationset/matrix-nested-selectors/"
+	want := readTestdata(t, fixture+"helmfile.yaml")
+	for _, mode := range []string{"omitted", "false", "true"} {
+		t.Run(mode, func(t *testing.T) {
+			output, err := convert(
+				[]byte(readTestdata(t, fixture+"application-"+mode+".yaml")),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(output) != want {
+				t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+			}
+		})
+	}
+}
+
 func TestConvertApplicationSetMatrixListGitMissingKeyModes(t *testing.T) {
 	const fixture = "applicationset/matrix-list-git-missingkey/"
 	config, err := parseConfig([]byte(readTestdata(t, fixture+"config.yaml")))
@@ -81,22 +111,23 @@ func TestApplicationSetMatrixErrors(t *testing.T) {
 			want: "list.elements[0] -> " +
 				"spec.generators[0].matrix.generators[1] generated no parameters",
 		},
-		"matrix template": {
-			fixture: "matrix-template.yaml",
-			want:    "spec.generators[0].matrix.template is not supported",
-		},
 		"child template": {
 			fixture: "child-template.yaml",
 			want: "matrix.generators[0].list.template is not supported " +
 				"in a matrix generator",
 		},
-		"nested matrix": {
-			fixture: "nested-matrix.yaml",
-			want:    "matrix.generators[0].matrix nesting is not supported",
+		"Git child template": {
+			fixture: "git-child-template.yaml",
+			want: "matrix.generators[1].git.template is not supported " +
+				"in a matrix generator",
 		},
-		"git git": {
-			fixture: "git-git.yaml",
-			want:    "spec.generators[0].matrix Git × Git is not supported",
+		"nested matrix template": {
+			fixture: "nested-template.yaml",
+			want:    "matrix.generators[0].matrix.template is not supported",
+		},
+		"deeply nested matrix": {
+			fixture: "deeply-nested-matrix.yaml",
+			want:    "matrix.generators[0].matrix exceeds the supported nesting depth",
 		},
 	}
 	for name, test := range tests {
@@ -107,6 +138,17 @@ func TestApplicationSetMatrixErrors(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestConvertApplicationSetNestedMatrixErrorReportsEveryOrigin(t *testing.T) {
+	input := readTestdata(t, "applicationset/matrix-errors/nested-origin.yaml")
+	_, err := convert([]byte(input))
+	want := "spec.generators[0].matrix.generators[0].list.elements[0] × " +
+		"spec.generators[0].matrix.generators[1].matrix.generators[0].list.elements[0] × " +
+		"spec.generators[0].matrix.generators[1].matrix.generators[1].list.elements[0]"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

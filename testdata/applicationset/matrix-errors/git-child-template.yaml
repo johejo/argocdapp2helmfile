@@ -4,22 +4,24 @@ metadata:
   name: matrix-error
 spec:
   goTemplate: true
+  goTemplateOptions: [missingkey=error]
   generators:
     - matrix:
         generators:
+          - list:
+              elements:
+                - repository: https://github.com/example/apps.git
           - git:
-              repoURL: https://github.com/example/first.git
+              repoURL: '{{ .repository }}'
               revision: main
               files:
-                - path: first/*.yaml
-          - git:
-              repoURL: https://github.com/example/second.git
-              revision: main
-              files:
-                - path: second/*.yaml
+                - path: applications/*.yaml
+              template:
+                metadata:
+                  name: '{{ .undefined }}'
   template:
     metadata:
-      name: '{{ .name }}'
+      name: app
     spec:
       source:
         repoURL: https://charts.example.com

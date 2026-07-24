@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: matrix-template
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - environment: dev
+          - list:
+              elements:
+                - name: frontend
+        template:
+          metadata:
+            name: 'matrix-{{ .name }}'
+          spec:
+            destination:
+              namespace: 'matrix-{{ .environment }}'
+            source:
+              helm:
+                valuesObject:
+                  order: matrix
+  template:
+    metadata:
+      name: 'base-{{ .name }}'
+    spec:
+      destination:
+        namespace: base
+      source:
+        repoURL: https://charts.example.com
+        chart: base
+        targetRevision: 1.0.0
+        helm:
+          valuesObject:
+            inherited: spec
+            order: spec
+  templatePatch: |
+    spec:
+      source:
+        chart: patched
+        helm:
+          valuesObject:
+            order: patch

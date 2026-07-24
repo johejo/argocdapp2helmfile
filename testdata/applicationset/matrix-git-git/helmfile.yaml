@@ -1,0 +1,14 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+releases:
+  - name: dev-frontend
+    namespace: dev
+    chart: source/nginx
+    version: 1.2.3
+    values:
+      - clusterPath: clusters
+        appPath: applications/dev
+        clusterFile: dev.yaml
+        appFile: frontend.yaml
+        owner: platform

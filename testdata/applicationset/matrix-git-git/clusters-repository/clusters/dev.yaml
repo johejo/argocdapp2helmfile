@@ -1,0 +1,7 @@
+environment: dev
+repoURL: https://github.com/example/apps.git
+revision: release
+pattern: applications/dev/*.yaml
+wanted: "true"
+settings:
+  owner: platform

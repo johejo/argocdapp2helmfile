@@ -7,13 +7,18 @@ spec:
   generators:
     - matrix:
         generators:
+          - matrix:
+              generators:
+                - list:
+                    elements:
+                      - name: nested
+                - list:
+                    elements:
+                      - environment: dev
+              template: {}
           - list:
               elements:
-                - environment: dev
-          - list:
-              elements:
-                - name: app
-        template: {}
+                - region: east
   template:
     metadata:
       name: '{{ .name }}'

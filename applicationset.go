@@ -41,11 +41,13 @@ type applicationSetResource struct {
 		Name string `yaml:"name"`
 	} `yaml:"metadata"`
 	Spec struct {
-		GoTemplate        bool            `yaml:"goTemplate"`
-		GoTemplateOptions []string        `yaml:"goTemplateOptions"`
-		Generators        []yaml.MapSlice `yaml:"generators"`
-		Template          yaml.MapSlice   `yaml:"template"`
-		TemplatePatch     string          `yaml:"templatePatch"`
+		GoTemplate        bool     `yaml:"goTemplate"`
+		GoTemplateOptions []string `yaml:"goTemplateOptions"`
+		// Deprecated compatibility field. Selectors are always applied at every depth.
+		ApplyNestedSelectors *bool           `yaml:"applyNestedSelectors"`
+		Generators           []yaml.MapSlice `yaml:"generators"`
+		Template             yaml.MapSlice   `yaml:"template"`
+		TemplatePatch        string          `yaml:"templatePatch"`
 	} `yaml:"spec"`
 }
 
@@ -83,7 +85,7 @@ func expandApplicationSet(node ast.Node, resolver *sourceResolver) ([]generatedA
 			resolver,
 			renderer,
 			nil,
-			false,
+			0,
 		)
 		if err != nil {
 			return nil, err

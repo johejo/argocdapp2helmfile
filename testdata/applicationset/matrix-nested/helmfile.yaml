@@ -1,0 +1,40 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+releases:
+  - name: matrix-list-a-x-one
+    chart: source/nginx
+    version: 1.0.0
+  - name: matrix-list-a-x-two
+    chart: source/nginx
+    version: 1.0.0
+  - name: matrix-list-b-x-one
+    chart: source/nginx
+    version: 1.0.0
+  - name: matrix-list-b-x-two
+    chart: source/nginx
+    version: 1.0.0
+  - name: list-matrix-a-x-one
+    chart: source/nginx
+    version: 1.0.0
+  - name: list-matrix-a-x-two
+    chart: source/nginx
+    version: 1.0.0
+  - name: list-matrix-b-x-one
+    chart: source/nginx
+    version: 1.0.0
+  - name: list-matrix-b-x-two
+    chart: source/nginx
+    version: 1.0.0
+  - name: matrix-matrix-a-x-onei
+    chart: source/nginx
+    version: 1.0.0
+  - name: matrix-matrix-a-x-onej
+    chart: source/nginx
+    version: 1.0.0
+  - name: matrix-matrix-a-y-onei
+    chart: source/nginx
+    version: 1.0.0
+  - name: matrix-matrix-a-y-onej
+    chart: source/nginx
+    version: 1.0.0

@@ -34,25 +34,9 @@ func parseApplicationSetGenerator(
 	resolver *sourceResolver,
 	renderer *template.Template,
 	parentParams map[string]any,
-	matrixChild bool,
+	matrixDepth int,
 ) (applicationSetGenerator, error) {
 	var result applicationSetGenerator
-	if matrixChild {
-		if err := rejectMatrixChildTemplate(raw, field); err != nil {
-			return result, err
-		}
-	}
-	if len(parentParams) != 0 {
-		rendered, err := renderGeneratorValue(raw, parentParams, renderer, nil)
-		if err != nil {
-			return result, fmt.Errorf("%s: render generator: %w", field, err)
-		}
-		var ok bool
-		raw, ok = rendered.(yaml.MapSlice)
-		if !ok {
-			return result, fmt.Errorf("%s must be a mapping", field)
-		}
-	}
 	var generatorName string
 	var generatorValue any
 	for _, item := range raw {
@@ -61,7 +45,20 @@ func parseApplicationSetGenerator(
 			return result, fmt.Errorf("%s contains a non-string field name", field)
 		}
 		if key == "selector" {
-			items, ok := item.Value.(yaml.MapSlice)
+			selectorValue := item.Value
+			if len(parentParams) != 0 {
+				rendered, err := renderGeneratorValue(
+					selectorValue,
+					parentParams,
+					renderer,
+					[]string{"selector"},
+				)
+				if err != nil {
+					return result, fmt.Errorf("%s.selector: render: %w", field, err)
+				}
+				selectorValue = rendered
+			}
+			items, ok := selectorValue.(yaml.MapSlice)
 			if !ok {
 				return result, fmt.Errorf("%s.selector must be a mapping", field)
 			}
@@ -79,6 +76,29 @@ func parseApplicationSetGenerator(
 			return result, fmt.Errorf("%s must contain exactly one generator", field)
 		}
 		generatorName, generatorValue = key, item.Value
+	}
+	if matrixDepth > 0 && generatorName != "matrix" {
+		if err := rejectMatrixChildTemplate(raw, field); err != nil {
+			return result, err
+		}
+	}
+	if generatorName != "matrix" && len(parentParams) != 0 {
+		rendered, err := renderGeneratorValue(raw, parentParams, renderer, nil)
+		if err != nil {
+			return result, fmt.Errorf("%s: render generator: %w", field, err)
+		}
+		var ok bool
+		raw, ok = rendered.(yaml.MapSlice)
+		if !ok {
+			return result, fmt.Errorf("%s must be a mapping", field)
+		}
+		generatorValue = nil
+		for _, item := range raw {
+			if item.Key == generatorName {
+				generatorValue = item.Value
+				break
+			}
+		}
 	}
 	switch generatorName {
 	case "list":
@@ -129,18 +149,26 @@ func parseApplicationSetGenerator(
 		result.params = git.params
 		result.template = git.template
 	case "matrix":
-		if matrixChild {
-			return result, fmt.Errorf("%s.matrix nesting is not supported", field)
+		if matrixDepth >= 2 {
+			return result, fmt.Errorf("%s.matrix exceeds the supported nesting depth", field)
 		}
 		items, ok := generatorValue.(yaml.MapSlice)
 		if !ok {
 			return result, fmt.Errorf("%s.matrix must be a mapping", field)
 		}
-		matrix, err := generateMatrixParams(items, field+".matrix", resolver, renderer)
+		matrix, err := generateMatrixParams(
+			items,
+			field+".matrix",
+			resolver,
+			renderer,
+			parentParams,
+			matrixDepth,
+		)
 		if err != nil {
 			return result, err
 		}
-		result.params = matrix
+		result.params = matrix.params
+		result.template = matrix.template
 	case "":
 		return result, fmt.Errorf("%s must contain exactly one generator", field)
 	default:
