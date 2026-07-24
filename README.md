@@ -143,24 +143,12 @@ Argo CD documents Helm value precedence, from lowest to highest, as
 `valueFiles`, `values`, `valuesObject`, then `parameters`.
 The converter preserves that ordering in the generated `values`, `set`, and `setString`
 entries.
-Multiple value files and parameters retain input order.
+Value-file entries retain their positions subject to glob expansion and deduplication,
+and parameters retain input order.
 
-`passCredentials: false` and omission both omit the repository field.
-For a Git chart source, `passCredentials` is type-checked and accepted.
-It has no output effect because no helmfile repository entry is generated.
-
-Argo CD uses `helm.namespace` as the namespace passed to Helm template operations,
-falling back to `spec.destination.namespace` when it is absent.
-The converter accepts a non-empty `helm.namespace` only when it exactly matches
-`spec.destination.namespace`.
-It rejects a mismatch because helmfile cannot safely represent separate template
-and release namespaces.
-Empty `helm.namespace` values are ignored.
-
-`fileParameters` use Helm's `--set-file` behavior and are emitted after ordinary
-parameters in `set`, so a same-name file parameter wins within that list.
-A file parameter conflicting with a same-name `forceString` parameter is rejected:
-helmfile cannot preserve ordering across `set` and `setString`.
+`helm.namespace`, when set, must match `spec.destination.namespace`.
+`fileParameters` follow ordinary parameters in `set`;
+a same-name `forceString` parameter is rejected because it belongs to `setString`.
 
 ### ApplicationSet generators
 
@@ -232,8 +220,6 @@ top-level generator templates, and `templatePatch` are supported.
 The root must be an existing non-symlink directory without helmfile template expressions.
 Hidden directories are skipped by directory generators;
 `.git` and symlinks are skipped by file generators.
-The converter reads the current local snapshot and does not clone,
-checkout revisions, authenticate, poll, or verify Git state.
 See the
 [Argo CD Git generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/)
 for the upstream generator model.
@@ -244,36 +230,19 @@ Matrix supports every two-child combination of List, Git, and a one-level nested
 Each nested Matrix must itself have exactly two List or Git children;
 a third Matrix level is rejected.
 
-| First child | List second | Git second | Matrix second |
-| --- | --- | --- | --- |
-| List | Supported | Supported | Supported at top level |
-| Git | Supported | Supported | Supported at top level |
-| Matrix | Supported at top level | Supported at top level | Supported at top level |
-
 The first child's parameters may be used to render the second child,
 including dynamic List `elementsYaml` and Git fields.
 Git `values` may reference parent, Git path, and Git parameter-file fields together.
 Results retain child order,
 and the first child's values take precedence recursively when parameter maps overlap.
-This generation and merge order applies independently at both Matrix levels.
 
 For Git × Git,
 `pathParamPrefix` is recommended when both children need to retain their path parameters.
 Without prefixes,
 the normal first-child-wins merge behavior applies to the shared `path` key.
-The two Git generators may resolve to the same or different configured sources.
-
-A top-level Matrix `template` recursively overrides `spec.template`
-and is rendered before `templatePatch` is applied.
-As in Argo CD,
-List and Git child templates are not processed and are rejected.
-A nested Matrix template is also rejected.
-
-Selectors are applied to terminal generators,
-nested Matrix results,
-and top-level Matrix results.
-The deprecated `spec.applyNestedSelectors` compatibility field is accepted but ignored;
-selectors are always applied whether the field is omitted, `false`, or `true`.
+A top-level Matrix `template` is supported;
+child-generator and nested Matrix templates are rejected.
+Selectors apply at every generator level.
 See the
 [Argo CD Matrix generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Matrix/)
 for the upstream generator constraints and parameter model.
@@ -285,21 +254,16 @@ Supported Go template options are `missingkey=default`, `missingkey=invalid`,
 `missingkey=zero`, and `missingkey=error`.
 
 `templatePatch` is rendered once per selected generator parameter set
-with the same parameters, functions, and Go template options as `template`.
-An empty or whitespace-only rendered patch has no effect.
+with the same template environment.
 Mappings merge recursively,
 while scalars and sequences replace the template value;
 `null` deletes a field.
-New mapping keys are appended in patch order.
-The patch is applied after generator-level and spec-level templates are merged and rendered,
-so patched metadata is also available to `releaseLabels` queries.
+The patch is applied after template rendering,
+and patched metadata is available to `releaseLabels` queries.
 As in Argo CD, the pre-patch `spec.project` is always retained.
 
-The rendered patch must be exactly one YAML or JSON document with a mapping at its root.
-Strategic Merge Patch directives are not implemented:
-`$patch`, `$retainKeys`, `$setElementOrder/...`, and `$deleteFromPrimitiveList/...`
-are rejected wherever they occur
-instead of being interpreted with different semantics.
+The rendered patch must be one YAML or JSON mapping.
+Strategic Merge Patch directives are rejected.
 
 ## Conversion config
 
@@ -340,29 +304,8 @@ Entries match the corresponding literal `spec.destination.name`
 or `spec.destination.server` by exact string equality.
 The configured `kubeContext` is copied unchanged to the generated helmfile release;
 the converter does not read a kubeconfig or verify that the context exists.
-
-For example, this Application destination:
-
-```yaml
-destination:
-  name: production
-  namespace: web
-```
-
-uses the `production` entry above and produces:
-
-```yaml
-namespace: web
-kubeContext: prod-admin
-```
-
-Destination resolution is fail closed.
-If an Application sets `name` or `server`, `--config` is required and a matching entry must exist.
-Setting both `name` and `server` is rejected in both Config entries and Applications.
-Duplicate Config entries with the same selector type and value are also rejected.
-If both Application selector fields are empty,
-`kubeContext` is omitted for compatibility with inputs that do not identify a cluster.
-For an ApplicationSet, resolution happens after template rendering and `templatePatch` application.
+If an Application sets either field, `--config` and a matching entry are required.
+If neither is set, `kubeContext` is omitted.
 
 ### Git charts, external values, and paths
 
@@ -394,6 +337,8 @@ For example, `$values/prod/values.yaml` resolves to
 `{{ requiredEnv "VALUES_ROOT" }}/prod/values.yaml`.
 The `$ref` token is valid only at the start of a value-file or file-parameter path.
 Generated output includes provenance comments for Git chart and values sources.
+Packaged charts require `$ref` paths;
+remote value-file and file-parameter URLs are not supported.
 
 Path resolution follows these rules:
 
@@ -401,13 +346,10 @@ Path resolution follows these rules:
 - a leading `/` starts at that Git repository's root, not the OS root;
 - the part after `$ref/` starts at the referenced repository's root;
 - normalized paths may not escape their configured source; and
-- input order is preserved.
+- explicit paths retain input order.
 
-For chart and value path conversion,
-the converter does not clone, fetch, inspect, or change repositories.
-It does not evaluate roots, expand `~`, `$PWD`, or `${HOME}`, verify revisions,
-or check whether a path exists.
-Prepare every configured source in the environment where helmfile runs.
+Roots are used as written;
+the converter does not expand shell paths or check explicit value-file paths.
 
 For templated roots, use a `.gotmpl` output and provide the value at runtime:
 
@@ -418,12 +360,33 @@ VALUES_ROOT="$PWD/checkouts/values" \
   helmfile -f helmfile.yaml.gotmpl apply
 ```
 
-Value-file paths and globs are passed to helmfile for native resolution.
-This differs from Argo CD's doublestar behavior: recursive `**` matching and
-deduplication across explicit paths and globs are not guaranteed.
+The converter expands `*`, `?`, character classes, and recursive `**` patterns
+in value-file paths relative to the chart or `$ref` repository root.
+A source used by a pattern must have an existing, non-symlink directory as its
+Config `root`; that root cannot contain a helmfile template expression.
+Explicit value files do not impose this local-root requirement.
+
+Matches retain doublestar traversal order rather than being globally sorted.
+Duplicate normalized paths are removed.
+Explicit paths take precedence over glob matches regardless of entry order.
+Symlinks may point within the canonical source root but not outside it;
+output retains the matched logical path.
+A pattern matching no files is an error unless `ignoreMissingValueFiles: true`,
+which omits the entry and sets `missingFileHandler: Warn`.
+
+The following statically known Argo CD build-environment variables are expanded
+in value-file paths in both `$VAR` and `${VAR}` forms:
+`ARGOCD_APP_NAME`, `ARGOCD_APP_NAMESPACE`, `ARGOCD_APP_PROJECT_NAME`,
+`ARGOCD_APP_SOURCE_PATH`, `ARGOCD_APP_SOURCE_REPO_URL`, and
+`ARGOCD_APP_SOURCE_TARGET_REVISION`.
+An omitted project expands as `default`, and `$$` emits a literal `$`.
+Source variables describe the Helm chart source, including for `$ref` value files.
+`ARGOCD_APP_REVISION*`, `KUBE_VERSION`, `KUBE_API_VERSIONS`,
+and unknown `ARGOCD_` variables are rejected.
+
 File parameters are passed as files without converter-side glob expansion.
-`ignoreMissingValueFiles: true` becomes `missingFileHandler: Warn` and does not
-apply to file parameters.
+Build-environment variables are rejected,
+and `ignoreMissingValueFiles` does not apply to them.
 
 ### Release labels
 
@@ -437,14 +400,6 @@ A single string, boolean, or number becomes a string label value.
 Multiple results, arrays, objects, jq errors, and duplicate names fail conversion.
 Labels retain config order.
 No `labels` mapping is emitted when there are no rules or every result is omitted.
-
-For the `argocd.skipTests` rule above, select releases according to the matching
-helmfile runtime behavior:
-
-```sh
-helmfile --selector argocd.skipTests=false template
-helmfile --selector argocd.skipTests=true template --skip-tests
-```
 
 This projection is opt-in.
 `spec.source.helm.skipTests` is otherwise accepted and intentionally ignored
@@ -476,29 +431,6 @@ and intentionally ignored as an Argo CD backward-compatibility field.
   generator and element.
 - Apart from `CreateNamespace=true`, operational fields such as `project`
   and other sync options are not converted.
-
-The converter rejects:
-
-- ApplicationSet generators other than List, Git, and the supported Matrix combinations,
-  and legacy fasttemplate syntax;
-- ApplicationSet Merge generators, Matrix nesting deeper than one level,
-  unsupported Matrix children, List or Git child templates, and nested Matrix templates,
-  remote repository access, polling, webhooks, signature verification,
-  revision checkout, and authentication;
-- Strategic Merge Patch directives in ApplicationSet `templatePatch`;
-- multi-source Applications outside the values-only `ref` form above;
-- values-only sources with `path` or another manifest-generating configuration;
-- non-`$ref` value files and file parameters for HTTP or OCI charts;
-- remote URLs and Argo CD build-environment substitutions in `valueFiles` or
-  `fileParameters`;
-- unsafe Git paths, refs, or paths that escape a configured source;
-- configured Application destinations without a matching Config entry;
-- Applications that set both destination `name` and `server`;
-- Applications whose non-empty `helm.namespace` does not exactly match
-  `spec.destination.namespace`;
-- same-name file parameters and `forceString` parameters; and
-- non-empty Helm options not listed in the mapping,
-  except ignored `skipTests` and `version`.
 
 Unsupported inputs fail instead of producing an incomplete helmfile.
 Unsupported Helm options are ignored only when their value is null, an empty string,

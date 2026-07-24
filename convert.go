@@ -20,10 +20,12 @@ type application struct {
 	APIVersion string `yaml:"apiVersion"`
 	Kind       string `yaml:"kind"`
 	Metadata   struct {
-		Name string `yaml:"name"`
+		Name      string `yaml:"name"`
+		Namespace string `yaml:"namespace"`
 	} `yaml:"metadata"`
 	Spec struct {
 		Destination applicationDestination `yaml:"destination"`
+		Project     string                 `yaml:"project"`
 		Source      *applicationSource     `yaml:"source"`
 		Sources     []applicationSource    `yaml:"sources"`
 		SyncPolicy  struct {
@@ -209,9 +211,10 @@ func convertApplication(
 	values, err := resolveValueFiles(helm.valueFiles, valueFileContext{
 		chartMapping: chartMapping,
 		chartRoot:    chartRoot,
+		environment:  applicationBuildEnvironment(app, chartSource),
 		refs:         refs,
 		resolver:     resolver,
-	})
+	}, helm.ignoreMissingValues)
 	if err != nil {
 		return converted, fmt.Errorf("%s.helm.%w", chartSourceField, err)
 	}

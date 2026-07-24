@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: static-app
+  namespace: argocd
+spec:
+  project: production
+  source:
+    repoURL: git@example.com:charts.git
+    path: chart
+    targetRevision: main
+    helm:
+      valueFiles:
+        - env/$ARGOCD_APP_NAME.yaml
+        - env/${ARGOCD_APP_NAMESPACE}.yaml
+        - env/$ARGOCD_APP_PROJECT_NAME.yaml
+        - env/$ARGOCD_APP_SOURCE_PATH.yaml
+        - env/$ARGOCD_APP_SOURCE_REPO_URL.yaml
+        - env/${ARGOCD_APP_SOURCE_TARGET_REVISION}-$ARGOCD_APP_NAME.yaml
+        - env/$$ARGOCD_APP_REVISION.yaml
+        - $$literal.yaml
