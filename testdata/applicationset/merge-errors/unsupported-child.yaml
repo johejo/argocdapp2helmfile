@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: unsupported-child
+spec:
+  generators:
+    - merge:
+        mergeKeys: [name]
+        generators:
+          - list:
+              elements:
+                - name: first
+          - matrix:
+              generators:
+                - list:
+                    elements:
+                      - name: second
+                - list:
+                    elements:
+                      - name: third
+  template:
+    metadata:
+      name: '{{name}}'
+    spec: {}

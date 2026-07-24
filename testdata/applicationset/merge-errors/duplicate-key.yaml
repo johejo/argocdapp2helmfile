@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: duplicate-key
+spec:
+  generators:
+    - merge:
+        mergeKeys: [environment, region]
+        generators:
+          - list:
+              elements:
+                - environment: dev
+                  region: us
+                  name: base
+          - list:
+              elements:
+                - environment: dev
+                  region: us
+                  name: first
+                - environment: dev
+                  region: us
+                  name: second
+  template:
+    metadata:
+      name: '{{name}}'
+    spec: {}

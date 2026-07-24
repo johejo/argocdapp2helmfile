@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: git-child-template
+spec:
+  generators:
+    - merge:
+        mergeKeys: [name]
+        generators:
+          - list:
+              elements:
+                - name: first
+          - git:
+              repoURL: https://github.com/example/repository.git
+              revision: main
+              files:
+                - path: '*.yaml'
+              template:
+                metadata:
+                  name: rejected
+  template:
+    metadata:
+      name: '{{name}}'
+    spec: {}

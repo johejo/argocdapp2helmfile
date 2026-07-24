@@ -1,0 +1,10 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: app
+    namespace: production
+    chart: source/nginx
+    version: 1.0.0

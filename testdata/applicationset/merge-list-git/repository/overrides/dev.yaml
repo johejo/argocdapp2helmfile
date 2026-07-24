@@ -1,0 +1,4 @@
+environment: dev
+namespace: dev-ignored
+chart: ignored
+enabled: "false"

@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: render-origin
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - merge:
+        mergeKeys: [environment]
+        generators:
+          - list:
+              elements:
+                - environment: dev
+                  value: base
+          - list:
+              elements:
+                - environment: dev
+                  value: first
+          - list:
+              elements:
+                - environment: dev
+                  value: second
+  template:
+    metadata:
+      name: '{{ .missing }}'
+    spec: {}

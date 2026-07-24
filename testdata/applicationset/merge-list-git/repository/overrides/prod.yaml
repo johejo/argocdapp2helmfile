@@ -1,0 +1,4 @@
+environment: prod
+namespace: production
+chart: postgresql
+enabled: "true"

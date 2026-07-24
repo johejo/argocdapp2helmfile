@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: list-child-template
+spec:
+  generators:
+    - merge:
+        mergeKeys: [name]
+        generators:
+          - list:
+              elements:
+                - name: first
+              template:
+                metadata:
+                  name: rejected
+          - list:
+              elements:
+                - name: second
+  template:
+    metadata:
+      name: '{{name}}'
+    spec: {}

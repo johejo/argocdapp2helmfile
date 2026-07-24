@@ -1,0 +1,30 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: merged-api
+    namespace: prod-final
+    chart: source/redis
+    version: 1.0.0
+    values:
+      - owner: operations
+        tier: data
+        sequence: override
+  - name: merged-web
+    namespace: dev
+    chart: source/nginx
+    version: 2.0.0
+    values:
+      - owner: developers
+        tier: web
+        sequence: base
+  - name: merged-retained
+    namespace: incomplete
+    chart: source/retained
+    version: 3.0.0
+    values:
+      - owner: retained
+        tier: retained
+        sequence: retained

@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: invalid-merge-key-type
+spec:
+  generators:
+    - merge:
+        mergeKeys: [1]
+        generators:
+          - list:
+              elements:
+                - name: first
+          - list:
+              elements:
+                - name: second
+  template:
+    metadata:
+      name: '{{name}}'
+    spec: {}

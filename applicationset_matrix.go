@@ -66,6 +66,7 @@ func generateMatrixParams(
 		renderer,
 		parentParams,
 		matrixDepth+1,
+		false,
 	)
 	if err != nil {
 		return result, err
@@ -84,6 +85,7 @@ func generateMatrixParams(
 			renderer,
 			context,
 			matrixDepth+1,
+			false,
 		)
 		if err != nil {
 			return result, fmt.Errorf("%s -> %w", firstParams.path, err)

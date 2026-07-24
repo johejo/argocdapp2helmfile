@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: one-child
+spec:
+  generators:
+    - merge:
+        mergeKeys: [name]
+        generators:
+          - list:
+              elements:
+                - name: first
+  template:
+    metadata:
+      name: '{{name}}'
+    spec: {}

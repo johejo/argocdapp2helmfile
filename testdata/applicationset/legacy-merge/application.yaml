@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legacy-merge
+spec:
+  generators:
+    - merge:
+        mergeKeys:
+          - values.selector
+        generators:
+          - list:
+              elements:
+                - name: app
+                  namespace: base
+                  chart: nginx
+                  version: 1.0.0
+                  values:
+                    selector: prod
+          - list:
+              elements:
+                - namespace: production
+                  values:
+                    selector: prod
+  template:
+    metadata:
+      name: '{{name}}'
+    spec:
+      destination:
+        namespace: '{{namespace}}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{chart}}'
+        targetRevision: '{{version}}'

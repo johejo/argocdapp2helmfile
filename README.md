@@ -1,7 +1,7 @@
 # argocdapp2helmfile
 
 `argocdapp2helmfile` converts Argo CD `Application` resources and
-`ApplicationSet` resources using List, Git, or supported Matrix generators
+`ApplicationSet` resources using supported List, Git, Matrix, and Merge generators
 into one helmfile.
 It is an offline Unix filter: it reads a YAML stream from standard input,
 writes YAML to standard output, and never fetches charts or repositories.
@@ -207,7 +207,7 @@ Supported List features are:
 
 - nested YAML values in `elements` when Go templates are enabled;
 - literal `elementsYaml`;
-- generator-level `template` overrides outside Matrix;
+- generator-level `template` overrides for top-level List generators;
 - selectors using `matchLabels` and the `In`, `NotIn`, `Exists`, and
   `DoesNotExist` operators;
 - templating of every string field and string mapping key; and
@@ -272,6 +272,26 @@ Selectors apply at every generator level.
 See the
 [Argo CD Matrix generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Matrix/)
 for the upstream generator constraints and parameter model.
+
+#### Merge generator
+
+Merge accepts two or more List or Git children.
+It preserves the first child's results and order,
+then applies matching children in declaration order using `mergeKeys`.
+Maps merge recursively;
+scalars and sequences use the later value.
+Unmatched overrides are ignored,
+and results missing any merge key do not match.
+
+Children expand and apply selectors independently without cross-generator rendering.
+Complete merge-key tuples must be unique within each child.
+A top-level `template` is supported,
+but child templates and combination-generator children are not.
+Go templates do not support dotted merge keys;
+legacy mode matches their flattened form.
+See the
+[Argo CD Merge generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Merge/)
+for the upstream generator model.
 
 `templatePatch` is rendered once per selected generator parameter set
 with the configured template mode.

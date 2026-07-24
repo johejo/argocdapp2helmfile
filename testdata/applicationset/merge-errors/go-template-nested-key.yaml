@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: go-template-nested-key
+spec:
+  goTemplate: true
+  generators:
+    - merge:
+        mergeKeys: [values.selector]
+        generators:
+          - list:
+              elements:
+                - values:
+                    selector: first
+          - list:
+              elements:
+                - values:
+                    selector: second
+  template:
+    metadata:
+      name: application
+    spec: {}

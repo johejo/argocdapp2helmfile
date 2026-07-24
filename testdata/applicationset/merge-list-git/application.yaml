@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: merge-list-git
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - merge:
+        mergeKeys: [environment]
+        generators:
+          - list:
+              elements:
+                - environment: prod
+                  name: api
+                  namespace: base
+                  chart: nginx
+                  version: 1.0.0
+                - environment: dev
+                  name: web
+                  namespace: dev
+                  chart: redis
+                  version: 2.0.0
+          - git:
+              repoURL: https://github.com/example/overrides.git
+              revision: main
+              files:
+                - path: overrides/*.yaml
+            selector:
+              matchLabels:
+                enabled: "true"
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        namespace: '{{ .namespace }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'

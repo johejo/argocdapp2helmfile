@@ -1,0 +1,14 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: api
+    namespace: production
+    chart: source/postgresql
+    version: 1.0.0
+  - name: web
+    namespace: dev
+    chart: source/redis
+    version: 2.0.0

@@ -1,0 +1,97 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: merge-list-list
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - merge:
+        mergeKeys: [environment, region]
+        generators:
+          - list:
+              elements:
+                - environment: prod
+                  region: us
+                  name: api
+                  namespace: prod-base
+                  chart: base
+                  version: 1.0.0
+                  settings:
+                    owner: platform
+                    tier: base
+                    sequence: [base]
+                - environment: dev
+                  region: eu
+                  name: web
+                  namespace: dev
+                  chart: nginx
+                  version: 2.0.0
+                  settings:
+                    owner: developers
+                    tier: base
+                    sequence: [base]
+                - environment: incomplete
+                  name: retained
+                  namespace: incomplete
+                  chart: retained
+                  version: 3.0.0
+                  settings:
+                    owner: retained
+                    tier: retained
+                    sequence: [retained]
+          - list:
+              elements:
+                - environment: prod
+                  region: us
+                  chart: redis
+                  enabled: "true"
+                  settings:
+                    tier: data
+                    sequence: [override]
+                - environment: qa
+                  region: us
+                  chart: ignored
+                  enabled: "true"
+                - environment: dev
+                  chart: ignored-missing-key
+                  enabled: "true"
+                - environment: dev
+                  region: eu
+                  chart: ignored-by-selector
+                  enabled: "false"
+            selector:
+              matchLabels:
+                enabled: "true"
+          - list:
+              elements:
+                - environment: prod
+                  region: us
+                  namespace: prod-final
+                  settings:
+                    owner: operations
+                - environment: dev
+                  region: eu
+                  settings:
+                    tier: web
+        template:
+          metadata:
+            name: 'merged-{{ .name }}'
+          spec:
+            destination:
+              namespace: '{{ .namespace }}'
+  template:
+    metadata:
+      name: 'base-{{ .name }}'
+    spec:
+      destination:
+        namespace: base
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'
+        helm:
+          valuesObject:
+            owner: '{{ .settings.owner }}'
+            tier: '{{ .settings.tier }}'
+            sequence: '{{ index .settings.sequence 0 }}'

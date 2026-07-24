@@ -1,0 +1,6 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+sources:
+  - repoURL: https://github.com/example/overrides.git
+    targetRevision: main
+    root: testdata/applicationset/merge-list-git/repository

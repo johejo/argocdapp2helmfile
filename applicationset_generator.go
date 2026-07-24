@@ -34,6 +34,7 @@ func parseApplicationSetGenerator(
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
 	matrixDepth int,
+	mergeChild bool,
 ) (applicationSetGenerator, error) {
 	var result applicationSetGenerator
 	var generatorName string
@@ -68,7 +69,7 @@ func parseApplicationSetGenerator(
 			result.selector = &selector
 			continue
 		}
-		if key != "list" && key != "git" && key != "matrix" {
+		if key != "list" && key != "git" && key != "matrix" && key != "merge" {
 			return result, fmt.Errorf("%s.%s generator is not supported", field, key)
 		}
 		if generatorName != "" {
@@ -76,8 +77,23 @@ func parseApplicationSetGenerator(
 		}
 		generatorName, generatorValue = key, item.Value
 	}
+	if mergeChild && generatorName != "list" && generatorName != "git" {
+		if generatorName == "" {
+			return result, fmt.Errorf("%s must contain exactly one generator", field)
+		}
+		return result, fmt.Errorf(
+			"%s.%s generator is not supported in a merge generator",
+			field,
+			generatorName,
+		)
+	}
+	if mergeChild {
+		if err := rejectCombinationChildTemplate(raw, field, "merge"); err != nil {
+			return result, err
+		}
+	}
 	if matrixDepth > 0 && generatorName != "matrix" {
-		if err := rejectMatrixChildTemplate(raw, field); err != nil {
+		if err := rejectCombinationChildTemplate(raw, field, "matrix"); err != nil {
 			return result, err
 		}
 	}
@@ -171,6 +187,25 @@ func parseApplicationSetGenerator(
 		}
 		result.params = matrix.params
 		result.template = matrix.template
+	case "merge":
+		if matrixDepth > 0 {
+			return result, fmt.Errorf("%s.merge generator is not supported in a matrix generator", field)
+		}
+		items, ok := generatorValue.(yaml.MapSlice)
+		if !ok {
+			return result, fmt.Errorf("%s.merge must be a mapping", field)
+		}
+		merge, err := generateMergeParams(
+			items,
+			field+".merge",
+			resolver,
+			renderer,
+		)
+		if err != nil {
+			return result, err
+		}
+		result.params = merge.params
+		result.template = merge.template
 	case "":
 		return result, fmt.Errorf("%s must contain exactly one generator", field)
 	default:
@@ -222,7 +257,7 @@ func normalizeListElement(value any, goTemplate bool) (map[string]any, error) {
 	return result, nil
 }
 
-func rejectMatrixChildTemplate(raw yaml.MapSlice, field string) error {
+func rejectCombinationChildTemplate(raw yaml.MapSlice, field, parent string) error {
 	for _, item := range raw {
 		key, ok := item.Key.(string)
 		if !ok || key == "selector" {
@@ -234,7 +269,12 @@ func rejectMatrixChildTemplate(raw yaml.MapSlice, field string) error {
 		}
 		for _, option := range options {
 			if option.Key == "template" {
-				return fmt.Errorf("%s.%s.template is not supported in a matrix generator", field, key)
+				return fmt.Errorf(
+					"%s.%s.template is not supported in a %s generator",
+					field,
+					key,
+					parent,
+				)
 			}
 		}
 	}
