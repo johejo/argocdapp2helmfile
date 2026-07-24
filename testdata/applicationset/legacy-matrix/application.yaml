@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legacy-matrix
+spec:
+  generators:
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - environment: dev
+                  pattern: applications/dev/*.yaml
+                  shared: first
+                  values:
+                    wanted: selected
+          - git:
+              repoURL: https://github.com/example/apps.git
+              revision: main
+              files:
+                - path: '{{pattern}}'
+              values:
+                chosen: '{{shared}}'
+                owner: '{{owner}}'
+            selector:
+              matchLabels:
+                enabled: "true"
+  template:
+    metadata:
+      name: '{{environment}}-{{app}}'
+    spec:
+      destination:
+        namespace: '{{values.wanted}}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{app}}'
+        targetRevision: base
+  templatePatch: |
+    spec:
+      source:
+        targetRevision: '{{values.chosen}}'
+        helm:
+          valuesObject:
+            owner: '{{values.owner}}'
+            sourceFile: '{{path.filename}}'

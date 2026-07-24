@@ -12,7 +12,7 @@ import (
 	"github.com/gosimple/slug"
 )
 
-func newApplicationSetTemplate(options []string) (*template.Template, error) {
+func newGoTemplateRenderer(options []string) (applicationSetRenderer, error) {
 	functions := sprig.GenericFuncMap()
 	delete(functions, "env")
 	delete(functions, "expandenv")
@@ -35,7 +35,7 @@ func newApplicationSetTemplate(options []string) (*template.Template, error) {
 		}
 		result = result.Option(option)
 	}
-	return result, nil
+	return goTemplateRenderer{template: result}, nil
 }
 
 var invalidDNSNameCharacters = regexp.MustCompile(`[^a-z0-9.-]+`)

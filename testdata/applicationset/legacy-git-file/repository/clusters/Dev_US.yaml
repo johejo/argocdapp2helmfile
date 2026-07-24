@@ -1,0 +1,7 @@
+name: api
+enabled: true
+metadata:
+  environment: production
+  ports:
+    - 80
+    - "443"

@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legacy-git-file
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/example/config.git
+        revision: main
+        files:
+          - path: clusters/*.yaml
+        values:
+          generated: '{{metadata.environment}}-{{path.filename}}'
+  template:
+    metadata:
+      name: '{{name}}-{{path.filenameNormalized}}'
+    spec:
+      destination:
+        namespace: '{{metadata.environment}}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{name}}'
+        targetRevision: '{{metadata.ports.0}}'
+        helm:
+          valuesObject:
+            enabled: '{{enabled}}'
+            filename: '{{path.filename}}'
+            generated: '{{values.generated}}'
+            secondPort: '{{metadata.ports.1}}'

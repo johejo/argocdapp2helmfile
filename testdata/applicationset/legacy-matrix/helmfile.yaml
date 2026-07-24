@@ -1,0 +1,13 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: dev-frontend
+    namespace: selected
+    chart: source/frontend
+    version: first
+    values:
+      - owner: platform
+        sourceFile: frontend.yaml

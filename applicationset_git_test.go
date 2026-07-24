@@ -15,6 +15,14 @@ func TestConvertApplicationSetGitFile(t *testing.T) {
 	testConvertApplicationSetGitFixture(t, "git-file")
 }
 
+func TestConvertApplicationSetLegacyGitDirectory(t *testing.T) {
+	testConvertApplicationSetGitFixture(t, "legacy-git-directory")
+}
+
+func TestConvertApplicationSetLegacyGitFile(t *testing.T) {
+	testConvertApplicationSetGitFixture(t, "legacy-git-file")
+}
+
 func testConvertApplicationSetGitFixture(t *testing.T, name string) {
 	t.Helper()
 	config, err := parseConfig([]byte(readTestdata(t, "applicationset/"+name+"/config.yaml")))

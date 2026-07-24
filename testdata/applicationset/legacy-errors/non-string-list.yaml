@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legacy-non-string-list
+spec:
+  generators:
+    - list:
+        elements:
+          - name: app
+            replicas: 2
+  template:
+    metadata:
+      name: '{{name}}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: chart
+        targetRevision: 1.0.0

@@ -9,8 +9,8 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
-	"text/template"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/goccy/go-yaml"
@@ -48,7 +48,7 @@ func generateGitParams(
 	items yaml.MapSlice,
 	field string,
 	resolver *sourceResolver,
-	renderer *template.Template,
+	renderer applicationSetRenderer,
 	parentParams map[string]any,
 ) (gitGeneratorResult, error) {
 	var result gitGeneratorResult
@@ -259,7 +259,7 @@ func resolveGitGeneratorRoot(
 func generateGitDirectoryParams(
 	root string,
 	options gitGeneratorOptions,
-	renderer *template.Template,
+	renderer applicationSetRenderer,
 	parentParams map[string]any,
 	field string,
 ) ([]generatedGeneratorParams, error) {
@@ -299,7 +299,12 @@ func generateGitDirectoryParams(
 	result := make([]generatedGeneratorParams, 0, len(matches))
 	for _, relative := range matches {
 		params := make(map[string]any)
-		setGitPathParams(params, options.pathParamPrefix, gitDirectoryPathObject(relative))
+		pathObject := gitDirectoryPathObject(relative)
+		if renderer.GoTemplate() {
+			setGitPathParams(params, options.pathParamPrefix, pathObject)
+		} else {
+			setLegacyGitPathParams(params, options.pathParamPrefix, pathObject)
+		}
 		if err := renderGitValues(params, parentParams, options.values, renderer); err != nil {
 			return nil, fmt.Errorf("%s.directories[%q]: values: %w", field, relative, err)
 		}
@@ -346,7 +351,7 @@ func filterGitCandidates(
 func generateGitFileParams(
 	root string,
 	options gitGeneratorOptions,
-	renderer *template.Template,
+	renderer applicationSetRenderer,
 	parentParams map[string]any,
 	field string,
 ) ([]generatedGeneratorParams, error) {
@@ -388,7 +393,10 @@ func generateGitFileParams(
 	matches := filterGitCandidates(candidates, options.files, doublestar.Match)
 	var result []generatedGeneratorParams
 	for _, relative := range matches {
-		fileParams, err := decodeGitParameterFile(filepath.Join(root, filepath.FromSlash(relative)))
+		fileParams, err := decodeGitParameterFile(
+			filepath.Join(root, filepath.FromSlash(relative)),
+			renderer.GoTemplate(),
+		)
 		if err != nil {
 			var indexed *gitFileEntryError
 			if errors.As(err, &indexed) {
@@ -405,7 +413,11 @@ func generateGitFileParams(
 		for _, fileParam := range fileParams {
 			params := fileParam.params
 			pathObject := gitFilePathObject(relative)
-			setGitPathParams(params, options.pathParamPrefix, pathObject)
+			if renderer.GoTemplate() {
+				setGitPathParams(params, options.pathParamPrefix, pathObject)
+			} else {
+				setLegacyGitPathParams(params, options.pathParamPrefix, pathObject)
+			}
 			origin := fmt.Sprintf("%s.files[%q]", field, relative)
 			if fileParam.index != nil {
 				origin += fmt.Sprintf("[%d]", *fileParam.index)
@@ -440,7 +452,10 @@ func (err *gitFileEntryError) Unwrap() error {
 	return err.err
 }
 
-func decodeGitParameterFile(filename string) ([]decodedGitFileParams, error) {
+func decodeGitParameterFile(
+	filename string,
+	goTemplate bool,
+) ([]decodedGitFileParams, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
@@ -466,6 +481,9 @@ func decodeGitParameterFile(filename string) ([]decodedGitFileParams, error) {
 		if err != nil {
 			return nil, err
 		}
+		if !goTemplate {
+			params = flattenLegacyGitFileParams(params)
+		}
 		return []decodedGitFileParams{{params: params}}, nil
 	case []any:
 		result := make([]decodedGitFileParams, 0, len(value))
@@ -476,6 +494,9 @@ func decodeGitParameterFile(filename string) ([]decodedGitFileParams, error) {
 					index: i,
 					err:   fmt.Errorf("must be a mapping: %w", err),
 				}
+			}
+			if !goTemplate {
+				params = flattenLegacyGitFileParams(params)
 			}
 			index := i
 			result = append(result, decodedGitFileParams{params: params, index: &index})
@@ -512,30 +533,89 @@ func setGitPathParams(params map[string]any, prefix string, pathObject map[strin
 	params[prefix] = map[string]any{"path": pathObject}
 }
 
+func setLegacyGitPathParams(
+	params map[string]any,
+	prefix string,
+	pathObject map[string]any,
+) {
+	base := ""
+	if prefix != "" {
+		base = prefix + "."
+	}
+	params[base+"path"] = pathObject["path"]
+	params[base+"path.basename"] = pathObject["basename"]
+	params[base+"path.basenameNormalized"] = pathObject["basenameNormalized"]
+	if filename, exists := pathObject["filename"]; exists {
+		params[base+"path.filename"] = filename
+		params[base+"path.filenameNormalized"] = pathObject["filenameNormalized"]
+	}
+	segments, _ := pathObject["segments"].([]string)
+	for i, segment := range segments {
+		params[base+"path["+strconv.Itoa(i)+"]"] = segment
+	}
+}
+
+func flattenLegacyGitFileParams(params map[string]any) map[string]any {
+	result := make(map[string]any)
+	flattenLegacyValue(result, "", params)
+	return result
+}
+
+func flattenLegacyValue(output map[string]any, prefix string, value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, item := range typed {
+			next := key
+			if prefix != "" {
+				next = prefix + "." + key
+			}
+			flattenLegacyValue(output, next, item)
+		}
+	case []any:
+		for index, item := range typed {
+			next := strconv.Itoa(index)
+			if prefix != "" {
+				next = prefix + "." + next
+			}
+			flattenLegacyValue(output, next, item)
+		}
+	default:
+		if prefix != "" {
+			output[prefix] = fmt.Sprintf("%v", value)
+		}
+	}
+}
+
 func renderGitValues(
 	params map[string]any,
 	parentParams map[string]any,
 	values []gitValue,
-	renderer *template.Template,
+	renderer applicationSetRenderer,
 ) error {
 	rendered := make(map[string]any, len(values))
 	context := mergeMatrixParams(parentParams, params)
 	for _, item := range values {
-		key, err := executeTemplate(item.key, context, renderer)
+		key, err := renderer.Render(item.key, context)
 		if err != nil {
 			return fmt.Errorf("%s: render key: %w", item.key, err)
 		}
 		if _, exists := rendered[key]; exists {
 			return fmt.Errorf("templating produced duplicate mapping key %q", key)
 		}
-		result, err := executeTemplate(item.value, context, renderer)
+		result, err := renderer.Render(item.value, context)
 		if err != nil {
 			return fmt.Errorf("%s: %w", item.key, err)
 		}
 		rendered[key] = result
 	}
 	if len(rendered) != 0 {
-		params["values"] = rendered
+		if renderer.GoTemplate() {
+			params["values"] = rendered
+		} else {
+			for key, value := range rendered {
+				params["values."+key] = value
+			}
+		}
 	}
 	return nil
 }

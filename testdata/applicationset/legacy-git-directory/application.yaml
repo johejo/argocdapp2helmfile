@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legacy-git-directory
+spec:
+  goTemplate: false
+  generators:
+    - git:
+        repoURL: https://github.com/example/config.git
+        revision: main
+        directories:
+          - path: environments/*
+        pathParamPrefix: repo
+        values:
+          environment: '{{repo.path.basename}}'
+          summary: '{{repo.path}}/{{repo.path[0]}}/{{repo.path[1]}}'
+  template:
+    metadata:
+      name: '{{repo.path.basenameNormalized}}'
+    spec:
+      destination:
+        namespace: '{{values.environment}}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{repo.path[1]}}'
+        targetRevision: '{{values.summary}}'

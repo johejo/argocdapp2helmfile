@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"text/template"
 
 	"github.com/goccy/go-yaml"
 )
@@ -32,7 +31,7 @@ func parseApplicationSetGenerator(
 	raw yaml.MapSlice,
 	field string,
 	resolver *sourceResolver,
-	renderer *template.Template,
+	renderer applicationSetRenderer,
 	parentParams map[string]any,
 	matrixDepth int,
 ) (applicationSetGenerator, error) {
@@ -123,6 +122,9 @@ func parseApplicationSetGenerator(
 				elementField = fmt.Sprintf("%s.list.elementsYaml[%d]", field, i-len(list.elements))
 			}
 			params, err := normalizeStringMap(rawElement)
+			if err == nil && i < len(list.elements) {
+				params, err = normalizeListElement(rawElement, renderer.GoTemplate())
+			}
 			if err != nil {
 				return result, fmt.Errorf("%s: must be a mapping: %w", elementField, err)
 			}
@@ -186,6 +188,36 @@ func parseApplicationSetGenerator(
 			}
 		}
 		result.params = filtered
+	}
+	return result, nil
+}
+
+func normalizeListElement(value any, goTemplate bool) (map[string]any, error) {
+	params, err := normalizeStringMap(value)
+	if err != nil || goTemplate {
+		return params, err
+	}
+	result := make(map[string]any, len(params))
+	for key, value := range params {
+		if key != "values" {
+			stringValue, ok := value.(string)
+			if !ok {
+				return nil, fmt.Errorf("field %q must be a string", key)
+			}
+			result[key] = stringValue
+			continue
+		}
+		values, ok := value.(map[string]any)
+		if !ok {
+			return nil, errors.New(`field "values" must be a mapping`)
+		}
+		for valueKey, value := range values {
+			stringValue, ok := value.(string)
+			if !ok {
+				return nil, fmt.Errorf("field %q must be a string", "values."+valueKey)
+			}
+			result["values."+valueKey] = stringValue
+		}
 	}
 	return result, nil
 }

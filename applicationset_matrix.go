@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"text/template"
 
 	"github.com/goccy/go-yaml"
 )
@@ -16,7 +15,7 @@ func generateMatrixParams(
 	items yaml.MapSlice,
 	field string,
 	resolver *sourceResolver,
-	renderer *template.Template,
+	renderer applicationSetRenderer,
 	parentParams map[string]any,
 	matrixDepth int,
 ) (matrixGeneratorResult, error) {
@@ -147,7 +146,7 @@ func cloneMatrixValue(value any) any {
 func renderGeneratorValue(
 	value any,
 	params map[string]any,
-	renderer *template.Template,
+	renderer applicationSetRenderer,
 	path []string,
 ) (any, error) {
 	if isGitValuesPath(path) {
@@ -155,7 +154,7 @@ func renderGeneratorValue(
 	}
 	switch typed := value.(type) {
 	case string:
-		return executeTemplate(typed, params, renderer)
+		return renderer.Render(typed, params)
 	case yaml.MapSlice:
 		result := make(yaml.MapSlice, 0, len(typed))
 		keys := make(map[string]struct{}, len(typed))
@@ -163,7 +162,7 @@ func renderGeneratorValue(
 			key := item.Key
 			nextPath := path
 			if stringKey, ok := key.(string); ok {
-				renderedKey, err := executeTemplate(stringKey, params, renderer)
+				renderedKey, err := renderer.Render(stringKey, params)
 				if err != nil {
 					return nil, err
 				}

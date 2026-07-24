@@ -1,0 +1,10 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: prod-us
+    namespace: Prod_US
+    chart: source/Prod_US
+    version: environments/Prod_US/environments/Prod_US

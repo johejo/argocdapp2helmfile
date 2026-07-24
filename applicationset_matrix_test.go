@@ -29,6 +29,10 @@ func TestConvertApplicationSetNestedMatrix(t *testing.T) {
 	testConvertApplicationSetMatrixFixture(t, "matrix-nested", false)
 }
 
+func TestConvertApplicationSetLegacyMatrix(t *testing.T) {
+	testConvertApplicationSetMatrixFixture(t, "legacy-matrix", true)
+}
+
 func TestConvertApplicationSetNestedSelectorsAlwaysApply(t *testing.T) {
 	const fixture = "applicationset/matrix-nested-selectors/"
 	want := readTestdata(t, fixture+"helmfile.yaml")

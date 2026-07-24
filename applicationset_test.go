@@ -22,6 +22,18 @@ func TestConvertApplicationSetList(t *testing.T) {
 	}
 }
 
+func TestConvertApplicationSetLegacyList(t *testing.T) {
+	input := readTestdata(t, "applicationset/legacy-list/application.yaml")
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := readTestdata(t, "applicationset/legacy-list/helmfile.yaml")
+	if string(output) != want {
+		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+	}
+}
+
 func TestConvertApplicationSetCreateNamespace(t *testing.T) {
 	input := readTestdata(t, "applicationset/create-namespace/application.yaml")
 	output, err := convert([]byte(input))
@@ -303,10 +315,6 @@ func TestConvertApplicationSetErrors(t *testing.T) {
 		input string
 		want  string
 	}{
-		"fasttemplate": {
-			input: strings.Replace(valid, "  goTemplate: true\n", "", 1),
-			want:  "spec.goTemplate must be true",
-		},
 		"unsupported generator": {
 			input: strings.Replace(valid, "    - list:\n", "    - clusters: {}\n      list:\n", 1),
 			want:  "spec.generators[0].clusters generator is not supported",
@@ -338,6 +346,37 @@ func TestConvertApplicationSetErrors(t *testing.T) {
 			_, err := convert([]byte(test.input))
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestConvertLegacyApplicationSetErrors(t *testing.T) {
+	tests := map[string]struct {
+		fixture string
+		want    string
+	}{
+		"non-string List field": {
+			fixture: "non-string-list.yaml",
+			want:    `field "replicas" must be a string`,
+		},
+		"invalid template delimiter": {
+			fixture: "invalid-delimiter.yaml",
+			want:    "unclosed opening delimiter",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			input := readTestdata(t, "applicationset/legacy-errors/"+test.fixture)
+			_, err := convert([]byte(input))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(
+				err.Error(),
+				"document 1: spec.generators[0].list.elements[0]",
+			) {
+				t.Fatalf("error does not identify the generated element: %v", err)
 			}
 		})
 	}
@@ -687,7 +726,7 @@ func TestRunApplicationSetErrorIsAtomic(t *testing.T) {
 }
 
 func TestRenderApplicationSetTemplatesMappingKeys(t *testing.T) {
-	renderer, err := newApplicationSetTemplate([]string{"missingkey=error"})
+	renderer, err := newGoTemplateRenderer([]string{"missingkey=error"})
 	if err != nil {
 		t.Fatal(err)
 	}

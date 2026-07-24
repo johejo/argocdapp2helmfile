@@ -1,0 +1,15 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: api-dev-us.yaml
+    namespace: production
+    chart: source/api
+    version: "80"
+    values:
+      - enabled: "true"
+        filename: Dev_US.yaml
+        generated: production-Dev_US.yaml
+        secondPort: "443"

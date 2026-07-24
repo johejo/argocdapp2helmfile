@@ -8,6 +8,7 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gosimple/slug v1.15.0
 	github.com/itchyny/gojq v0.12.19
+	github.com/valyala/fasttemplate v1.2.2
 )
 
 require (
@@ -22,5 +23,6 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	golang.org/x/crypto v0.26.0 // indirect
 )

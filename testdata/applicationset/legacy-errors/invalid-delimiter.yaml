@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legacy-invalid-delimiter
+spec:
+  generators:
+    - list:
+        elements:
+          - name: app
+  template:
+    metadata:
+      name: '{{name'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: chart
+        targetRevision: 1.0.0

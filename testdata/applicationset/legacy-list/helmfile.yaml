@@ -1,0 +1,14 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: frontend
+    namespace: web
+    chart: source/nginx
+    version: 18.2.4
+  - name: metrics
+    namespace: "{{values.namespace}}"
+    chart: source/prometheus
+    version: "{{ values.version }}"

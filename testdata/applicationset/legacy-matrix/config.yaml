@@ -1,0 +1,6 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+sources:
+  - repoURL: https://github.com/example/apps.git
+    targetRevision: main
+    root: testdata/applicationset/legacy-matrix/repository

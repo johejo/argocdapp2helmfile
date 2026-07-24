@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"strings"
-	"text/template"
 
 	"github.com/goccy/go-yaml"
 )
@@ -55,7 +53,7 @@ func renderApplicationTemplate(
 	input yaml.MapSlice,
 	templatePatch string,
 	params map[string]any,
-	renderer *template.Template,
+	renderer applicationSetRenderer,
 ) (application, any, error) {
 	rendered, err := renderTemplateValue(input, params, renderer)
 	if err != nil {
@@ -68,7 +66,7 @@ func renderApplicationTemplate(
 	renderedMap = setMapSliceField(renderedMap, "apiVersion", "argoproj.io/v1alpha1")
 	renderedMap = setMapSliceField(renderedMap, "kind", "Application")
 	project, hasProject := applicationProject(renderedMap)
-	renderedPatch, err := executeTemplate(templatePatch, params, renderer)
+	renderedPatch, err := renderer.Render(templatePatch, params)
 	if err != nil {
 		return application{}, nil, fmt.Errorf("render spec.templatePatch: %w", err)
 	}
@@ -95,17 +93,21 @@ func renderApplicationTemplate(
 	return app, normalized, nil
 }
 
-func renderTemplateValue(value any, params map[string]any, base *template.Template) (any, error) {
+func renderTemplateValue(
+	value any,
+	params map[string]any,
+	renderer applicationSetRenderer,
+) (any, error) {
 	switch typed := value.(type) {
 	case string:
-		return executeTemplate(typed, params, base)
+		return renderer.Render(typed, params)
 	case yaml.MapSlice:
 		result := make(yaml.MapSlice, 0, len(typed))
 		keys := make(map[string]struct{}, len(typed))
 		for _, item := range typed {
 			key := item.Key
 			if stringKey, ok := key.(string); ok {
-				renderedKey, err := executeTemplate(stringKey, params, base)
+				renderedKey, err := renderer.Render(stringKey, params)
 				if err != nil {
 					return nil, err
 				}
@@ -115,7 +117,7 @@ func renderTemplateValue(value any, params map[string]any, base *template.Templa
 				keys[renderedKey] = struct{}{}
 				key = renderedKey
 			}
-			renderedValue, err := renderTemplateValue(item.Value, params, base)
+			renderedValue, err := renderTemplateValue(item.Value, params, renderer)
 			if err != nil {
 				return nil, err
 			}
@@ -125,7 +127,7 @@ func renderTemplateValue(value any, params map[string]any, base *template.Templa
 	case []any:
 		result := make([]any, len(typed))
 		for i, item := range typed {
-			rendered, err := renderTemplateValue(item, params, base)
+			rendered, err := renderTemplateValue(item, params, renderer)
 			if err != nil {
 				return nil, err
 			}
@@ -135,20 +137,4 @@ func renderTemplateValue(value any, params map[string]any, base *template.Templa
 	default:
 		return value, nil
 	}
-}
-
-func executeTemplate(input string, params map[string]any, base *template.Template) (string, error) {
-	field, err := base.Clone()
-	if err != nil {
-		return "", fmt.Errorf("clone template: %w", err)
-	}
-	field, err = field.Parse(input)
-	if err != nil {
-		return "", fmt.Errorf("parse template %q: %w", input, err)
-	}
-	var output bytes.Buffer
-	if err := field.Execute(&output, params); err != nil {
-		return "", fmt.Errorf("execute template %q: %w", input, err)
-	}
-	return output.String(), nil
 }

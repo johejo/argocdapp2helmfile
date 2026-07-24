@@ -62,16 +62,16 @@ func expandApplicationSet(node ast.Node, resolver *sourceResolver) ([]generatedA
 	if strings.TrimSpace(appSet.Metadata.Name) == "" {
 		return nil, errors.New("metadata.name is required")
 	}
-	if !appSet.Spec.GoTemplate {
-		return nil, errors.New("spec.goTemplate must be true; fasttemplate is not supported")
-	}
 	if len(appSet.Spec.Generators) == 0 {
 		return nil, errors.New("spec.generators must contain at least one generator")
 	}
 	if appSet.Spec.Template == nil {
 		return nil, errors.New("spec.template is required")
 	}
-	renderer, err := newApplicationSetTemplate(appSet.Spec.GoTemplateOptions)
+	renderer, err := newApplicationSetRenderer(
+		appSet.Spec.GoTemplate,
+		appSet.Spec.GoTemplateOptions,
+	)
 	if err != nil {
 		return nil, err
 	}

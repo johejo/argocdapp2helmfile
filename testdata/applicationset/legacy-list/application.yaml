@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legacy-list
+spec:
+  goTemplateOptions: [missingkey=wat]
+  generators:
+    - list:
+        elements:
+          - name: frontend
+            chart: nginx
+            values:
+              namespace: web
+              version: 18.2.4
+        elementsYaml: |
+          - name: metrics
+            chart: prometheus
+            namespace: monitoring
+            version: 27.3.1
+  template:
+    metadata:
+      name: '{{ name }}'
+    spec:
+      destination:
+        namespace: '{{values.namespace}}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{chart}}'
+        targetRevision: '{{ values.version }}'
+  templatePatch: |
+    metadata:
+      labels:
+        source: '{{name}}'

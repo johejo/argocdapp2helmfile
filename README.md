@@ -152,7 +152,9 @@ a same-name `forceString` parameter is rejected because it belongs to `setString
 
 ### ApplicationSet generators
 
-ApplicationSets must enable Go templates and contain one or more supported generators:
+ApplicationSets may use either Go templates or the legacy fasttemplate syntax
+and must contain one or more supported generators.
+Set `spec.goTemplate: true` to use Go templates:
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -189,15 +191,31 @@ The converter expands the set locally, then applies the normal Application
 conversion and validation rules to every result.
 Multiple generators and elements retain their input order.
 
+Go template expressions use a leading dot, such as `{{ .name }}`.
+They provide Sprig functions except `env`, `expandenv`, and `getHostByName`,
+plus `normalize`, `slugify`, `toYaml`, `fromYaml`, and `fromYamlArray`.
+Supported `goTemplateOptions` are `missingkey=default`, `missingkey=invalid`,
+`missingkey=zero`, and `missingkey=error`.
+
+When `goTemplate` is `false` or omitted,
+legacy expressions use flat keys without a leading dot, such as `{{name}}`.
+Whitespace inside delimiters is ignored,
+and undefined or non-string parameters are left unchanged.
+`goTemplateOptions` are ignored in this mode.
+
 Supported List features are:
 
-- nested YAML values in `elements`;
+- nested YAML values in `elements` when Go templates are enabled;
 - literal `elementsYaml`;
 - generator-level `template` overrides outside Matrix;
 - selectors using `matchLabels` and the `In`, `NotIn`, `Exists`, and
   `DoesNotExist` operators;
 - templating of every string field and string mapping key; and
 - a YAML or JSON `templatePatch`.
+
+Explicit legacy List `elements` accept string fields.
+Their reserved `values` mapping is exposed as flat `values.<key>` parameters.
+Legacy `elementsYaml` values retain their decoded YAML shape.
 
 #### Git generator
 
@@ -216,6 +234,14 @@ Templates receive Argo CD-compatible path parameters.
 File generators read YAML or JSON mappings and mapping sequences.
 `pathParamPrefix`, generator `values`, selectors,
 top-level generator templates, and `templatePatch` are supported.
+
+Go templates use path parameters such as `.path.path`, `.path.basename`,
+and `.path.segments`.
+Legacy templates use flat parameters such as `path`, `path.basename`, and `path[0]`.
+`pathParamPrefix: repo` changes these to `.repo.path.path` and `repo.path`,
+respectively.
+Legacy file content and generator `values` are flattened into dot-separated keys,
+with scalar values converted to strings.
 
 The root must be an existing non-symlink directory without helmfile template expressions.
 Hidden directories are skipped by directory generators;
@@ -247,14 +273,8 @@ See the
 [Argo CD Matrix generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Matrix/)
 for the upstream generator constraints and parameter model.
 
-Templates provide the Sprig functions used by ApplicationSet except `env`,
-`expandenv`, and `getHostByName`.
-They also provide `normalize`, `slugify`, `toYaml`, `fromYaml`, and `fromYamlArray`.
-Supported Go template options are `missingkey=default`, `missingkey=invalid`,
-`missingkey=zero`, and `missingkey=error`.
-
 `templatePatch` is rendered once per selected generator parameter set
-with the same template environment.
+with the configured template mode.
 Mappings merge recursively,
 while scalars and sequences replace the template value;
 `null` deletes a field.
