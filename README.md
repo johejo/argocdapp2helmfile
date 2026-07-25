@@ -123,52 +123,8 @@ An Application must identify either:
 
 ### Application mapping
 
-The `spec.source.*` paths below also apply to the manifest source selected from
-`spec.sources`.
-`spec.source` and `spec.sources` are mutually exclusive.
-
-| Argo CD Application | helmfile |
-| --- | --- |
-| `metadata.name` | Release `name` when `helm.releaseName` is absent |
-| `spec.source.helm.releaseName` | Release `name` |
-| `spec.destination.namespace` | Release `namespace` |
-| Positive `spec.revisionHistoryLimit` | Release `historyMax` (approximate) |
-| `spec.source.helm.namespace` | Accepted only when it exactly matches `spec.destination.namespace`; no additional output |
-| `spec.source.helm.version` | Accepted and intentionally ignored |
-| `spec.source.repoURL` | Repository `url`; scheme-less OCI also sets `oci: true` |
-| Packaged chart `spec.source.helm.passCredentials` | Repository `passCredentials: true` when true |
-| `spec.source.chart` | Release chart as `<alias>/<chart>` |
-| `spec.source.targetRevision` for a packaged chart | Release `version` |
-| Git `spec.source.repoURL` | Config source identity; HTTP(S), `git@host:path`, or `ssh://user@host/path` |
-| Git `spec.source.path` | Helm chart or explicit Kustomization path below the configured `localRoot` |
-| Git `spec.source.targetRevision` | Config source identity and provenance; defaults to `HEAD` |
-| `spec.source.helm.valueFiles` | Release `values` paths |
-| `spec.source.helm.values` | Parsed inline `values` entry |
-| `spec.source.helm.valuesObject` | Inline `values` entry |
-| `spec.source.helm.parameters` | Release `set` or `setString` entries |
-| `spec.source.helm.fileParameters` | Release `set` entries using `file` |
-| `spec.source.helm.ignoreMissingValueFiles` | Release `missingFileHandler: Warn` when true |
-| `spec.source.helm.skipSchemaValidation` | Release `skipSchemaValidation` |
-| `spec.source.helm.kubeVersion` | Release `kubeVersion` |
-| `spec.source.helm.apiVersions` | Release `apiVersions` |
-| `spec.source.helm.skipCrds` | Shared `helmDefaults.skipCRDs` |
-| Exact `CreateNamespace=true` sync option | Release `createNamespace: true` (approximate) |
-| `spec.destination.name` or `spec.destination.server` | Release `kubeContext` through Config `destinations` |
-| Config `releaseLabels` query result | Release `labels` entry |
-
-The required fields are `metadata.name`, the manifest source's `repoURL`, and either
-`chart` plus `targetRevision` for a Helm/OCI repository or `path` for Git.
-
-Argo CD documents Helm value precedence, from lowest to highest, as
-`valueFiles`, `values`, `valuesObject`, then `parameters`.
-The converter preserves that ordering in the generated `values`, `set`, and `setString`
-entries.
-Value-file entries retain their positions subject to glob expansion and deduplication,
-and parameters retain input order.
-
-`helm.namespace`, when set, must match `spec.destination.namespace`.
-`fileParameters` follow ordinary parameters in `set`;
-a same-name `forceString` parameter is rejected because it belongs to `setString`.
+See the generated [Application mapping reference](docs/application-mapping.md),
+also available with `--help-application-mapping`.
 
 ### ApplicationSet generators
 

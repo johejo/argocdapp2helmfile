@@ -9,6 +9,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/parser"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
 )
 
 type helmParameter struct {
@@ -45,113 +46,104 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 		if !ok {
 			return result, fmt.Errorf("%s contains a non-string option name", field)
 		}
-		switch key {
-		case "releaseName":
-			value, err := readOptionalStringYAMLOption(item.Value, field+".releaseName")
-			if err != nil {
-				return result, err
-			}
-			result.releaseName = value
-		case "namespace":
-			value, err := readOptionalStringYAMLOption(item.Value, field+".namespace")
-			if err != nil {
-				return result, err
-			}
-			result.namespace = value
-		case "kubeVersion":
-			value, err := readOptionalStringYAMLOption(item.Value, field+".kubeVersion")
-			if err != nil {
-				return result, err
-			}
-			result.kubeVersion = value
-		case "apiVersions":
-			value, err := readOptionalStringSequenceYAMLOption(
-				item.Value,
-				field+".apiVersions",
-			)
-			if err != nil {
-				return result, err
-			}
-			result.apiVersions = value
-		case "valueFiles":
-			value, err := readOptionalStringSequenceYAMLOption(
-				item.Value,
-				field+".valueFiles",
-			)
-			if err != nil {
-				return result, err
-			}
-			result.valueFiles = value
-		case "values":
-			inline, err := readOptionalStringYAMLOption(item.Value, field+".values")
-			if err != nil {
-				return result, err
-			}
-			value, err := decodeInlineValues(inline, field+".values")
-			if err != nil {
-				return result, err
-			}
-			result.values = value
-		case "valuesObject":
-			result.valuesObject = item.Value
-		case "parameters":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			parameters, err := parseParameters(item.Value, field+".parameters")
-			if err != nil {
-				return result, err
-			}
-			result.parameters = parameters
-		case "fileParameters":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			fileParameters, err := parseFileParameters(item.Value, field+".fileParameters")
-			if err != nil {
-				return result, err
-			}
-			result.fileParameters = fileParameters
-		case "ignoreMissingValueFiles":
-			value, err := readOptionalBooleanYAMLOption(
-				item.Value,
-				field+".ignoreMissingValueFiles",
-			)
-			if err != nil {
-				return result, err
-			}
-			result.ignoreMissingValues = value
-		case "skipSchemaValidation":
-			value, err := readOptionalBooleanYAMLOption(
-				item.Value,
-				field+".skipSchemaValidation",
-			)
-			if err != nil {
-				return result, err
-			}
-			result.skipSchemaValidation = value
-		case "skipCrds":
-			value, err := readOptionalBooleanYAMLOption(item.Value, field+".skipCrds")
-			if err != nil {
-				return result, err
-			}
-			result.skipCRDs = value
-		case "passCredentials":
-			value, err := readBooleanYAMLOption(item.Value, field+".passCredentials")
-			if err != nil {
-				return result, err
-			}
-			result.passCredentials = value
-		case "skipTests", "version":
-			// These options do not affect the generated helmfile.
-			continue
-		default:
+		entry, known := applicationmapping.LookupHelmOption(key)
+		if !known {
 			if !isIgnorableEmptyYAMLOption(item.Value) {
 				return result, fmt.Errorf("%s.%s is not supported", field, key)
 			}
+			continue
+		}
+		value, err := parseHelmOptionValue(entry, item.Value, field+"."+key)
+		if err != nil {
+			return result, err
+		}
+		if _, omitted := value.(omittedHelmOption); omitted {
+			continue
+		}
+		switch entry.HelmOption {
+		case "releaseName":
+			result.releaseName = value.(string)
+		case "namespace":
+			result.namespace = value.(string)
+		case "kubeVersion":
+			result.kubeVersion = value.(string)
+		case "apiVersions":
+			result.apiVersions = value.([]string)
+		case "valueFiles":
+			result.valueFiles = value.([]string)
+		case "values":
+			result.values = value
+		case "valuesObject":
+			result.valuesObject = value
+		case "parameters":
+			result.parameters = value.([]helmParameter)
+		case "fileParameters":
+			result.fileParameters = value.([]helmFileParameter)
+		case "ignoreMissingValueFiles":
+			result.ignoreMissingValues = value.(bool)
+		case "skipSchemaValidation":
+			result.skipSchemaValidation = value.(bool)
+		case "skipCrds":
+			result.skipCRDs = value.(bool)
+		case "passCredentials":
+			result.passCredentials = value.(bool)
 		}
 	}
 	return result, nil
+}
+
+type omittedHelmOption struct{}
+
+func parseHelmOptionValue(
+	entry applicationmapping.Entry,
+	value any,
+	field string,
+) (any, error) {
+	if entry.HelmValueKind == applicationmapping.Ignored {
+		return omittedHelmOption{}, nil
+	}
+	if entry.AllowEmpty && isIgnorableEmptyYAMLOption(value) {
+		switch entry.HelmValueKind {
+		case applicationmapping.String:
+			return "", nil
+		case applicationmapping.Boolean:
+			return false, nil
+		case applicationmapping.StringSequence:
+			return []string(nil), nil
+		case applicationmapping.InlineValues, applicationmapping.RawValues:
+			return nil, nil
+		case applicationmapping.Parameters:
+			return omittedHelmOption{}, nil
+		case applicationmapping.FileParameters:
+			return omittedHelmOption{}, nil
+		}
+	}
+	switch entry.HelmValueKind {
+	case applicationmapping.String:
+		text, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s must be a string", field)
+		}
+		return text, nil
+	case applicationmapping.Boolean:
+		return readBooleanYAMLOption(value, field)
+	case applicationmapping.StringSequence:
+		return readOptionalStringSequenceYAMLOption(value, field)
+	case applicationmapping.InlineValues:
+		inline, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s must be a string", field)
+		}
+		return decodeInlineValues(inline, field)
+	case applicationmapping.RawValues:
+		return value, nil
+	case applicationmapping.Parameters:
+		return parseParameters(value, field)
+	case applicationmapping.FileParameters:
+		return parseFileParameters(value, field)
+	default:
+		panic("unknown Helm option value kind: " + entry.HelmValueKind)
+	}
 }
 
 func readOptionalStringYAMLOption(value any, field string) (string, error) {

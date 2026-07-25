@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/goccy/go-yaml"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
 )
 
 func TestConvertDefaultsAndOmitsEmptyFields(t *testing.T) {
@@ -269,6 +270,103 @@ func TestUnsupportedHelmOptionsIgnoreOnlyEmptyValues(t *testing.T) {
 		if err == nil || err.Error() != "helm.unsupported is not supported" {
 			t.Errorf("unexpected error for %#v: %v", value, err)
 		}
+	}
+}
+
+func TestDeclaredHelmOptionValueBehavior(t *testing.T) {
+	valid := map[applicationmapping.HelmValueKind]any{
+		applicationmapping.String:         "value",
+		applicationmapping.Boolean:        true,
+		applicationmapping.StringSequence: []any{"value"},
+		applicationmapping.InlineValues:   "key: value",
+		applicationmapping.RawValues:      yaml.MapSlice{{Key: "key", Value: "value"}},
+		applicationmapping.Parameters: []any{yaml.MapSlice{
+			{Key: "name", Value: "key"},
+			{Key: "value", Value: "value"},
+		}},
+		applicationmapping.FileParameters: []any{yaml.MapSlice{
+			{Key: "name", Value: "key"},
+			{Key: "path", Value: "$values/file.yaml"},
+		}},
+		applicationmapping.Ignored: yaml.MapSlice{{Key: "any", Value: "value"}},
+	}
+	invalid := map[applicationmapping.HelmValueKind]any{
+		applicationmapping.String:         1,
+		applicationmapping.Boolean:        1,
+		applicationmapping.StringSequence: "value",
+		applicationmapping.InlineValues:   1,
+		applicationmapping.Parameters:     "value",
+		applicationmapping.FileParameters: "value",
+	}
+	emptyValues := []any{nil, "", []any{}, yaml.MapSlice{}}
+
+	for _, entry := range applicationmapping.Entries() {
+		if entry.HelmOption == "" {
+			continue
+		}
+		t.Run(entry.HelmOption, func(t *testing.T) {
+			if _, err := parseHelmOptions(
+				yaml.MapSlice{{Key: entry.HelmOption, Value: valid[entry.HelmValueKind]}},
+				"helm",
+			); err != nil {
+				t.Fatalf("valid %s value was rejected: %v", entry.HelmValueKind, err)
+			}
+			if value, ok := invalid[entry.HelmValueKind]; ok {
+				if _, err := parseHelmOptions(
+					yaml.MapSlice{{Key: entry.HelmOption, Value: value}},
+					"helm",
+				); err == nil {
+					t.Fatalf("invalid %s value was accepted", entry.HelmValueKind)
+				}
+			}
+			for _, value := range emptyValues {
+				_, err := parseHelmOptions(
+					yaml.MapSlice{{Key: entry.HelmOption, Value: value}},
+					"helm",
+				)
+				if entry.AllowEmpty || entry.HelmValueKind == applicationmapping.Ignored ||
+					entry.HelmValueKind == applicationmapping.RawValues {
+					if err != nil {
+						t.Errorf("empty value %#v was rejected: %v", value, err)
+					}
+				} else if err == nil {
+					t.Errorf("empty value %#v was accepted", value)
+				}
+			}
+		})
+	}
+}
+
+func TestEmptyParameterOptionsDoNotReplaceEarlierValues(t *testing.T) {
+	options, err := parseHelmOptions(yaml.MapSlice{
+		{
+			Key: "parameters",
+			Value: []any{yaml.MapSlice{
+				{Key: "name", Value: "parameter"},
+				{Key: "value", Value: "value"},
+			}},
+		},
+		{Key: "parameters", Value: nil},
+		{
+			Key: "fileParameters",
+			Value: []any{yaml.MapSlice{
+				{Key: "name", Value: "file"},
+				{Key: "path", Value: "$values/file.yaml"},
+			}},
+		},
+		{Key: "fileParameters", Value: []any{}},
+	}, "helm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(options.parameters) != 1 || options.parameters[0].Name != "parameter" {
+		t.Errorf("parameters were replaced by an empty duplicate: %#v", options.parameters)
+	}
+	if len(options.fileParameters) != 1 || options.fileParameters[0].Name != "file" {
+		t.Errorf(
+			"fileParameters were replaced by an empty duplicate: %#v",
+			options.fileParameters,
+		)
 	}
 }
 
