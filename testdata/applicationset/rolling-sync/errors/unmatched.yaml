@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: unmatched
+spec:
+  generators:
+    - list:
+        elements:
+          - name: orphan
+            stage: other
+  strategy:
+    type: RollingSync
+    deletionOrder: Reverse
+    rollingSync:
+      steps:
+        - matchExpressions:
+            - key: stage
+              operator: In
+              values: [base]
+  template:
+    metadata:
+      name: '{{name}}'
+      labels:
+        stage: '{{stage}}'
+    spec:
+      source:
+        repoURL: https://example.com/charts
+        chart: service
+        targetRevision: 1.0.0

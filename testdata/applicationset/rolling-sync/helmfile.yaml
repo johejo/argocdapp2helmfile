@@ -1,0 +1,40 @@
+repositories:
+  - name: charts
+    url: https://example.com/charts
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: database-release
+    namespace: data
+    kubeContext: prod-admin
+    chart: charts/service
+    version: 1.0.0
+  - name: cache-release
+    namespace: cache
+    kubeContext: staging-admin
+    chart: charts/service
+    version: 1.0.0
+  - name: api-release
+    namespace: apps
+    kubeContext: prod-admin
+    chart: charts/service
+    version: 1.0.0
+    needs:
+      - prod-admin/data/database-release
+      - staging-admin/cache/cache-release
+  - name: worker-release
+    namespace: jobs
+    kubeContext: staging-admin
+    chart: charts/service
+    version: 1.0.0
+    needs:
+      - prod-admin/data/database-release
+      - staging-admin/cache/cache-release
+  - name: frontend-release
+    namespace: web
+    kubeContext: prod-admin
+    chart: charts/service
+    version: 1.0.0
+    needs:
+      - prod-admin/apps/api-release
+      - staging-admin/jobs/worker-release

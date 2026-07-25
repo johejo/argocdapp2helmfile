@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: multiple
+spec:
+  generators:
+    - list:
+        elements:
+          - name: duplicate
+            stage: base
+  strategy:
+    type: RollingSync
+    deletionOrder: Reverse
+    rollingSync:
+      steps:
+        - matchExpressions:
+            - key: stage
+              operator: In
+              values: [base]
+        - matchExpressions:
+            - key: stage
+              operator: NotIn
+              values: [other]
+  template:
+    metadata:
+      name: '{{name}}'
+      labels:
+        stage: '{{stage}}'
+    spec:
+      source:
+        repoURL: https://example.com/charts
+        chart: service
+        targetRevision: 1.0.0

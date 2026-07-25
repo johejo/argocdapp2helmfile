@@ -202,6 +202,27 @@ The converter expands the set locally, then applies the normal Application
 conversion and validation rules to every result.
 Multiple generators and elements retain their input order.
 
+#### RollingSync
+
+`strategy.type: RollingSync` is converted to
+[helmfile `needs`][helmfile-releases-dag] when:
+
+- `strategy.deletionOrder` is `Reverse`;
+- `rollingSync.steps` is non-empty and uses only `In` and `NotIn`
+  `matchExpressions`;
+- `maxUpdate` is omitted or is the string `"100%"`; and
+- every generated Application matches exactly one step by its final labels.
+
+Empty steps are skipped.
+Each subsequent non-empty step depends on the preceding non-empty step,
+within the same ApplicationSet.
+
+Unlike [Argo CD Progressive Syncs][argocd-progressive-syncs],
+helmfile does not wait for Application health or reproduce manual gates and
+partial concurrency.
+Run without label selectors to preserve ordering,
+or use `--include-transitive-needs` because selectors ignore `needs` by default.
+
 Go template expressions use a leading dot, such as `{{ .name }}`.
 They provide Sprig functions except `env`, `expandenv`, and `getHostByName`,
 plus `normalize`, `slugify`, `toYaml`, `fromYaml`, and `fromYamlArray`.
@@ -667,9 +688,12 @@ For upstream behavior, see also
   https://argo-cd.readthedocs.io/en/stable/user-guide/kustomize/#setting-the-manifests-namespace
 [argocd-kustomize-options]:
   https://argo-cd.readthedocs.io/en/stable/user-guide/kustomize/
+[argocd-progressive-syncs]:
+  https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Progressive-Syncs/
 [helmfile-configuration]: https://helmfile.readthedocs.io/en/latest/configuration/
 [helmfile-kustomizations]:
   https://helmfile.readthedocs.io/en/latest/advanced-features/#deploy-kustomizations-with-helmfile
+[helmfile-releases-dag]: https://helmfile.readthedocs.io/en/latest/releases/
 
 ## License
 

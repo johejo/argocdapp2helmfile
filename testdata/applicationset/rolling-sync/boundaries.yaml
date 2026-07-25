@@ -1,0 +1,81 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: first-set
+spec:
+  generators:
+    - list:
+        elements:
+          - name: first-base
+            stage: base
+          - name: first-app
+            stage: app
+  strategy:
+    type: RollingSync
+    deletionOrder: Reverse
+    rollingSync:
+      steps:
+        - matchExpressions:
+            - key: stage
+              operator: In
+              values: [base]
+        - matchExpressions:
+            - key: stage
+              operator: In
+              values: [app]
+  template:
+    metadata:
+      name: '{{name}}'
+      labels:
+        stage: '{{stage}}'
+    spec:
+      source:
+        repoURL: https://example.com/charts
+        chart: service
+        targetRevision: 1.0.0
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: direct
+spec:
+  source:
+    repoURL: https://example.com/charts
+    chart: service
+    targetRevision: 1.0.0
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: second-set
+spec:
+  generators:
+    - list:
+        elements:
+          - name: second-base
+            stage: base
+          - name: second-app
+            stage: app
+  strategy:
+    type: RollingSync
+    deletionOrder: Reverse
+    rollingSync:
+      steps:
+        - matchExpressions:
+            - key: stage
+              operator: In
+              values: [base]
+        - matchExpressions:
+            - key: stage
+              operator: In
+              values: [app]
+  template:
+    metadata:
+      name: '{{name}}'
+      labels:
+        stage: '{{stage}}'
+    spec:
+      source:
+        repoURL: https://example.com/charts
+        chart: service
+        targetRevision: 1.0.0

@@ -20,8 +20,9 @@ type application struct {
 	APIVersion string `yaml:"apiVersion"`
 	Kind       string `yaml:"kind"`
 	Metadata   struct {
-		Name      string `yaml:"name"`
-		Namespace string `yaml:"namespace"`
+		Name      string            `yaml:"name"`
+		Namespace string            `yaml:"namespace"`
+		Labels    map[string]string `yaml:"labels"`
 	} `yaml:"metadata"`
 	Spec struct {
 		Destination          applicationDestination `yaml:"destination"`
@@ -70,6 +71,7 @@ type release struct {
 	SkipSchemaValidation bool           `yaml:"skipSchemaValidation,omitempty"`
 	CreateNamespace      bool           `yaml:"createNamespace,omitempty"`
 	Transformers         []any          `yaml:"transformers,omitempty"`
+	Needs                []string       `yaml:"needs,omitempty"`
 }
 
 type setParameter struct {

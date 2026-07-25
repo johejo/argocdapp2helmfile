@@ -1,0 +1,7 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+destinations:
+  - name: production
+    kubeContext: prod-admin
+  - name: staging
+    kubeContext: staging-admin

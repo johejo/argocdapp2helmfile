@@ -32,6 +32,7 @@ type generatedApplication struct {
 	application application
 	data        any
 	path        string
+	rollingStep *int
 }
 
 type applicationSetResource struct {
@@ -48,6 +49,7 @@ type applicationSetResource struct {
 		Generators           []yaml.MapSlice `yaml:"generators"`
 		Template             yaml.MapSlice   `yaml:"template"`
 		TemplatePatch        string          `yaml:"templatePatch"`
+		Strategy             yaml.MapSlice   `yaml:"strategy"`
 	} `yaml:"spec"`
 }
 
@@ -67,6 +69,10 @@ func expandApplicationSet(node ast.Node, config *conversionConfig) ([]generatedA
 	}
 	if appSet.Spec.Template == nil {
 		return nil, errors.New("spec.template is required")
+	}
+	strategy, err := parseApplicationSetStrategy(appSet.Spec.Strategy)
+	if err != nil {
+		return nil, err
 	}
 	renderer, err := newApplicationSetRenderer(
 		appSet.Spec.GoTemplate,
@@ -112,6 +118,11 @@ func expandApplicationSet(node ast.Node, config *conversionConfig) ([]generatedA
 				data:        data,
 				path:        generatedParams.path,
 			})
+		}
+	}
+	if strategy != nil {
+		if err := assignRollingSyncSteps(generated, strategy); err != nil {
+			return nil, err
 		}
 	}
 	return generated, nil

@@ -12,6 +12,7 @@ type applicationInput struct {
 	application application
 	data        any
 	origin      inputOrigin
+	rollingStep *int
 }
 
 func decodeApplicationInputs(input []byte, config *conversionConfig) ([]applicationInput, error) {
@@ -72,6 +73,7 @@ func decodeApplicationInputs(input []byte, config *conversionConfig) ([]applicat
 						document: documentNumber,
 						path:     item.path,
 					},
+					rollingStep: item.rollingStep,
 				})
 			}
 		default:

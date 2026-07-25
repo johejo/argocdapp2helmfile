@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: applications
+spec:
+  generators:
+    - list:
+        elements:
+          - name: first
+          - name: second
+  strategy:
+    type: AllAtOnce
+  template:
+    metadata:
+      name: '{{name}}'
+      labels:
+        rollout-stage: all
+    spec:
+      source:
+        repoURL: https://example.com/charts
+        chart: service
+        targetRevision: 1.0.0
