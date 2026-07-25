@@ -46,6 +46,18 @@ func TestConvertApplicationSetCreateNamespace(t *testing.T) {
 	}
 }
 
+func TestConvertApplicationSetRevisionHistoryLimit(t *testing.T) {
+	input := readTestdata(t, "applicationset/revision-history/application.yaml")
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := readTestdata(t, "applicationset/revision-history/helmfile.yaml")
+	if string(output) != want {
+		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+	}
+}
+
 func TestConvertApplicationSetResolvesPatchedDestination(t *testing.T) {
 	input := readTestdata(t, "applicationset/minimal/application.yaml")
 	input = strings.Replace(

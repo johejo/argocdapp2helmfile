@@ -33,6 +33,58 @@ func TestConvertCreateNamespace(t *testing.T) {
 	}
 }
 
+func TestConvertRevisionHistoryLimit(t *testing.T) {
+	input := readTestdata(t, "revision-history/application.yaml")
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := readTestdata(t, "revision-history/helmfile.yaml")
+	if string(output) != want {
+		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+	}
+}
+
+func TestConvertRejectsInvalidRevisionHistoryLimit(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+		wants   []string
+	}{
+		{
+			name:    "zero",
+			fixture: "zero.yaml",
+			wants: []string{
+				"spec.revisionHistoryLimit",
+				"Argo CD disables revision history",
+				"Helmfile historyMax 0 means unlimited history",
+			},
+		},
+		{
+			name:    "negative",
+			fixture: "negative.yaml",
+			wants: []string{
+				"spec.revisionHistoryLimit cannot convert -1",
+				"history limit must be greater than 0",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			input := readTestdata(t, "revision-history/"+test.fixture)
+			_, err := convert([]byte(input))
+			if err == nil {
+				t.Fatal("conversion unexpectedly succeeded")
+			}
+			for _, want := range test.wants {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestConvertDestinationToKubeContext(t *testing.T) {
 	config := testConfig(t, `destinations:
   - name: production

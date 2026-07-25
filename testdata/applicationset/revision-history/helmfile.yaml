@@ -1,0 +1,14 @@
+repositories:
+  - name: charts
+    url: https://example.com/charts
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: frontend
+    historyMax: 3
+    chart: charts/frontend
+    version: 1.0.0
+  - name: worker
+    historyMax: 3
+    chart: charts/worker
+    version: 1.0.0

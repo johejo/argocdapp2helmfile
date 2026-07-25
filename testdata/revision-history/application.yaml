@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: frontend
+spec:
+  revisionHistoryLimit: 5
+  destination:
+    namespace: production
+  source:
+    repoURL: https://example.com/charts
+    chart: frontend
+    targetRevision: 1.2.3
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: worker
+spec:
+  revisionHistoryLimit: 7
+  destination:
+    namespace: background
+  source:
+    repoURL: https://example.com/charts
+    chart: worker
+    targetRevision: 4.5.6

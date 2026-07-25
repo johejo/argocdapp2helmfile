@@ -24,11 +24,12 @@ type application struct {
 		Namespace string `yaml:"namespace"`
 	} `yaml:"metadata"`
 	Spec struct {
-		Destination applicationDestination `yaml:"destination"`
-		Project     string                 `yaml:"project"`
-		Source      *applicationSource     `yaml:"source"`
-		Sources     []applicationSource    `yaml:"sources"`
-		SyncPolicy  struct {
+		Destination          applicationDestination `yaml:"destination"`
+		Project              string                 `yaml:"project"`
+		RevisionHistoryLimit *int                   `yaml:"revisionHistoryLimit"`
+		Source               *applicationSource     `yaml:"source"`
+		Sources              []applicationSource    `yaml:"sources"`
+		SyncPolicy           struct {
 			SyncOptions []string `yaml:"syncOptions"`
 		} `yaml:"syncPolicy"`
 	} `yaml:"spec"`
@@ -56,6 +57,7 @@ type release struct {
 	Name                 string         `yaml:"name"`
 	Namespace            string         `yaml:"namespace,omitempty"`
 	KubeContext          string         `yaml:"kubeContext,omitempty"`
+	HistoryMax           int            `yaml:"historyMax,omitempty"`
 	Labels               yaml.MapSlice  `yaml:"labels,omitempty"`
 	Chart                any            `yaml:"chart"`
 	Version              string         `yaml:"version,omitempty"`
@@ -128,6 +130,20 @@ func convertApplication(
 	}
 	if strings.TrimSpace(app.Metadata.Name) == "" {
 		return converted, errors.New("metadata.name is required")
+	}
+	if app.Spec.RevisionHistoryLimit != nil {
+		switch {
+		case *app.Spec.RevisionHistoryLimit == 0:
+			return converted, errors.New(
+				"spec.revisionHistoryLimit cannot be 0: Argo CD disables revision history, " +
+					"but Helmfile historyMax 0 means unlimited history",
+			)
+		case *app.Spec.RevisionHistoryLimit < 0:
+			return converted, fmt.Errorf(
+				"spec.revisionHistoryLimit cannot convert %d: history limit must be greater than 0",
+				*app.Spec.RevisionHistoryLimit,
+			)
+		}
 	}
 	kubeContext, err := destinationResolver.resolve(app.Spec.Destination, "spec.destination")
 	if err != nil {
@@ -256,6 +272,7 @@ func convertApplication(
 			Name:                 releaseName,
 			Namespace:            app.Spec.Destination.Namespace,
 			KubeContext:          kubeContext,
+			HistoryMax:           valueOrZero(app.Spec.RevisionHistoryLimit),
 			Values:               values,
 			Set:                  set,
 			SetString:            setString,
@@ -282,6 +299,13 @@ func convertApplication(
 		converted.release.Version = chartSource.TargetRevision
 	}
 	return converted, nil
+}
+
+func valueOrZero(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func repositoryAlias(repositoryURL string) string {

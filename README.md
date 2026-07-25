@@ -113,6 +113,7 @@ An Application must identify either:
 | `metadata.name` | Release `name` when `helm.releaseName` is absent |
 | `spec.source.helm.releaseName` | Release `name` |
 | `spec.destination.namespace` | Release `namespace` |
+| Positive `spec.revisionHistoryLimit` | Release `historyMax` |
 | `spec.source.helm.namespace` | Accepted only when it exactly matches `spec.destination.namespace`; no additional output |
 | `spec.source.helm.version` | Accepted and intentionally ignored |
 | `spec.source.repoURL` | Repository `url`; scheme-less OCI also sets `oci: true` |
@@ -462,6 +463,12 @@ and intentionally ignored as an Argo CD backward-compatibility field.
   (`charts-2`, `charts-3`, and so on) within the generated Helmfile.
 - A release name defaults to `metadata.name` unless `helm.releaseName` is set.
   Resolved names must be unique across all namespaces and generated Applications.
+- [`revisionHistoryLimit`][argocd-application-spec] to
+  [`historyMax`][helmfile-configuration] is an approximate mapping because
+  Argo CD and Helm track different histories.
+  Omission preserves their defaults;
+  zero and negative values are rejected because Argo CD zero disables history,
+  while Helm zero means unlimited history.
 - `skipCrds` is per Application in Argo CD but `helmDefaults.skipCRDs` is shared.
   Every Application must therefore have the same effective value, with omission
   treated as `false`.
@@ -485,6 +492,8 @@ For upstream behavior, see also
 - [helmfile configuration reference][helmfile-configuration]
 
 [argocd-helm]: https://argo-cd.readthedocs.io/en/latest/user-guide/helm/
+[argocd-application-spec]:
+  https://argo-cd.readthedocs.io/en/stable/user-guide/application-specification/
 [argocd-go-template]:
   https://argo-cd.readthedocs.io/en/latest/operator-manual/applicationset/GoTemplate/
 [argocd-create-namespace]:

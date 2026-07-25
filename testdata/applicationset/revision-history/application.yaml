@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - name: frontend
+          - name: worker
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      revisionHistoryLimit: 3
+      source:
+        repoURL: https://example.com/charts
+        chart: '{{ .name }}'
+        targetRevision: 1.0.0
