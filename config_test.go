@@ -17,9 +17,15 @@ sources:
     localRoot: '{{ requiredEnv "REPO_ROOT" }}'
 `
 	tests := map[string]string{
-		"apiVersion":      strings.Replace(valid, configAPIVersion, "other/v1", 1),
-		"kind":            strings.Replace(valid, "Config", "Other", 1),
-		"unknown field":   valid + "unknown: true\n",
+		"apiVersion":    strings.Replace(valid, configAPIVersion, "other/v1", 1),
+		"kind":          strings.Replace(valid, "Config", "Other", 1),
+		"unknown field": valid + "unknown: true\n",
+		"missing revision": strings.Replace(
+			valid,
+			"    targetRevision: main\n",
+			"",
+			1,
+		),
 		"empty localRoot": strings.Replace(valid, `localRoot: '{{ requiredEnv "REPO_ROOT" }}'`, `localRoot: ""`, 1),
 		"legacy env": strings.Replace(
 			valid,

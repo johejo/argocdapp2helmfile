@@ -24,6 +24,8 @@ type applicationSource struct {
 	Plugin         yaml.MapSlice `yaml:"plugin"`
 }
 
+const defaultGitTargetRevision = "HEAD"
+
 var safeReferenceName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 type repositoryKind int
@@ -99,6 +101,7 @@ func resolveSources(app application, documentNumber int) (applicationSource, str
 		if strings.TrimSpace(source.RepoURL) == "" {
 			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.repoURL is required", field)
 		}
+		source.TargetRevision = normalizeGitTargetRevision(source.TargetRevision)
 		if strings.TrimSpace(source.TargetRevision) == "" {
 			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.targetRevision is required", field)
 		}
@@ -114,6 +117,13 @@ func resolveSources(app application, documentNumber int) (applicationSource, str
 		)
 	}
 	return chartSource, chartSourceField, refs, comments, nil
+}
+
+func normalizeGitTargetRevision(targetRevision string) string {
+	if targetRevision == "" {
+		return defaultGitTargetRevision
+	}
+	return targetRevision
 }
 
 func validateReferenceName(ref string) error {

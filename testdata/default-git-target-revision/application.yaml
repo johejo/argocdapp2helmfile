@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: git-chart
+spec:
+  source:
+    repoURL: https://github.com/example/platform.git
+    path: charts/app
+    helm:
+      valueFiles:
+        - environments/$ARGOCD_APP_SOURCE_TARGET_REVISION.yaml
+      fileParameters:
+        - name: settings
+          path: files/config.txt
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-values
+spec:
+  sources:
+    - repoURL: https://example.com/charts
+      chart: app
+      targetRevision: 1.2.3
+      helm:
+        valueFiles:
+          - $values/environments/prod.yaml
+        fileParameters:
+          - name: settings
+            path: $values/files/config.txt
+    - repoURL: https://github.com/example/values.git
+      ref: values
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kustomization
+spec:
+  source:
+    repoURL: https://github.com/example/platform.git
+    path: deploy/app
+    targetRevision: ""
+    kustomize: {}

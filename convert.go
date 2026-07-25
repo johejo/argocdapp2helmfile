@@ -199,6 +199,7 @@ func convertApplication(
 		repositoryType = gitRepository
 	}
 	if repositoryType == gitRepository {
+		chartSource.TargetRevision = normalizeGitTargetRevision(chartSource.TargetRevision)
 		if hasChart {
 			return converted, fmt.Errorf("%s.chart is not supported for a Git repository; use path", chartSourceField)
 		}

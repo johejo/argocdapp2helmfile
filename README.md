@@ -136,7 +136,7 @@ The `spec.source.*` paths below also apply to the manifest source selected from
 | `spec.source.targetRevision` for a packaged chart | Release `version` |
 | Git `spec.source.repoURL` | Config source identity; HTTP(S), `git@host:path`, or `ssh://user@host/path` |
 | Git `spec.source.path` | Helm chart or explicit Kustomization path below the configured `localRoot` |
-| Git `spec.source.targetRevision` | Config source identity and provenance, not a chart version |
+| Git `spec.source.targetRevision` | Config source identity and provenance; defaults to `HEAD` |
 | `spec.source.helm.valueFiles` | Release `values` paths |
 | `spec.source.helm.values` | Parsed inline `values` entry |
 | `spec.source.helm.valuesObject` | Inline `values` entry |
@@ -151,8 +151,8 @@ The `spec.source.*` paths below also apply to the manifest source selected from
 | `spec.destination.name` or `spec.destination.server` | Release `kubeContext` through Config `destinations` |
 | Config `releaseLabels` query result | Release `labels` entry |
 
-The required fields are `metadata.name`, the manifest source's `repoURL` and
-`targetRevision`, and either `chart` for a Helm repository or `path` for Git.
+The required fields are `metadata.name`, the manifest source's `repoURL`, and either
+`chart` plus `targetRevision` for a Helm/OCI repository or `path` for Git.
 
 Argo CD documents Helm value precedence, from lowest to highest, as
 `valueFiles`, `values`, `valuesObject`, then `parameters`.
@@ -467,13 +467,16 @@ the dump.
 
 ### Git charts, Kustomizations, external values, and paths
 
-A `sources` entry matches the Application's literal `repoURL` and
+A Config `sources` entry matches the Application's `repoURL` and normalized
 `targetRevision` pair.
 Its required `localRoot` is copied unchanged as the prefix for generated paths.
 It may be absolute, relative, or contain a helmfile template expression,
 and the converter does not expand shell paths.
 `localRoot` values need not be unique.
 A Git source without a matching entry is an error.
+Config `sources[].targetRevision` remains required; use `HEAD` explicitly when its
+`localRoot` is checked out at the corresponding revision.
+Because `HEAD` can move, use a branch, tag, or commit SHA when that distinction matters.
 
 For a Git-hosted chart, use `path` rather than `chart`:
 

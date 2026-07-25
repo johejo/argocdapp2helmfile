@@ -202,6 +202,30 @@ func TestConvertGitChartWithExternalValuesSource(t *testing.T) {
 	}
 }
 
+func TestConvertDefaultsGitTargetRevision(t *testing.T) {
+	input := readTestdata(t, "default-git-target-revision/application.yaml")
+	config, err := parseConfig([]byte(readTestdata(t, "default-git-target-revision/config.yaml")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := convertWithConfig([]byte(input), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := readTestdata(t, "default-git-target-revision/helmfile.yaml")
+	if string(output) != want {
+		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+	}
+}
+
+func TestConvertRejectsWhitespaceGitTargetRevision(t *testing.T) {
+	input := readTestdata(t, "default-git-target-revision/whitespace-application.yaml")
+	if output, err := convert([]byte(input)); err == nil ||
+		!strings.Contains(err.Error(), "spec.source.targetRevision is required") {
+		t.Fatalf("unexpected output/error:\n%s\n%v", output, err)
+	}
+}
+
 func TestConvertRejectsInvalidGitCharts(t *testing.T) {
 	tests := map[string]string{
 		"chart instead of path": strings.Replace(
@@ -217,7 +241,6 @@ func TestConvertRejectsInvalidGitCharts(t *testing.T) {
 			"git@github.com:example/charts.git", "https://github.com/example/charts.git", 1,
 		),
 		"unsafe path":           gitApplication("git@github.com:example/charts.git", "../charts/app", "main", ""),
-		"empty revision":        gitApplication("git@github.com:example/charts.git", "charts/app", "''", ""),
 		"missing SCP separator": gitApplication("git@github.com/example/charts.git", "charts/app", "main", ""),
 		"empty SCP path":        gitApplication("git@github.com:/", "charts/app", "main", ""),
 		"SSH password":          gitApplication("ssh://git:secret@git.example.com/example/charts.git", "charts/app", "main", ""),

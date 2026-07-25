@@ -1,0 +1,26 @@
+# document 1 chart source: repoURL "https://github.com/example/platform.git", path "charts/app", targetRevision "HEAD"
+# document 2 values source ref "values": repoURL "https://github.com/example/values.git", targetRevision "HEAD"
+# document 3 kustomization source: repoURL "https://github.com/example/platform.git", path "deploy/app", targetRevision "HEAD"
+repositories:
+  - name: charts
+    url: https://example.com/charts
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: git-chart
+    chart: 'checkouts/platform/charts/app'
+    values:
+      - 'checkouts/platform/charts/app/environments/HEAD.yaml'
+    set:
+      - name: settings
+        file: 'checkouts/platform/charts/app/files/config.txt'
+  - name: external-values
+    chart: charts/app
+    version: 1.2.3
+    values:
+      - 'checkouts/values/environments/prod.yaml'
+    set:
+      - name: settings
+        file: 'checkouts/values/files/config.txt'
+  - name: kustomization
+    chart: 'checkouts/platform/deploy/app'
