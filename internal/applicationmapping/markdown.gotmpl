@@ -1,0 +1,55 @@
+# Application mapping reference
+
+This reference describes how an Argo CD `Application` becomes Helmfile output.
+Paths beginning with `spec.source` also apply to the manifest source selected from
+`spec.sources`.
+
+## Mapping catalog
+
+| Argo CD Application or Config | Helmfile output | Conditions and notes |
+| --- | --- | --- |
+{{- range . }}
+| {{ cell .Input }} | {{ cell .Output }} | {{ cell .Notes }} |
+{{- end }}
+
+## Source selection and required fields
+
+`spec.source` and `spec.sources` are mutually exclusive.
+Multiple sources must contain exactly one manifest source and may also contain values-only
+sources identified by `ref`.
+The mapping paths in the catalog apply to that selected manifest source.
+
+A packaged chart uses `chart` and a valid HTTP(S) or scheme-less OCI repository.
+A Git source uses `path` and is treated as a Helm chart unless
+`kustomize: {}` explicitly selects a Kustomization.
+The required fields are `metadata.name`, the manifest source's `repoURL`, and either `chart` plus
+`targetRevision`
+for a packaged chart or `path` for Git.
+Git `targetRevision` defaults to `HEAD`.
+
+## Helm values and correlated settings
+
+Argo CD value precedence, from lowest to highest, is `valueFiles`,
+`values`, `valuesObject`, then `parameters`.
+The converter preserves that order in generated `values`, `set`, and
+`setString` entries.
+Value-file entries retain their positions subject to glob expansion and deduplication, and
+parameters retain input order.
+
+`helm.namespace`, when set, must exactly match
+`spec.destination.namespace`.
+`fileParameters` follow ordinary parameters in `set`;
+a same-name `forceString` parameter is rejected because it belongs to
+`setString`.
+Because Helmfile's `helmDefaults.skipCRDs` is shared, all converted Helm releases
+must resolve to the same `skipCrds` value.
+
+## Repository and Config resolution
+
+Packaged-chart repository aliases are derived from repository URLs and disambiguated when
+necessary.
+Scheme-less OCI repository URLs must not include an `oci://` prefix.
+Git sources are resolved through Config `sources` by repository URL and revision.
+Destination name or server is resolved through Config `destinations` (including
+cluster-derived entries), and Config `releaseLabels` project query results into release
+labels.
