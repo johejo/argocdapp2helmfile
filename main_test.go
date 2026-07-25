@@ -95,26 +95,82 @@ func TestRunConversionErrorSuppressesDiagnostics(t *testing.T) {
 }
 
 func TestParseArgs(t *testing.T) {
-	for _, args := range [][]string{
-		{"--strict", "--config", "config.yaml"},
-		{"--config", "config.yaml", "--strict"},
-	} {
-		options, ok := parseArgs(args)
-		if !ok || !options.strict || options.configPath != "config.yaml" {
-			t.Errorf("parseArgs(%q) = %#v, %t", args, options, ok)
+	tests := []struct {
+		args       []string
+		strict     bool
+		configPath string
+	}{
+		{args: []string{"--strict", "--config", "config.yaml"}, strict: true, configPath: "config.yaml"},
+		{args: []string{"-config", "config.yaml", "-strict"}, strict: true, configPath: "config.yaml"},
+		{args: []string{"--config=first.yaml", "--config=last.yaml"}, configPath: "last.yaml"},
+		{args: []string{"--strict=true", "--strict=false"}},
+	}
+	for _, test := range tests {
+		options, _, err := parseArgs(test.args)
+		if err != nil || options.strict != test.strict || options.configPath != test.configPath {
+			t.Errorf("parseArgs(%q) = %#v, %v", test.args, options, err)
 		}
 	}
 	for _, args := range [][]string{
-		{"--strict", "--strict"},
 		{"--config"},
-		{"--config", "a", "--config", "b"},
-		{"--help-diagnostics", "--help-diagnostics"},
 		{"--help-diagnostics", "--strict"},
 		{"--config", "a", "--help-diagnostics"},
 		{"unknown"},
+		{"--unknown"},
 	} {
-		if _, ok := parseArgs(args); ok {
+		if _, _, err := parseArgs(args); err == nil {
 			t.Errorf("parseArgs(%q) unexpectedly succeeded", args)
+		}
+	}
+}
+
+func TestRunHelp(t *testing.T) {
+	for _, arg := range []string{"-h", "--help"} {
+		t.Run(arg, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{arg}, errorReader{}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("exit code = %d, want 0: %s", code, stderr.String())
+			}
+			for _, want := range []string{
+				"Usage: argocdapp2helmfile",
+				"-config path",
+				"-help-diagnostics",
+				"-strict",
+			} {
+				if !strings.Contains(stdout.String(), want) {
+					t.Errorf("help output does not contain %q:\n%s", want, stdout.String())
+				}
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("stderr was not empty: %q", stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunHelpReportsWriteFailure(t *testing.T) {
+	var stderr bytes.Buffer
+	if code := run([]string{"--help"}, errorReader{}, errorWriter{}, &stderr); code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if got := stderr.String(); !strings.Contains(got, "write help: write failed") ||
+		strings.Count(got, "\n") != 1 {
+		t.Fatalf("unexpected stderr: %q", got)
+	}
+}
+
+func TestRunRejectsPositionalArguments(t *testing.T) {
+	for _, args := range [][]string{
+		{"application.yaml"},
+		{"--", "application.yaml"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, strings.NewReader("invalid: ["), &stdout, &stderr); code != 1 {
+			t.Errorf("run(%q) exit code = %d, want 1", args, code)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("run(%q) wrote stdout: %q", args, stdout.String())
 		}
 	}
 }
@@ -143,7 +199,6 @@ func TestRunHelpDiagnosticsRejectsOtherArguments(t *testing.T) {
 		{"--help-diagnostics", "--strict"},
 		{"--strict", "--help-diagnostics"},
 		{"--help-diagnostics", "--config", "config.yaml"},
-		{"--help-diagnostics", "--help-diagnostics"},
 		{"--help-diagnostics", "application.yaml"},
 	} {
 		var stdout, stderr bytes.Buffer

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -22,13 +25,16 @@ type commandOptions struct {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	options, ok := parseArgs(args)
-	if !ok {
-		fmt.Fprintln(
-			stderr,
-			"argocdapp2helmfile: usage: "+
-				"argocdapp2helmfile [--strict] [--config PATH] | --help-diagnostics",
-		)
+	options, help, err := parseArgs(args)
+	if errors.Is(err, flag.ErrHelp) {
+		if _, err := io.WriteString(stdout, help); err != nil {
+			writeDiagnostic(stderr, fmt.Errorf("write help: %w", err))
+			return 1
+		}
+		return 0
+	}
+	if err != nil {
+		writeDiagnostic(stderr, err)
 		return 1
 	}
 	if options.helpDiagnostics {
@@ -85,37 +91,38 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func parseArgs(args []string) (commandOptions, bool) {
+func parseArgs(args []string) (commandOptions, string, error) {
 	var options commandOptions
-	for index := 0; index < len(args); index++ {
-		switch args[index] {
-		case "--strict":
-			if options.strict {
-				return commandOptions{}, false
-			}
-			options.strict = true
-		case "--config":
-			if options.configPath != "" || index+1 == len(args) {
-				return commandOptions{}, false
-			}
-			index++
-			options.configPath = args[index]
-			if options.configPath == "" || strings.HasPrefix(options.configPath, "--") {
-				return commandOptions{}, false
-			}
-		case "--help-diagnostics":
-			if options.helpDiagnostics {
-				return commandOptions{}, false
-			}
-			options.helpDiagnostics = true
-		default:
-			return commandOptions{}, false
-		}
+	var output bytes.Buffer
+	flags := flag.NewFlagSet("argocdapp2helmfile", flag.ContinueOnError)
+	flags.SetOutput(&output)
+	flags.BoolVar(&options.strict, "strict", false, "reject lossy conversions")
+	flags.StringVar(&options.configPath, "config", "", "read conversion configuration from `path`")
+	flags.BoolVar(
+		&options.helpDiagnostics,
+		"help-diagnostics",
+		false,
+		"print the diagnostics reference",
+	)
+	flags.Usage = func() {
+		fmt.Fprintln(&output, "Usage: argocdapp2helmfile [--strict] [--config PATH]")
+		fmt.Fprintln(&output, "       argocdapp2helmfile --help-diagnostics")
+		fmt.Fprintln(&output)
+		fmt.Fprintln(&output, "Options:")
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(args); err != nil {
+		return commandOptions{}, output.String(), err
+	}
+	if flags.NArg() != 0 {
+		return commandOptions{}, "", fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
 	if options.helpDiagnostics && (options.strict || options.configPath != "") {
-		return commandOptions{}, false
+		return commandOptions{}, "", errors.New(
+			"--help-diagnostics cannot be combined with --strict or --config",
+		)
 	}
-	return options, true
+	return options, "", nil
 }
 
 func writeDiagnostic(stderr io.Writer, err error) {

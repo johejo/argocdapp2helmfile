@@ -25,6 +25,8 @@ argocdapp2helmfile --config config.yaml \
   <application.yaml >helmfile.yaml
 ```
 
+Run `argocdapp2helmfile --help` to list all command-line options.
+
 Separate multiple resources with YAML document markers.
 Direct Applications and ApplicationSets may be mixed, and release order follows input order.
 A Kubernetes `List` wrapper is not accepted directly; expand it first:
