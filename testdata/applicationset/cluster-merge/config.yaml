@@ -1,0 +1,9 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+clusters:
+  - name: production
+    server: https://production.example.com
+    kubeContext: prod-admin
+  - name: development
+    server: https://development.example.com
+    kubeContext: dev-admin

@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cluster-matrix
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/example/config.git
+              revision: main
+              directories:
+                - path: environments/*
+          - clusters:
+              values:
+                combination: '{{ .path.basename }}-{{ .name }}'
+  template:
+    metadata:
+      name: '{{ .values.combination }}'
+    spec:
+      destination:
+        server: '{{ .server }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: example
+        targetRevision: 1.2.3

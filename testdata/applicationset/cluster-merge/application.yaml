@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cluster-merge
+spec:
+  goTemplate: true
+  generators:
+    - merge:
+        mergeKeys:
+          - server
+        generators:
+          - clusters: {}
+          - list:
+              elements:
+                - server: https://production.example.com
+                  suffix: override
+  template:
+    metadata:
+      name: '{{ .name }}-{{ default "base" .suffix }}'
+    spec:
+      destination:
+        server: '{{ .server }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: example
+        targetRevision: 1.2.3

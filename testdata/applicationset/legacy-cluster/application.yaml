@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: clusters
+spec:
+  generators:
+    - clusters:
+        values:
+          suffix: '{{name}}-{{metadata.labels.tier}}'
+      selector:
+        matchLabels:
+          metadata.labels.environment: production
+  template:
+    metadata:
+      name: '{{nameNormalized}}-{{metadata.labels.environment}}-{{metadata.annotations.owner}}-{{values.suffix}}'
+    spec:
+      project: '{{project}}'
+      destination:
+        server: '{{server}}'
+        namespace: default
+      source:
+        repoURL: https://charts.example.com
+        chart: example
+        targetRevision: 1.2.3

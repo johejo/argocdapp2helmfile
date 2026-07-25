@@ -1,0 +1,16 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: prod-us-production-platform-Prod_US-frontend
+    namespace: default
+    kubeContext: prod-admin
+    chart: source/example
+    version: 1.2.3
+  - name: second-eu-production-operations-Second_EU-backend
+    namespace: default
+    kubeContext: second-admin
+    chart: source/example
+    version: 1.2.3

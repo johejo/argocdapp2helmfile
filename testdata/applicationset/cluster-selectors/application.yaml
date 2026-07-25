@@ -1,0 +1,63 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cluster-selectors
+spec:
+  goTemplate: true
+  generators:
+    - clusters:
+        selector:
+          matchExpressions:
+            - key: environment
+              operator: In
+              values:
+                - production
+        template:
+          metadata:
+            name: 'in-{{ .name }}'
+    - clusters:
+        selector:
+          matchExpressions:
+            - key: environment
+              operator: NotIn
+              values:
+                - production
+        template:
+          metadata:
+            name: 'not-in-{{ .name }}'
+    - clusters:
+        selector:
+          matchExpressions:
+            - key: region
+              operator: Exists
+        template:
+          metadata:
+            name: 'exists-{{ .name }}'
+    - clusters:
+        selector:
+          matchExpressions:
+            - key: region
+              operator: DoesNotExist
+        template:
+          metadata:
+            name: 'not-exists-{{ .name }}'
+    - clusters:
+        selector:
+          matchLabels:
+            environment: production
+        template:
+          metadata:
+            name: 'filtered-{{ .name }}'
+      selector:
+        matchLabels:
+          name: beta
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        server: '{{ .server }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: example
+        targetRevision: 1.2.3

@@ -1,0 +1,14 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: production-override
+    kubeContext: prod-admin
+    chart: source/example
+    version: 1.2.3
+  - name: development-base
+    kubeContext: dev-admin
+    chart: source/example
+    version: 1.2.3

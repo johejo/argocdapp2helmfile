@@ -154,6 +154,45 @@ func TestParseConfigRejectsInvalidDestinations(t *testing.T) {
 	}
 }
 
+func TestConfigClustersResolveNameAndServer(t *testing.T) {
+	config, err := parseConfig([]byte(readTestdata(t, "config/clusters/valid.yaml")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, destination := range []applicationDestination{
+		{Name: "production"},
+		{Server: "https://production.example.com"},
+	} {
+		got, err := config.destinationResolver.resolve(destination, "spec.destination")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "prod-admin" {
+			t.Fatalf("resolve(%#v) = %q, want prod-admin", destination, got)
+		}
+	}
+}
+
+func TestParseConfigRejectsInvalidClusters(t *testing.T) {
+	for _, name := range []string{
+		"missing-name",
+		"missing-server",
+		"missing-kube-context",
+		"duplicate-name",
+		"duplicate-server",
+		"destination-conflict",
+		"non-string-label",
+		"unknown-field",
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := readTestdata(t, "config/clusters/"+name+".yaml")
+			if _, err := parseConfig([]byte(input)); err == nil {
+				t.Fatal("parseConfig succeeded")
+			}
+		})
+	}
+}
+
 func TestJoinSourcePath(t *testing.T) {
 	for name, test := range map[string]struct {
 		root, relative, want string

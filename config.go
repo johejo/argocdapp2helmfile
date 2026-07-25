@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
 	"github.com/itchyny/gojq"
 )
 
@@ -24,6 +25,7 @@ type configResource struct {
 	Kind          string                   `yaml:"kind"`
 	Sources       []sourceConfigEntry      `yaml:"sources"`
 	Destinations  []destinationConfigEntry `yaml:"destinations"`
+	Clusters      []clusterConfigEntry     `yaml:"clusters"`
 	ReleaseLabels []releaseLabelConfig     `yaml:"releaseLabels"`
 }
 
@@ -37,6 +39,39 @@ type destinationConfigEntry struct {
 	Name        string `yaml:"name"`
 	Server      string `yaml:"server"`
 	KubeContext string `yaml:"kubeContext"`
+}
+
+type clusterConfigEntry struct {
+	Name        string          `yaml:"name"`
+	Server      string          `yaml:"server"`
+	KubeContext string          `yaml:"kubeContext"`
+	Project     string          `yaml:"project"`
+	Labels      strictStringMap `yaml:"labels"`
+	Annotations strictStringMap `yaml:"annotations"`
+}
+
+type strictStringMap map[string]string
+
+func (mapping *strictStringMap) UnmarshalYAML(node ast.Node) error {
+	if node.Type() == ast.NullType {
+		*mapping = nil
+		return nil
+	}
+	root, ok := node.(*ast.MappingNode)
+	if !ok {
+		return errors.New("must be a mapping")
+	}
+	result := make(strictStringMap, len(root.Values))
+	for _, item := range root.Values {
+		key, keyOK := item.Key.(*ast.StringNode)
+		value, valueOK := item.Value.(*ast.StringNode)
+		if !keyOK || !valueOK {
+			return errors.New("keys and values must be strings")
+		}
+		result[key.Value] = value.Value
+	}
+	*mapping = result
+	return nil
 }
 
 type releaseLabelConfig struct {
@@ -78,6 +113,7 @@ type releaseLabelProjector struct {
 type conversionConfig struct {
 	sourceResolver      *sourceResolver
 	destinationResolver *destinationResolver
+	clusters            []clusterConfigEntry
 	labelProjector      *releaseLabelProjector
 }
 
@@ -123,7 +159,10 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 	}
 
 	destinationResolver := &destinationResolver{
-		entries: make(map[destinationKey]destinationConfigEntry, len(resource.Destinations)),
+		entries: make(
+			map[destinationKey]destinationConfigEntry,
+			len(resource.Destinations)+len(resource.Clusters)*2,
+		),
 	}
 	for i, entry := range resource.Destinations {
 		field := fmt.Sprintf("config destinations[%d]", i)
@@ -143,6 +182,32 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 			return nil, fmt.Errorf("%s duplicates %s %q", field, key.kind, key.value)
 		}
 		destinationResolver.entries[key] = entry
+	}
+	for i, cluster := range resource.Clusters {
+		field := fmt.Sprintf("config clusters[%d]", i)
+		if strings.TrimSpace(cluster.Name) == "" {
+			return nil, fmt.Errorf("%s.name is required", field)
+		}
+		if strings.TrimSpace(cluster.Server) == "" {
+			return nil, fmt.Errorf("%s.server is required", field)
+		}
+		if strings.TrimSpace(cluster.KubeContext) == "" {
+			return nil, fmt.Errorf("%s.kubeContext is required", field)
+		}
+		entry := destinationConfigEntry{
+			Name:        cluster.Name,
+			Server:      cluster.Server,
+			KubeContext: cluster.KubeContext,
+		}
+		for _, key := range []destinationKey{
+			{kind: "name", value: cluster.Name},
+			{kind: "server", value: cluster.Server},
+		} {
+			if _, exists := destinationResolver.entries[key]; exists {
+				return nil, fmt.Errorf("%s duplicates %s %q", field, key.kind, key.value)
+			}
+			destinationResolver.entries[key] = entry
+		}
 	}
 
 	projector := &releaseLabelProjector{
@@ -175,6 +240,7 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 	return &conversionConfig{
 		sourceResolver:      resolver,
 		destinationResolver: destinationResolver,
+		clusters:            resource.Clusters,
 		labelProjector:      projector,
 	}, nil
 }

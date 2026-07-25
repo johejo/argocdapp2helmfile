@@ -51,7 +51,7 @@ type applicationSetResource struct {
 	} `yaml:"spec"`
 }
 
-func expandApplicationSet(node ast.Node, resolver *sourceResolver) ([]generatedApplication, error) {
+func expandApplicationSet(node ast.Node, config *conversionConfig) ([]generatedApplication, error) {
 	var appSet applicationSetResource
 	if err := yaml.NodeToValue(node, &appSet, yaml.UseOrderedMap()); err != nil {
 		return nil, fmt.Errorf("decode ApplicationSet: %w", err)
@@ -77,12 +77,17 @@ func expandApplicationSet(node ast.Node, resolver *sourceResolver) ([]generatedA
 	}
 
 	var generated []generatedApplication
+	var resolver *sourceResolver
+	if config != nil {
+		resolver = config.sourceResolver
+	}
 	for generatorIndex, rawGenerator := range appSet.Spec.Generators {
 		field := fmt.Sprintf("spec.generators[%d]", generatorIndex)
 		generator, err := parseApplicationSetGenerator(
 			rawGenerator,
 			field,
 			resolver,
+			config,
 			renderer,
 			nil,
 			0,

@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: clusters
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            environment: production
+        values:
+          suffix: '{{ .name }}-{{ .metadata.labels.tier }}'
+  template:
+    metadata:
+      name: '{{ .nameNormalized }}-{{ .metadata.labels.environment }}-{{ index .metadata.annotations "owner" }}-{{ .values.suffix }}'
+    spec:
+      project: '{{ .project }}'
+      destination:
+        server: '{{ .server }}'
+        namespace: default
+      source:
+        repoURL: https://charts.example.com
+        chart: example
+        targetRevision: 1.2.3

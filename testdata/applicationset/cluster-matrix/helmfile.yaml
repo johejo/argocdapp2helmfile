@@ -1,0 +1,22 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: dev-first
+    kubeContext: first-admin
+    chart: source/example
+    version: 1.2.3
+  - name: dev-second
+    kubeContext: second-admin
+    chart: source/example
+    version: 1.2.3
+  - name: prod-first
+    kubeContext: first-admin
+    chart: source/example
+    version: 1.2.3
+  - name: prod-second
+    kubeContext: second-admin
+    chart: source/example
+    version: 1.2.3

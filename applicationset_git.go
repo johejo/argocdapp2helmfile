@@ -35,11 +35,11 @@ type gitGeneratorOptions struct {
 	hasDirectories  bool
 	hasFiles        bool
 	pathParamPrefix string
-	values          []gitValue
+	values          []generatorValue
 	template        yaml.MapSlice
 }
 
-type gitValue struct {
+type generatorValue struct {
 	key   string
 	value string
 }
@@ -127,7 +127,7 @@ func parseGitGeneratorOptions(items yaml.MapSlice, field string) (gitGeneratorOp
 			}
 			result.pathParamPrefix = value
 		case "values":
-			values, err := parseGitValues(item.Value, field+".values")
+			values, err := parseGeneratorValues(item.Value, field+".values")
 			if err != nil {
 				return result, err
 			}
@@ -202,12 +202,12 @@ func parseGitPathPatterns(value any, field string) ([]gitPathPattern, error) {
 	return result, nil
 }
 
-func parseGitValues(value any, field string) ([]gitValue, error) {
+func parseGeneratorValues(value any, field string) ([]generatorValue, error) {
 	items, ok := value.(yaml.MapSlice)
 	if !ok {
 		return nil, fmt.Errorf("%s must be a mapping", field)
 	}
-	result := make([]gitValue, 0, len(items))
+	result := make([]generatorValue, 0, len(items))
 	for _, item := range items {
 		key, ok := item.Key.(string)
 		if !ok || strings.TrimSpace(key) == "" {
@@ -217,7 +217,7 @@ func parseGitValues(value any, field string) ([]gitValue, error) {
 		if !ok {
 			return nil, fmt.Errorf("%s.%s must be a string", field, key)
 		}
-		result = append(result, gitValue{key: key, value: value})
+		result = append(result, generatorValue{key: key, value: value})
 	}
 	return result, nil
 }
@@ -305,7 +305,7 @@ func generateGitDirectoryParams(
 		} else {
 			setLegacyGitPathParams(params, options.pathParamPrefix, pathObject)
 		}
-		if err := renderGitValues(params, parentParams, options.values, renderer); err != nil {
+		if err := renderGeneratorValues(params, parentParams, options.values, renderer); err != nil {
 			return nil, fmt.Errorf("%s.directories[%q]: values: %w", field, relative, err)
 		}
 		result = append(result, generatedGeneratorParams{
@@ -422,7 +422,7 @@ func generateGitFileParams(
 			if fileParam.index != nil {
 				origin += fmt.Sprintf("[%d]", *fileParam.index)
 			}
-			if err := renderGitValues(params, parentParams, options.values, renderer); err != nil {
+			if err := renderGeneratorValues(params, parentParams, options.values, renderer); err != nil {
 				return nil, fmt.Errorf("%s: values: %w", origin, err)
 			}
 			result = append(result, generatedGeneratorParams{
@@ -586,10 +586,10 @@ func flattenLegacyValue(output map[string]any, prefix string, value any) {
 	}
 }
 
-func renderGitValues(
+func renderGeneratorValues(
 	params map[string]any,
 	parentParams map[string]any,
-	values []gitValue,
+	values []generatorValue,
 	renderer applicationSetRenderer,
 ) error {
 	rendered := make(map[string]any, len(values))

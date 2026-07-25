@@ -1,7 +1,7 @@
 # argocdapp2helmfile
 
 `argocdapp2helmfile` converts Argo CD `Application` resources and
-`ApplicationSet` resources using supported List, Git, Matrix, and Merge generators
+`ApplicationSet` resources using supported List, Git, Cluster, Matrix, and Merge generators
 into one helmfile.
 It is an offline Unix filter: it reads a YAML stream from standard input,
 writes YAML to standard output, and never fetches charts or repositories.
@@ -261,14 +261,35 @@ See the
 [Argo CD Git generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/)
 for the upstream generator model.
 
+#### Cluster generator
+
+The Cluster generator expands the Config `clusters` snapshot in declaration order.
+It requires `--config`; an omitted or empty inventory generates no Applications.
+
+Each entry exposes `name`, `nameNormalized`, `server`, and `project`.
+An omitted `project` is an empty string.
+Go templates receive nested `metadata` and `values` maps;
+legacy templates receive flat `metadata.labels.<key>`,
+`metadata.annotations.<key>`, and `values.<key>` parameters.
+
+The `clusters.selector` matches inventory labels,
+while a sibling `selector` filters all generated parameters.
+Cluster `values` may reference cluster and Matrix parent parameters.
+Selectors use the same operators as List and Git;
+top-level template overrides are supported.
+
+`flatList: true` is not supported.
+The parameter shape follows the
+[Argo CD Cluster generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Cluster/).
+
 Matrix and Merge may contain a Matrix or Merge child one level deep.
-Nested combination generators may contain only List or Git children.
+Nested combination generators may contain only List, Git, or Cluster children.
 Only top-level generator templates are supported,
 while selectors apply at every level.
 
 #### Matrix generator
 
-Matrix requires exactly two List, Git, Matrix, or Merge children.
+Matrix requires exactly two List, Git, Cluster, Matrix, or Merge children.
 
 The first child's parameters may be used to render the second child,
 including a nested Merge definition,
@@ -288,7 +309,7 @@ for the upstream generator constraints and parameter model.
 
 #### Merge generator
 
-Merge accepts two or more List, Git, Matrix, or Merge children.
+Merge accepts two or more List, Git, Cluster, Matrix, or Merge children.
 It preserves the first child's results and order,
 then applies matching children in declaration order using `mergeKeys`.
 Maps merge recursively;
@@ -330,6 +351,15 @@ destinations:
     kubeContext: prod-admin
   - server: https://kubernetes.default.svc
     kubeContext: in-cluster
+clusters:
+  - name: production-cluster
+    server: https://production.example.com
+    kubeContext: production-admin
+    project: platform
+    labels:
+      environment: production
+    annotations:
+      example.com/owner: platform
 sources:
   - repoURL: git@github.com:example/platform-charts.git
     targetRevision: release-1
@@ -344,7 +374,7 @@ releaseLabels:
     query: .spec.project
 ```
 
-Any of `destinations`, `sources`, or `releaseLabels` may be omitted.
+Any of `destinations`, `clusters`, `sources`, or `releaseLabels` may be omitted.
 The config may be omitted when none of these features is needed.
 
 ### Destination kube contexts
@@ -357,6 +387,58 @@ The configured `kubeContext` is copied unchanged to the generated helmfile relea
 the converter does not read a kubeconfig or verify that the context exists.
 If an Application sets either field, `--config` and a matching entry are required.
 If neither is set, `kubeContext` is omitted.
+
+Every `clusters` entry is also registered as a destination under both its exact
+`name` and `server`.
+Cluster names and servers must therefore be unique across `clusters` and
+`destinations`.
+
+### Creating a cluster snapshot
+
+The converter does not access Kubernetes or refresh `clusters`.
+It does not add a local cluster or secret-type label.
+
+This example extracts the inventory without selecting the authentication `config`.
+Replace the annotation allowlist and review the output:
+
+```sh
+kubectl get secrets -n argocd \
+  -l argocd.argoproj.io/secret-type=cluster \
+  -o json |
+  jq '{
+    clusters: [
+      .items[] |
+      {
+        name: (.data.name | @base64d),
+        server: (.data.server | @base64d),
+        kubeContext: (.data.name | @base64d),
+        project: (
+          (.data.project // "") |
+          if . == "" then "" else @base64d end
+        ),
+        labels: (
+          (.metadata.labels // {}) |
+          del(."argocd.argoproj.io/secret-type")
+        ),
+        annotations: (
+          (.metadata.annotations // {}) |
+          with_entries(select(.key == "example.com/owner"))
+        )
+      }
+    ]
+  }' |
+  yq -P
+```
+
+Cluster Secrets do not contain kubeconfig context names.
+The example uses the cluster name as `kubeContext`;
+otherwise, match `server` against kubeconfig.
+Multiple contexts for one server require an explicit choice.
+
+Allowlist annotations because fields such as
+`kubectl.kubernetes.io/last-applied-configuration` may contain Secret material.
+The default local cluster may have no Cluster Secret and is therefore absent from
+the dump.
 
 ### Git charts, Kustomizations, external values, and paths
 

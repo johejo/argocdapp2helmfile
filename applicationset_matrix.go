@@ -15,6 +15,7 @@ func generateMatrixParams(
 	items yaml.MapSlice,
 	field string,
 	resolver *sourceResolver,
+	config *conversionConfig,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
 	combinationDepth int,
@@ -63,6 +64,7 @@ func generateMatrixParams(
 		firstRaw,
 		firstField,
 		resolver,
+		config,
 		renderer,
 		parentParams,
 		combinationDepth+1,
@@ -82,6 +84,7 @@ func generateMatrixParams(
 			secondRaw,
 			secondField,
 			resolver,
+			config,
 			renderer,
 			context,
 			combinationDepth+1,
@@ -151,7 +154,7 @@ func renderGeneratorValue(
 	renderer applicationSetRenderer,
 	path []string,
 ) (any, error) {
-	if isGitValuesPath(path) {
+	if isGeneratorValuesPath(path) {
 		return value, nil
 	}
 	switch typed := value.(type) {
@@ -206,6 +209,10 @@ func appendPath(path []string, element string) []string {
 	return append(result, element)
 }
 
-func isGitValuesPath(path []string) bool {
-	return len(path) >= 2 && path[len(path)-2] == "git" && path[len(path)-1] == "values"
+func isGeneratorValuesPath(path []string) bool {
+	if len(path) < 2 || path[len(path)-1] != "values" {
+		return false
+	}
+	generator := path[len(path)-2]
+	return generator == "git" || generator == "clusters"
 }

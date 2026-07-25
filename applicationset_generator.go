@@ -31,6 +31,7 @@ func parseApplicationSetGenerator(
 	raw yaml.MapSlice,
 	field string,
 	resolver *sourceResolver,
+	config *conversionConfig,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
 	combinationDepth int,
@@ -69,7 +70,8 @@ func parseApplicationSetGenerator(
 			result.selector = &selector
 			continue
 		}
-		if key != "list" && key != "git" && key != "matrix" && key != "merge" {
+		if key != "list" && key != "git" && key != "clusters" &&
+			key != "matrix" && key != "merge" {
 			return result, fmt.Errorf("%s.%s generator is not supported", field, key)
 		}
 		if generatorName != "" {
@@ -161,6 +163,23 @@ func parseApplicationSetGenerator(
 		}
 		result.params = git.params
 		result.template = git.template
+	case "clusters":
+		items, ok := generatorValue.(yaml.MapSlice)
+		if !ok {
+			return result, fmt.Errorf("%s.clusters must be a mapping", field)
+		}
+		clusters, err := generateClusterParams(
+			items,
+			field+".clusters",
+			config,
+			renderer,
+			parentParams,
+		)
+		if err != nil {
+			return result, err
+		}
+		result.params = clusters.params
+		result.template = clusters.template
 	case "matrix":
 		if combinationDepth >= 2 {
 			return result, fmt.Errorf("%s.matrix exceeds the supported nesting depth", field)
@@ -173,6 +192,7 @@ func parseApplicationSetGenerator(
 			items,
 			field+".matrix",
 			resolver,
+			config,
 			renderer,
 			parentParams,
 			combinationDepth,
@@ -194,6 +214,7 @@ func parseApplicationSetGenerator(
 			items,
 			field+".merge",
 			resolver,
+			config,
 			renderer,
 			combinationDepth,
 		)

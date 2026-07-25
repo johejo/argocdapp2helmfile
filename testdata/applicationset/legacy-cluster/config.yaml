@@ -1,0 +1,20 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+clusters:
+  - name: Prod_US
+    server: https://production.example.com
+    kubeContext: prod-admin
+    project: platform
+    labels:
+      environment: production
+      tier: frontend
+    annotations:
+      owner: platform
+  - name: Second_EU
+    server: https://second.example.com
+    kubeContext: second-admin
+    labels:
+      environment: production
+      tier: backend
+    annotations:
+      owner: operations

@@ -17,6 +17,7 @@ func generateMergeParams(
 	items yaml.MapSlice,
 	field string,
 	resolver *sourceResolver,
+	config *conversionConfig,
 	renderer applicationSetRenderer,
 	combinationDepth int,
 ) (mergeGeneratorResult, error) {
@@ -92,6 +93,7 @@ func generateMergeParams(
 			child,
 			childField,
 			resolver,
+			config,
 			renderer,
 			nil,
 			combinationDepth+1,

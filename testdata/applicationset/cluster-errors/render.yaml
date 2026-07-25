@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: clusters
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - clusters:
+        values:
+          invalid: '{{ .missing }}'
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        server: '{{ .server }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: example
+        targetRevision: 1.2.3

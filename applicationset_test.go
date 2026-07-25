@@ -328,8 +328,8 @@ func TestConvertApplicationSetErrors(t *testing.T) {
 		want  string
 	}{
 		"unsupported generator": {
-			input: strings.Replace(valid, "    - list:\n", "    - clusters: {}\n      list:\n", 1),
-			want:  "spec.generators[0].clusters generator is not supported",
+			input: strings.Replace(valid, "    - list:\n", "    - pullRequest: {}\n      list:\n", 1),
+			want:  "spec.generators[0].pullRequest generator is not supported",
 		},
 		"invalid option": {
 			input: strings.Replace(valid, "  generators:\n", "  goTemplateOptions: [missingkey=wat]\n  generators:\n", 1),

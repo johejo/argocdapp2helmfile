@@ -1,0 +1,8 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+clusters:
+  - name: production
+    server: https://production.example.com
+    kubeContext: prod-admin
+    labels:
+      enabled: true
