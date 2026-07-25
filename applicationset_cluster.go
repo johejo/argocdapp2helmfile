@@ -6,11 +6,6 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-type clusterGeneratorResult struct {
-	params   []generatedGeneratorParams
-	template yaml.MapSlice
-}
-
 type clusterGeneratorOptions struct {
 	selector *labelSelector
 	values   []generatorValue
@@ -23,8 +18,8 @@ func generateClusterParams(
 	config *conversionConfig,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
-) (clusterGeneratorResult, error) {
-	var result clusterGeneratorResult
+) (generatorResult, error) {
+	var result generatorResult
 	if config == nil {
 		return result, fmt.Errorf("%s requires --config", field)
 	}

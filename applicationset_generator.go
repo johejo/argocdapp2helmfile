@@ -21,6 +21,13 @@ type generatedGeneratorParams struct {
 	path   string
 }
 
+// generatorResult is what every generator kind returns: the parameter sets it
+// produced plus the optional per-generator Application template.
+type generatorResult struct {
+	params   []generatedGeneratorParams
+	template yaml.MapSlice
+}
+
 type applicationSetGenerator struct {
 	params   []generatedGeneratorParams
 	template yaml.MapSlice
@@ -30,7 +37,6 @@ type applicationSetGenerator struct {
 func parseApplicationSetGenerator(
 	raw yaml.MapSlice,
 	field string,
-	resolver *sourceResolver,
 	config *conversionConfig,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
@@ -134,9 +140,12 @@ func parseApplicationSetGenerator(
 			if i >= len(list.elements) {
 				elementField = fmt.Sprintf("%s.list.elementsYaml[%d]", field, i-len(list.elements))
 			}
-			params, err := normalizeStringMap(rawElement)
-			if err == nil && i < len(list.elements) {
+			var params map[string]any
+			var err error
+			if i < len(list.elements) {
 				params, err = normalizeListElement(rawElement, renderer.GoTemplate())
+			} else {
+				params, err = normalizeStringMap(rawElement)
 			}
 			if err != nil {
 				return result, fmt.Errorf("%s: must be a mapping: %w", elementField, err)
@@ -154,7 +163,7 @@ func parseApplicationSetGenerator(
 		git, err := generateGitParams(
 			items,
 			field+".git",
-			resolver,
+			config,
 			renderer,
 			parentParams,
 		)
@@ -191,7 +200,6 @@ func parseApplicationSetGenerator(
 		matrix, err := generateMatrixParams(
 			items,
 			field+".matrix",
-			resolver,
 			config,
 			renderer,
 			parentParams,
@@ -213,7 +221,6 @@ func parseApplicationSetGenerator(
 		merge, err := generateMergeParams(
 			items,
 			field+".merge",
-			resolver,
 			config,
 			renderer,
 			combinationDepth,
@@ -225,8 +232,6 @@ func parseApplicationSetGenerator(
 		result.template = merge.template
 	case "":
 		return result, fmt.Errorf("%s must contain exactly one generator", field)
-	default:
-		return result, fmt.Errorf("%s.%s generator is not supported", field, generatorName)
 	}
 	if result.selector != nil {
 		filtered := make([]generatedGeneratorParams, 0, len(result.params))

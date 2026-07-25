@@ -35,7 +35,10 @@ func newGoTemplateRenderer(options []string) (applicationSetRenderer, error) {
 		}
 		result = result.Option(option)
 	}
-	return goTemplateRenderer{template: result}, nil
+	return goTemplateRenderer{
+		template: result,
+		parsed:   make(map[string]*template.Template),
+	}, nil
 }
 
 var invalidDNSNameCharacters = regexp.MustCompile(`[^a-z0-9.-]+`)

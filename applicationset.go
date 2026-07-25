@@ -22,10 +22,7 @@ func (origin inputOrigin) String() string {
 }
 
 func (origin inputOrigin) wrap(err error) error {
-	if origin.path == "" {
-		return fmt.Errorf("document %d: %w", origin.document, err)
-	}
-	return fmt.Errorf("document %d: %s: %w", origin.document, origin.path, err)
+	return fmt.Errorf("%s: %w", origin, err)
 }
 
 type generatedApplication struct {
@@ -44,12 +41,12 @@ type applicationSetResource struct {
 	Spec struct {
 		GoTemplate        bool     `yaml:"goTemplate"`
 		GoTemplateOptions []string `yaml:"goTemplateOptions"`
-		// Retained for compatibility; selectors always apply at every depth.
-		ApplyNestedSelectors *bool           `yaml:"applyNestedSelectors"`
-		Generators           []yaml.MapSlice `yaml:"generators"`
-		Template             yaml.MapSlice   `yaml:"template"`
-		TemplatePatch        string          `yaml:"templatePatch"`
-		Strategy             yaml.MapSlice   `yaml:"strategy"`
+		// spec.applyNestedSelectors is accepted but ignored: selectors always
+		// apply at every depth.
+		Generators    []yaml.MapSlice `yaml:"generators"`
+		Template      yaml.MapSlice   `yaml:"template"`
+		TemplatePatch string          `yaml:"templatePatch"`
+		Strategy      yaml.MapSlice   `yaml:"strategy"`
 	} `yaml:"spec"`
 }
 
@@ -83,16 +80,11 @@ func expandApplicationSet(node ast.Node, config *conversionConfig) ([]generatedA
 	}
 
 	var generated []generatedApplication
-	var resolver *sourceResolver
-	if config != nil {
-		resolver = config.sourceResolver
-	}
 	for generatorIndex, rawGenerator := range appSet.Spec.Generators {
 		field := fmt.Sprintf("spec.generators[%d]", generatorIndex)
 		generator, err := parseApplicationSetGenerator(
 			rawGenerator,
 			field,
-			resolver,
 			config,
 			renderer,
 			nil,

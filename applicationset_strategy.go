@@ -158,10 +158,7 @@ func assignRollingSyncSteps(
 	strategy *rollingSyncStrategy,
 ) error {
 	for i := range applications {
-		labels := make(map[string]any, len(applications[i].application.Metadata.Labels))
-		for key, value := range applications[i].application.Metadata.Labels {
-			labels[key] = value
-		}
+		labels := stringMapToAny(applications[i].application.Metadata.Labels)
 		var matches []int
 		for stepIndex, step := range strategy.steps {
 			selector := labelSelector{matchExpressions: step.expressions}

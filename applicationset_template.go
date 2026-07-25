@@ -98,6 +98,19 @@ func renderTemplateValue(
 	params map[string]any,
 	renderer applicationSetRenderer,
 ) (any, error) {
+	return renderValueTree(value, params, renderer, nil, nil)
+}
+
+func renderValueTree(
+	value any,
+	params map[string]any,
+	renderer applicationSetRenderer,
+	path []string,
+	skip func([]string) bool,
+) (any, error) {
+	if skip != nil && skip(path) {
+		return value, nil
+	}
 	switch typed := value.(type) {
 	case string:
 		return renderer.Render(typed, params)
@@ -106,6 +119,7 @@ func renderTemplateValue(
 		keys := make(map[string]struct{}, len(typed))
 		for _, item := range typed {
 			key := item.Key
+			nextPath := path
 			if stringKey, ok := key.(string); ok {
 				renderedKey, err := renderer.Render(stringKey, params)
 				if err != nil {
@@ -116,8 +130,11 @@ func renderTemplateValue(
 				}
 				keys[renderedKey] = struct{}{}
 				key = renderedKey
+				if skip != nil {
+					nextPath = appendPath(path, stringKey)
+				}
 			}
-			renderedValue, err := renderTemplateValue(item.Value, params, renderer)
+			renderedValue, err := renderValueTree(item.Value, params, renderer, nextPath, skip)
 			if err != nil {
 				return nil, err
 			}
@@ -127,7 +144,7 @@ func renderTemplateValue(
 	case []any:
 		result := make([]any, len(typed))
 		for i, item := range typed {
-			rendered, err := renderTemplateValue(item, params, renderer)
+			rendered, err := renderValueTree(item, params, renderer, path, skip)
 			if err != nil {
 				return nil, err
 			}
@@ -137,4 +154,10 @@ func renderTemplateValue(
 	default:
 		return value, nil
 	}
+}
+
+func appendPath(path []string, element string) []string {
+	result := make([]string, len(path), len(path)+1)
+	copy(result, path)
+	return append(result, element)
 }

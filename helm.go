@@ -214,13 +214,6 @@ func decodeInlineValues(inline, field string) (any, error) {
 		}
 		return nil, fmt.Errorf("decode %s: %w", field, err)
 	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return nil, fmt.Errorf("decode additional %s document: %w", field, err)
-		}
-		return nil, fmt.Errorf("%s must contain exactly one YAML document", field)
-	}
 	return value, nil
 }
 
@@ -235,106 +228,102 @@ func requireSingleDocument(input []byte, field string) error {
 	return nil
 }
 
-func parseParameters(value any, field string) ([]helmParameter, error) {
+type namedParameter struct {
+	name        string
+	value       string
+	hasValue    bool
+	forceString bool
+}
+
+func parseNamedParameters(
+	value any,
+	field string,
+	valueKey string,
+	allowForceString bool,
+) ([]namedParameter, error) {
 	sequence, ok := value.([]any)
 	if !ok {
 		return nil, fmt.Errorf("%s must be a sequence", field)
 	}
-	parameters := make([]helmParameter, 0, len(sequence))
+	parameters := make([]namedParameter, 0, len(sequence))
 	for i, raw := range sequence {
 		items, ok := raw.(yaml.MapSlice)
 		if !ok {
 			return nil, fmt.Errorf("%s[%d] must be a mapping", field, i)
 		}
-		var parameter helmParameter
-		var hasValue bool
+		var parameter namedParameter
 		for _, item := range items {
 			key, ok := item.Key.(string)
 			if !ok {
 				return nil, fmt.Errorf("%s[%d] contains a non-string field name", field, i)
 			}
-			switch key {
-			case "name":
+			switch {
+			case key == "name":
 				name, ok := item.Value.(string)
 				if !ok {
 					return nil, fmt.Errorf("%s[%d].name must be a string", field, i)
 				}
-				parameter.Name = name
-			case "value":
+				parameter.name = name
+			case key == valueKey:
 				parameterValue, ok := item.Value.(string)
 				if !ok {
-					return nil, fmt.Errorf("%s[%d].value must be a string", field, i)
+					return nil, fmt.Errorf("%s[%d].%s must be a string", field, i, valueKey)
 				}
-				parameter.Value = parameterValue
-				hasValue = true
-			case "forceString":
+				parameter.value = parameterValue
+				parameter.hasValue = true
+			case key == "forceString" && allowForceString:
 				forceString, ok := item.Value.(bool)
 				if !ok {
 					return nil, fmt.Errorf("%s[%d].forceString must be a boolean", field, i)
 				}
-				parameter.ForceString = forceString
+				parameter.forceString = forceString
 			default:
 				if !isIgnorableEmptyYAMLOption(item.Value) {
 					return nil, fmt.Errorf("%s[%d].%s is not supported", field, i, key)
 				}
 			}
 		}
-		if strings.TrimSpace(parameter.Name) == "" {
+		if strings.TrimSpace(parameter.name) == "" {
 			return nil, fmt.Errorf("%s[%d].name is required", field, i)
-		}
-		if !hasValue {
-			return nil, fmt.Errorf("%s[%d].value is required", field, i)
 		}
 		parameters = append(parameters, parameter)
 	}
 	return parameters, nil
 }
 
-func parseFileParameters(value any, field string) ([]helmFileParameter, error) {
-	sequence, ok := value.([]any)
-	if !ok {
-		return nil, fmt.Errorf("%s must be a sequence", field)
+func parseParameters(value any, field string) ([]helmParameter, error) {
+	parsed, err := parseNamedParameters(value, field, "value", true)
+	if err != nil {
+		return nil, err
 	}
-	parameters := make([]helmFileParameter, 0, len(sequence))
-	for i, raw := range sequence {
-		items, ok := raw.(yaml.MapSlice)
-		if !ok {
-			return nil, fmt.Errorf("%s[%d] must be a mapping", field, i)
+	parameters := make([]helmParameter, 0, len(parsed))
+	for i, parameter := range parsed {
+		if !parameter.hasValue {
+			return nil, fmt.Errorf("%s[%d].value is required", field, i)
 		}
-		var parameter helmFileParameter
-		var hasPath bool
-		for _, item := range items {
-			key, ok := item.Key.(string)
-			if !ok {
-				return nil, fmt.Errorf("%s[%d] contains a non-string field name", field, i)
-			}
-			switch key {
-			case "name":
-				name, ok := item.Value.(string)
-				if !ok {
-					return nil, fmt.Errorf("%s[%d].name must be a string", field, i)
-				}
-				parameter.Name = name
-			case "path":
-				parameterPath, ok := item.Value.(string)
-				if !ok {
-					return nil, fmt.Errorf("%s[%d].path must be a string", field, i)
-				}
-				parameter.Path = parameterPath
-				hasPath = true
-			default:
-				if !isIgnorableEmptyYAMLOption(item.Value) {
-					return nil, fmt.Errorf("%s[%d].%s is not supported", field, i, key)
-				}
-			}
-		}
-		if strings.TrimSpace(parameter.Name) == "" {
-			return nil, fmt.Errorf("%s[%d].name is required", field, i)
-		}
-		if !hasPath || strings.TrimSpace(parameter.Path) == "" {
+		parameters = append(parameters, helmParameter{
+			Name:        parameter.name,
+			Value:       parameter.value,
+			ForceString: parameter.forceString,
+		})
+	}
+	return parameters, nil
+}
+
+func parseFileParameters(value any, field string) ([]helmFileParameter, error) {
+	parsed, err := parseNamedParameters(value, field, "path", false)
+	if err != nil {
+		return nil, err
+	}
+	parameters := make([]helmFileParameter, 0, len(parsed))
+	for i, parameter := range parsed {
+		if !parameter.hasValue || strings.TrimSpace(parameter.value) == "" {
 			return nil, fmt.Errorf("%s[%d].path is required", field, i)
 		}
-		parameters = append(parameters, parameter)
+		parameters = append(parameters, helmFileParameter{
+			Name: parameter.name,
+			Path: parameter.value,
+		})
 	}
 	return parameters, nil
 }

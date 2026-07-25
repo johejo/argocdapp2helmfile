@@ -7,31 +7,33 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+type repositoryRecord struct {
+	alias           string
+	passCredentials bool
+	origin          inputOrigin
+}
+
 type helmfileBuilder struct {
-	result                    helmfile
-	provenanceComments        []string
-	repositoryAliases         map[string]string
-	repositoryPassCredentials map[string]bool
-	repositoryOrigins         map[string]inputOrigin
-	usedRepositoryAliases     map[string]struct{}
-	releaseOrigins            map[string]inputOrigin
-	sharedSkipCRDs            bool
-	sharedSkipCRDsOrigin      inputOrigin
-	hasApplications           bool
-	resolver                  *sourceResolver
-	destinationResolver       *destinationResolver
-	projector                 *releaseLabelProjector
-	rollingSyncReleases       map[int]map[int][]int
+	result                helmfile
+	provenanceComments    []string
+	repositories          map[string]repositoryRecord
+	usedRepositoryAliases map[string]struct{}
+	releaseOrigins        map[string]inputOrigin
+	sharedSkipCRDs        bool
+	sharedSkipCRDsOrigin  inputOrigin
+	hasApplications       bool
+	resolver              *sourceResolver
+	destinationResolver   *destinationResolver
+	projector             *releaseLabelProjector
+	rollingSyncReleases   map[int]map[int][]int
 }
 
 func newHelmfileBuilder(config *conversionConfig) *helmfileBuilder {
 	builder := &helmfileBuilder{
-		repositoryAliases:         make(map[string]string),
-		repositoryPassCredentials: make(map[string]bool),
-		repositoryOrigins:         make(map[string]inputOrigin),
-		usedRepositoryAliases:     make(map[string]struct{}),
-		releaseOrigins:            make(map[string]inputOrigin),
-		rollingSyncReleases:       make(map[int]map[int][]int),
+		repositories:          make(map[string]repositoryRecord),
+		usedRepositoryAliases: make(map[string]struct{}),
+		releaseOrigins:        make(map[string]inputOrigin),
+		rollingSyncReleases:   make(map[int]map[int][]int),
 	}
 	if config != nil {
 		builder.resolver = config.sourceResolver
@@ -57,14 +59,6 @@ func (builder *helmfileBuilder) add(item applicationInput) error {
 	}
 
 	if previousOrigin, exists := builder.releaseOrigins[converted.release.Name]; exists {
-		if item.origin.path == "" && previousOrigin.path == "" {
-			return fmt.Errorf(
-				"document %d: release name %q duplicates document %d",
-				item.origin.document,
-				converted.release.Name,
-				previousOrigin.document,
-			)
-		}
 		return item.origin.wrap(fmt.Errorf(
 			"release name %q duplicates %s",
 			converted.release.Name,
@@ -78,14 +72,6 @@ func (builder *helmfileBuilder) add(item applicationInput) error {
 		builder.sharedSkipCRDsOrigin = item.origin
 		builder.hasApplications = true
 	} else if converted.skipCRDsApplicable && converted.skipCRDs != builder.sharedSkipCRDs {
-		if item.origin.path == "" &&
-			builder.sharedSkipCRDsOrigin.path == "" &&
-			builder.sharedSkipCRDsOrigin.document == 1 {
-			return fmt.Errorf(
-				"document %d: spec.source.helm.skipCrds conflicts with document 1",
-				item.origin.document,
-			)
-		}
 		return item.origin.wrap(fmt.Errorf(
 			"spec.source.helm.skipCrds conflicts with %s",
 			builder.sharedSkipCRDsOrigin,
@@ -93,27 +79,27 @@ func (builder *helmfileBuilder) add(item applicationInput) error {
 	}
 
 	if converted.repository != nil {
-		alias, exists := builder.repositoryAliases[converted.repository.URL]
+		record, exists := builder.repositories[converted.repository.URL]
 		if !exists {
-			alias = uniqueRepositoryAlias(
-				repositoryAlias(converted.repository.URL),
-				builder.usedRepositoryAliases,
-			)
-			builder.repositoryAliases[converted.repository.URL] = alias
-			builder.repositoryPassCredentials[converted.repository.URL] =
-				converted.repository.PassCredentials
-			builder.repositoryOrigins[converted.repository.URL] = item.origin
-			builder.usedRepositoryAliases[alias] = struct{}{}
-			converted.repository.Name = alias
+			record = repositoryRecord{
+				alias: uniqueRepositoryAlias(
+					repositoryAlias(converted.repository.URL),
+					builder.usedRepositoryAliases,
+				),
+				passCredentials: converted.repository.PassCredentials,
+				origin:          item.origin,
+			}
+			builder.repositories[converted.repository.URL] = record
+			builder.usedRepositoryAliases[record.alias] = struct{}{}
+			converted.repository.Name = record.alias
 			builder.result.Repositories = append(builder.result.Repositories, *converted.repository)
-		} else if converted.repository.PassCredentials !=
-			builder.repositoryPassCredentials[converted.repository.URL] {
+		} else if converted.repository.PassCredentials != record.passCredentials {
 			return item.origin.wrap(fmt.Errorf(
 				"spec.source.helm.passCredentials conflicts with %s",
-				builder.repositoryOrigins[converted.repository.URL],
+				record.origin,
 			))
 		}
-		converted.release.Chart = alias + "/" + converted.chart
+		converted.release.Chart = record.alias + "/" + converted.chart
 	}
 	builder.result.Releases = append(builder.result.Releases, converted.release)
 	if item.rollingStep != nil {

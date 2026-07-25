@@ -6,35 +6,35 @@ import (
 )
 
 func TestConvertApplicationSetMatrixListList(t *testing.T) {
-	testConvertApplicationSetMatrixFixture(t, "matrix-list-list", false)
+	testConvertApplicationSetFixture(t, "matrix-list-list", false)
 }
 
 func TestConvertApplicationSetMatrixGitList(t *testing.T) {
-	testConvertApplicationSetMatrixFixture(t, "matrix-git-list", true)
+	testConvertApplicationSetFixture(t, "matrix-git-list", true)
 }
 
 func TestConvertApplicationSetMatrixListGit(t *testing.T) {
-	testConvertApplicationSetMatrixFixture(t, "matrix-list-git", true)
+	testConvertApplicationSetFixture(t, "matrix-list-git", true)
 }
 
 func TestConvertApplicationSetMatrixTemplate(t *testing.T) {
-	testConvertApplicationSetMatrixFixture(t, "matrix-template", false)
+	testConvertApplicationSetFixture(t, "matrix-template", false)
 }
 
 func TestConvertApplicationSetMatrixGitGit(t *testing.T) {
-	testConvertApplicationSetMatrixFixture(t, "matrix-git-git", true)
+	testConvertApplicationSetFixture(t, "matrix-git-git", true)
 }
 
 func TestConvertApplicationSetNestedMatrix(t *testing.T) {
-	testConvertApplicationSetMatrixFixture(t, "matrix-nested", false)
+	testConvertApplicationSetFixture(t, "matrix-nested", false)
 }
 
 func TestConvertApplicationSetMatrixMerge(t *testing.T) {
-	testConvertApplicationSetMatrixFixture(t, "matrix-merge", false)
+	testConvertApplicationSetFixture(t, "matrix-merge", false)
 }
 
 func TestConvertApplicationSetLegacyMatrix(t *testing.T) {
-	testConvertApplicationSetMatrixFixture(t, "legacy-matrix", true)
+	testConvertApplicationSetFixture(t, "legacy-matrix", true)
 }
 
 func TestConvertApplicationSetNestedSelectorsAlwaysApply(t *testing.T) {
@@ -75,29 +75,6 @@ func TestConvertApplicationSetMatrixListGitMissingKeyModes(t *testing.T) {
 				t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
 			}
 		})
-	}
-}
-
-func testConvertApplicationSetMatrixFixture(t *testing.T, name string, withConfig bool) {
-	t.Helper()
-	var config *conversionConfig
-	if withConfig {
-		var err error
-		config, err = parseConfig([]byte(readTestdata(t, "applicationset/"+name+"/config.yaml")))
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	output, err := convertWithConfig(
-		[]byte(readTestdata(t, "applicationset/"+name+"/application.yaml")),
-		config,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := readTestdata(t, "applicationset/"+name+"/helmfile.yaml")
-	if string(output) != want {
-		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
 	}
 }
 

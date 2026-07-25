@@ -6,21 +6,15 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-type matrixGeneratorResult struct {
-	params   []generatedGeneratorParams
-	template yaml.MapSlice
-}
-
 func generateMatrixParams(
 	items yaml.MapSlice,
 	field string,
-	resolver *sourceResolver,
 	config *conversionConfig,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
 	combinationDepth int,
-) (matrixGeneratorResult, error) {
-	var result matrixGeneratorResult
+) (generatorResult, error) {
+	var result generatorResult
 	var children []any
 	for _, item := range items {
 		key, ok := item.Key.(string)
@@ -35,9 +29,6 @@ func generateMatrixParams(
 				return result, fmt.Errorf("%s.generators must be a sequence", field)
 			}
 		case "template":
-			if combinationDepth > 0 {
-				return result, fmt.Errorf("%s.template is not supported in a nested matrix generator", field)
-			}
 			value, ok := item.Value.(yaml.MapSlice)
 			if !ok {
 				return result, fmt.Errorf("%s.template must be a mapping", field)
@@ -63,7 +54,6 @@ func generateMatrixParams(
 	first, err := parseApplicationSetGenerator(
 		firstRaw,
 		firstField,
-		resolver,
 		config,
 		renderer,
 		parentParams,
@@ -83,7 +73,6 @@ func generateMatrixParams(
 		second, err := parseApplicationSetGenerator(
 			secondRaw,
 			secondField,
-			resolver,
 			config,
 			renderer,
 			context,
@@ -120,32 +109,13 @@ func mergeMatrixParams(first, second map[string]any) map[string]any {
 			result[key] = mergeMatrixParams(firstMap, secondMap)
 			continue
 		}
-		result[key] = cloneMatrixValue(firstValue)
+		result[key] = cloneValue(firstValue)
 	}
 	return result
 }
 
 func cloneMatrixMap(value map[string]any) map[string]any {
-	result := make(map[string]any, len(value))
-	for key, item := range value {
-		result[key] = cloneMatrixValue(item)
-	}
-	return result
-}
-
-func cloneMatrixValue(value any) any {
-	switch typed := value.(type) {
-	case map[string]any:
-		return cloneMatrixMap(typed)
-	case []any:
-		result := make([]any, len(typed))
-		for i, item := range typed {
-			result[i] = cloneMatrixValue(item)
-		}
-		return result
-	default:
-		return value
-	}
+	return cloneValue(value).(map[string]any)
 }
 
 func renderGeneratorValue(
@@ -154,59 +124,7 @@ func renderGeneratorValue(
 	renderer applicationSetRenderer,
 	path []string,
 ) (any, error) {
-	if isGeneratorValuesPath(path) {
-		return value, nil
-	}
-	switch typed := value.(type) {
-	case string:
-		return renderer.Render(typed, params)
-	case yaml.MapSlice:
-		result := make(yaml.MapSlice, 0, len(typed))
-		keys := make(map[string]struct{}, len(typed))
-		for _, item := range typed {
-			key := item.Key
-			nextPath := path
-			if stringKey, ok := key.(string); ok {
-				renderedKey, err := renderer.Render(stringKey, params)
-				if err != nil {
-					return nil, err
-				}
-				if _, exists := keys[renderedKey]; exists {
-					return nil, fmt.Errorf(
-						"templating produced duplicate mapping key %q",
-						renderedKey,
-					)
-				}
-				keys[renderedKey] = struct{}{}
-				key = renderedKey
-				nextPath = appendPath(path, stringKey)
-			}
-			renderedValue, err := renderGeneratorValue(item.Value, params, renderer, nextPath)
-			if err != nil {
-				return nil, err
-			}
-			result = append(result, yaml.MapItem{Key: key, Value: renderedValue})
-		}
-		return result, nil
-	case []any:
-		result := make([]any, len(typed))
-		for i, item := range typed {
-			rendered, err := renderGeneratorValue(item, params, renderer, path)
-			if err != nil {
-				return nil, err
-			}
-			result[i] = rendered
-		}
-		return result, nil
-	default:
-		return value, nil
-	}
-}
-
-func appendPath(path []string, element string) []string {
-	result := make([]string, len(path), len(path)+1)
-	copy(result, path)
-	return append(result, element)
+	return renderValueTree(value, params, renderer, path, isGeneratorValuesPath)
 }
 
 func isGeneratorValuesPath(path []string) bool {

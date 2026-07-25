@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -115,20 +115,57 @@ type conversionConfig struct {
 	destinationResolver *destinationResolver
 	clusters            []clusterConfigEntry
 	labelProjector      *releaseLabelProjector
+	// gitWalks memoizes repository walks for one conversion: a matrix
+	// generator re-expands its second child once per parent parameter set,
+	// and the filesystem does not change while the CLI runs.
+	gitWalks map[gitWalkKey][]string
+}
+
+type gitWalkKey struct {
+	root        string
+	directories bool
+}
+
+func (config *conversionConfig) sources() *sourceResolver {
+	if config == nil {
+		return nil
+	}
+	return config.sourceResolver
+}
+
+// walkGitCandidates returns the repository-relative candidate paths under root,
+// running walk only the first time a given root is scanned.
+func (config *conversionConfig) walkGitCandidates(
+	root string,
+	directories bool,
+	walk func() ([]string, error),
+) ([]string, error) {
+	if config == nil {
+		return walk()
+	}
+	key := gitWalkKey{root: root, directories: directories}
+	if cached, exists := config.gitWalks[key]; exists {
+		return cached, nil
+	}
+	candidates, err := walk()
+	if err != nil {
+		return nil, err
+	}
+	if config.gitWalks == nil {
+		config.gitWalks = make(map[gitWalkKey][]string)
+	}
+	config.gitWalks[key] = candidates
+	return candidates, nil
 }
 
 func parseConfig(input []byte) (*conversionConfig, error) {
+	if err := requireSingleDocument(input, "config"); err != nil {
+		return nil, err
+	}
 	decoder := yaml.NewDecoder(bytes.NewReader(input), yaml.DisallowUnknownField())
 	var resource configResource
 	if err := decoder.Decode(&resource); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return nil, errors.New("config must contain exactly one YAML document")
-		}
-		return nil, fmt.Errorf("decode additional config document: %w", err)
 	}
 	if resource.APIVersion != configAPIVersion {
 		return nil, fmt.Errorf("config apiVersion must be %q", configAPIVersion)
@@ -243,6 +280,23 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 		clusters:            resource.Clusters,
 		labelProjector:      projector,
 	}, nil
+}
+
+func validateLocalRootDirectory(root string) error {
+	if strings.Contains(root, "{{") || strings.Contains(root, "}}") {
+		return errors.New("config localRoot must not contain a template expression")
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		return fmt.Errorf("config localRoot %q: %w", root, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("config localRoot %q must not be a symlink", root)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("config localRoot %q must be a directory", root)
+	}
+	return nil
 }
 
 func (resolver *sourceResolver) resolve(source applicationSource, field string) (mappedSource, error) {

@@ -8,38 +8,19 @@ import (
 )
 
 func TestConvertApplicationSetGitDirectory(t *testing.T) {
-	testConvertApplicationSetGitFixture(t, "git-directory")
+	testConvertApplicationSetFixture(t, "git-directory", true)
 }
 
 func TestConvertApplicationSetGitFile(t *testing.T) {
-	testConvertApplicationSetGitFixture(t, "git-file")
+	testConvertApplicationSetFixture(t, "git-file", true)
 }
 
 func TestConvertApplicationSetLegacyGitDirectory(t *testing.T) {
-	testConvertApplicationSetGitFixture(t, "legacy-git-directory")
+	testConvertApplicationSetFixture(t, "legacy-git-directory", true)
 }
 
 func TestConvertApplicationSetLegacyGitFile(t *testing.T) {
-	testConvertApplicationSetGitFixture(t, "legacy-git-file")
-}
-
-func testConvertApplicationSetGitFixture(t *testing.T, name string) {
-	t.Helper()
-	config, err := parseConfig([]byte(readTestdata(t, "applicationset/"+name+"/config.yaml")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	output, err := convertWithConfig(
-		[]byte(readTestdata(t, "applicationset/"+name+"/application.yaml")),
-		config,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := readTestdata(t, "applicationset/"+name+"/helmfile.yaml")
-	if string(output) != want {
-		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
-	}
+	testConvertApplicationSetFixture(t, "legacy-git-file", true)
 }
 
 func TestApplicationSetGitGeneratorErrors(t *testing.T) {

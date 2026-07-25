@@ -36,87 +36,91 @@ const (
 	gitRepository
 )
 
-func resolveSources(app application, documentNumber int) (applicationSource, string, map[string]applicationSource, []string, error) {
+type resolvedSources struct {
+	chartSource applicationSource
+	field       string
+	refs        map[string]applicationSource
+	comments    []string
+}
+
+func resolveSources(app application, documentNumber int) (resolvedSources, error) {
 	if app.Spec.Source != nil && app.Spec.Sources != nil {
-		return applicationSource{}, "", nil, nil, errors.New("spec.source and spec.sources cannot both be set")
+		return resolvedSources{}, errors.New("spec.source and spec.sources cannot both be set")
 	}
 	if app.Spec.Source != nil {
 		if strings.TrimSpace(app.Spec.Source.Ref) != "" {
-			return applicationSource{}, "", nil, nil, errors.New("spec.source.ref is only supported in spec.sources")
+			return resolvedSources{}, errors.New("spec.source.ref is only supported in spec.sources")
 		}
-		return *app.Spec.Source, "spec.source", nil, nil, nil
+		return resolvedSources{chartSource: *app.Spec.Source, field: "spec.source"}, nil
 	}
 	if app.Spec.Sources == nil {
-		return applicationSource{}, "", nil, nil, errors.New("spec.source or spec.sources is required")
+		return resolvedSources{}, errors.New("spec.source or spec.sources is required")
 	}
 	if len(app.Spec.Sources) == 0 {
-		return applicationSource{}, "", nil, nil, errors.New("spec.sources must contain one Helm chart source")
+		return resolvedSources{}, errors.New("spec.sources must contain one Helm chart source")
 	}
 
-	refs := make(map[string]applicationSource)
-	var chartSource applicationSource
-	chartSourceField := ""
-	var comments []string
+	result := resolvedSources{refs: make(map[string]applicationSource)}
 	for i, source := range app.Spec.Sources {
 		field := fmt.Sprintf("spec.sources[%d]", i)
 		isManifestSource := strings.TrimSpace(source.Chart) != "" ||
 			strings.TrimSpace(source.Path) != "" && strings.TrimSpace(source.Ref) == "" ||
 			source.Kustomize != nil
 		if isManifestSource {
-			if chartSourceField != "" {
-				return applicationSource{}, "", nil, nil, errors.New(
+			if result.field != "" {
+				return resolvedSources{}, errors.New(
 					"spec.sources must contain exactly one manifest source",
 				)
 			}
 			if strings.TrimSpace(source.Ref) != "" {
-				return applicationSource{}, "", nil, nil, fmt.Errorf(
+				return resolvedSources{}, fmt.Errorf(
 					"%s.ref is not supported on the manifest source",
 					field,
 				)
 			}
 			if source.Kustomize == nil &&
 				(source.Directory != nil || source.Plugin != nil) {
-				return applicationSource{}, "", nil, nil, fmt.Errorf("%s contains a non-Helm source configuration", field)
+				return resolvedSources{}, fmt.Errorf("%s contains a non-Helm source configuration", field)
 			}
-			chartSource = source
-			chartSourceField = field
+			result.chartSource = source
+			result.field = field
 			continue
 		}
 
 		if strings.TrimSpace(source.Path) != "" {
-			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.path would generate manifests and is not supported", field)
+			return resolvedSources{}, fmt.Errorf("%s.path would generate manifests and is not supported", field)
 		}
 		if !isNilOrEmptyCollection(source.Helm) {
-			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.helm is only supported on the Helm chart source", field)
+			return resolvedSources{}, fmt.Errorf("%s.helm is only supported on the Helm chart source", field)
 		}
 		if source.Directory != nil || source.Kustomize != nil || source.Plugin != nil {
-			return applicationSource{}, "", nil, nil, fmt.Errorf("%s is not a values-only ref source", field)
+			return resolvedSources{}, fmt.Errorf("%s is not a values-only ref source", field)
 		}
 		if err := validateReferenceName(source.Ref); err != nil {
-			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.ref: %w", field, err)
+			return resolvedSources{}, fmt.Errorf("%s.ref: %w", field, err)
 		}
-		if _, exists := refs[source.Ref]; exists {
-			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.ref %q is duplicated", field, source.Ref)
+		if _, exists := result.refs[source.Ref]; exists {
+			return resolvedSources{}, fmt.Errorf("%s.ref %q is duplicated", field, source.Ref)
 		}
 		if strings.TrimSpace(source.RepoURL) == "" {
-			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.repoURL is required", field)
+			return resolvedSources{}, fmt.Errorf("%s.repoURL is required", field)
 		}
 		source.TargetRevision = normalizeGitTargetRevision(source.TargetRevision)
 		if strings.TrimSpace(source.TargetRevision) == "" {
-			return applicationSource{}, "", nil, nil, fmt.Errorf("%s.targetRevision is required", field)
+			return resolvedSources{}, fmt.Errorf("%s.targetRevision is required", field)
 		}
-		refs[source.Ref] = source
-		comments = append(comments, fmt.Sprintf(
+		result.refs[source.Ref] = source
+		result.comments = append(result.comments, fmt.Sprintf(
 			"document %d values source ref %q: repoURL %q, targetRevision %q",
 			documentNumber, source.Ref, source.RepoURL, source.TargetRevision,
 		))
 	}
-	if chartSourceField == "" {
-		return applicationSource{}, "", nil, nil, errors.New(
+	if result.field == "" {
+		return resolvedSources{}, errors.New(
 			"spec.sources must contain exactly one manifest source",
 		)
 	}
-	return chartSource, chartSourceField, refs, comments, nil
+	return result, nil
 }
 
 func normalizeGitTargetRevision(targetRevision string) string {
@@ -133,15 +137,22 @@ func validateReferenceName(ref string) error {
 	return nil
 }
 
-func validateRelativeValuePath(valuePath string) error {
-	if valuePath == "" {
+func validatePathCharacters(value string) error {
+	if value == "" {
 		return errors.New("path must not be empty")
 	}
-	if strings.Contains(valuePath, `\`) {
+	if strings.Contains(value, `\`) {
 		return errors.New("backslashes are not supported")
 	}
-	if strings.IndexFunc(valuePath, unicode.IsControl) >= 0 {
+	if strings.IndexFunc(value, unicode.IsControl) >= 0 {
 		return errors.New("control characters are not supported")
+	}
+	return nil
+}
+
+func validateRelativeValuePath(valuePath string) error {
+	if err := validatePathCharacters(valuePath); err != nil {
+		return err
 	}
 	if path.IsAbs(valuePath) || isWindowsAbsolutePath(valuePath) {
 		return errors.New("absolute paths are not supported")

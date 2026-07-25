@@ -16,11 +16,6 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-type gitGeneratorResult struct {
-	params   []generatedGeneratorParams
-	template yaml.MapSlice
-}
-
 type gitPathPattern struct {
 	pattern string
 	exclude bool
@@ -47,17 +42,17 @@ type generatorValue struct {
 func generateGitParams(
 	items yaml.MapSlice,
 	field string,
-	resolver *sourceResolver,
+	config *conversionConfig,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
-) (gitGeneratorResult, error) {
-	var result gitGeneratorResult
+) (generatorResult, error) {
+	var result generatorResult
 	options, err := parseGitGeneratorOptions(items, field)
 	if err != nil {
 		return result, err
 	}
 	root, err := resolveGitGeneratorRoot(
-		resolver,
+		config.sources(),
 		options.repoURL,
 		options.revision,
 		field,
@@ -70,6 +65,7 @@ func generateGitParams(
 		result.params, err = generateGitDirectoryParams(
 			root,
 			options,
+			config,
 			renderer,
 			parentParams,
 			field,
@@ -78,6 +74,7 @@ func generateGitParams(
 		result.params, err = generateGitFileParams(
 			root,
 			options,
+			config,
 			renderer,
 			parentParams,
 			field,
@@ -228,37 +225,23 @@ func resolveGitGeneratorRoot(
 	revision string,
 	field string,
 ) (string, error) {
-	if resolver == nil {
-		return "", fmt.Errorf("%s requires --config", field)
-	}
-	entry, exists := resolver.entries[sourceKey{repoURL: repoURL, targetRevision: revision}]
-	if !exists {
-		return "", fmt.Errorf(
-			"%s has no config source entry for repoURL %q at targetRevision %q",
-			field,
-			repoURL,
-			revision,
-		)
-	}
-	if strings.Contains(entry.LocalRoot, "{{") || strings.Contains(entry.LocalRoot, "}}") {
-		return "", fmt.Errorf("%s config localRoot must not contain a template expression", field)
-	}
-	info, err := os.Lstat(entry.LocalRoot)
+	mapping, err := resolver.resolve(
+		applicationSource{RepoURL: repoURL, TargetRevision: revision},
+		field,
+	)
 	if err != nil {
-		return "", fmt.Errorf("%s config localRoot %q: %w", field, entry.LocalRoot, err)
+		return "", err
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("%s config localRoot %q must not be a symlink", field, entry.LocalRoot)
+	if err := validateLocalRootDirectory(mapping.localRoot); err != nil {
+		return "", fmt.Errorf("%s %w", field, err)
 	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("%s config localRoot %q must be a directory", field, entry.LocalRoot)
-	}
-	return entry.LocalRoot, nil
+	return mapping.localRoot, nil
 }
 
 func generateGitDirectoryParams(
 	root string,
 	options gitGeneratorOptions,
+	config *conversionConfig,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
 	field string,
@@ -268,29 +251,32 @@ func generateGitDirectoryParams(
 			return nil, fmt.Errorf("%s: invalid glob %q: %w", pattern.field, pattern.pattern, err)
 		}
 	}
-	var candidates []string
-	err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		relative, err := filepath.Rel(root, current)
-		if err != nil {
-			return err
-		}
-		relative = filepath.ToSlash(relative)
-		if relative != "." && entry.IsDir() && strings.HasPrefix(entry.Name(), ".") {
-			return filepath.SkipDir
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			if entry.IsDir() {
+	candidates, err := config.walkGitCandidates(root, true, func() ([]string, error) {
+		var candidates []string
+		err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			relative, err := filepath.Rel(root, current)
+			if err != nil {
+				return err
+			}
+			relative = filepath.ToSlash(relative)
+			if relative != "." && entry.IsDir() && strings.HasPrefix(entry.Name(), ".") {
 				return filepath.SkipDir
 			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				if entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if entry.IsDir() {
+				candidates = append(candidates, relative)
+			}
 			return nil
-		}
-		if entry.IsDir() {
-			candidates = append(candidates, relative)
-		}
-		return nil
+		})
+		return candidates, err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%s: walk config localRoot: %w", field, err)
@@ -351,6 +337,7 @@ func filterGitCandidates(
 func generateGitFileParams(
 	root string,
 	options gitGeneratorOptions,
+	config *conversionConfig,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
 	field string,
@@ -360,32 +347,35 @@ func generateGitFileParams(
 			return nil, fmt.Errorf("%s: invalid glob %q", pattern.field, pattern.pattern)
 		}
 	}
-	var candidates []string
-	err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		relative, err := filepath.Rel(root, current)
-		if err != nil {
-			return err
-		}
-		relative = filepath.ToSlash(relative)
-		if relative != "." && entry.Name() == ".git" {
-			if entry.IsDir() {
-				return filepath.SkipDir
+	candidates, err := config.walkGitCandidates(root, false, func() ([]string, error) {
+		var candidates []string
+		err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			relative, err := filepath.Rel(root, current)
+			if err != nil {
+				return err
+			}
+			relative = filepath.ToSlash(relative)
+			if relative != "." && entry.Name() == ".git" {
+				if entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				if entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if relative != "." && entry.Type().IsRegular() {
+				candidates = append(candidates, relative)
 			}
 			return nil
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if relative != "." && entry.Type().IsRegular() {
-			candidates = append(candidates, relative)
-		}
-		return nil
+		})
+		return candidates, err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%s: walk config localRoot: %w", field, err)
@@ -556,34 +546,10 @@ func setLegacyGitPathParams(
 }
 
 func flattenLegacyGitFileParams(params map[string]any) map[string]any {
-	result := make(map[string]any)
-	flattenLegacyValue(result, "", params)
-	return result
-}
-
-func flattenLegacyValue(output map[string]any, prefix string, value any) {
-	switch typed := value.(type) {
-	case map[string]any:
-		for key, item := range typed {
-			next := key
-			if prefix != "" {
-				next = prefix + "." + key
-			}
-			flattenLegacyValue(output, next, item)
-		}
-	case []any:
-		for index, item := range typed {
-			next := strconv.Itoa(index)
-			if prefix != "" {
-				next = prefix + "." + next
-			}
-			flattenLegacyValue(output, next, item)
-		}
-	default:
-		if prefix != "" {
-			output[prefix] = fmt.Sprintf("%v", value)
-		}
-	}
+	flat := make(map[string]string, len(params))
+	// The input is always a mapping, so flattenParameters cannot fail.
+	_ = flattenParameters(flat, "", params)
+	return stringMapToAny(flat)
 }
 
 func renderGeneratorValues(

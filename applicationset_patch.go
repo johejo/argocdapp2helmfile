@@ -48,6 +48,12 @@ func cloneValue(value any) any {
 	switch typed := value.(type) {
 	case yaml.MapSlice:
 		return cloneMapSlice(typed)
+	case map[string]any:
+		result := make(map[string]any, len(typed))
+		for key, item := range typed {
+			result[key] = cloneValue(item)
+		}
+		return result
 	case []any:
 		result := make([]any, len(typed))
 		for i, item := range typed {
@@ -60,7 +66,16 @@ func cloneValue(value any) any {
 }
 
 func mapSliceIndex(items yaml.MapSlice, key any) int {
+	stringKey, isString := key.(string)
 	for i, item := range items {
+		if isString {
+			if itemKey, ok := item.Key.(string); ok {
+				if itemKey == stringKey {
+					return i
+				}
+				continue
+			}
+		}
 		if reflect.DeepEqual(item.Key, key) {
 			return i
 		}

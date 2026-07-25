@@ -6,42 +6,23 @@ import (
 )
 
 func TestConvertApplicationSetCluster(t *testing.T) {
-	testConvertApplicationSetClusterFixture(t, "cluster")
+	testConvertApplicationSetFixture(t, "cluster", true)
 }
 
 func TestConvertApplicationSetLegacyCluster(t *testing.T) {
-	testConvertApplicationSetClusterFixture(t, "legacy-cluster")
+	testConvertApplicationSetFixture(t, "legacy-cluster", true)
 }
 
 func TestConvertApplicationSetClusterMatrix(t *testing.T) {
-	testConvertApplicationSetClusterFixture(t, "cluster-matrix")
+	testConvertApplicationSetFixture(t, "cluster-matrix", true)
 }
 
 func TestConvertApplicationSetClusterMerge(t *testing.T) {
-	testConvertApplicationSetClusterFixture(t, "cluster-merge")
+	testConvertApplicationSetFixture(t, "cluster-merge", true)
 }
 
 func TestConvertApplicationSetClusterSelectors(t *testing.T) {
-	testConvertApplicationSetClusterFixture(t, "cluster-selectors")
-}
-
-func testConvertApplicationSetClusterFixture(t *testing.T, name string) {
-	t.Helper()
-	config, err := parseConfig([]byte(readTestdata(t, "applicationset/"+name+"/config.yaml")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	output, err := convertWithConfig(
-		[]byte(readTestdata(t, "applicationset/"+name+"/application.yaml")),
-		config,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := readTestdata(t, "applicationset/"+name+"/helmfile.yaml")
-	if string(output) != want {
-		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
-	}
+	testConvertApplicationSetFixture(t, "cluster-selectors", true)
 }
 
 func TestClusterGeneratorOmitsEmptyMetadata(t *testing.T) {

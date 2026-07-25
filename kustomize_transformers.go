@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/goccy/go-yaml"
 )
@@ -102,38 +101,21 @@ func expandKustomizeBuildEnvironment(
 	value string,
 	environment map[string]string,
 ) (string, error) {
-	var result strings.Builder
-	for i := 0; i < len(value); {
-		if value[i] != '$' {
-			result.WriteByte(value[i])
-			i++
-			continue
-		}
-		if i+1 < len(value) && value[i+1] == '$' {
-			result.WriteByte('$')
-			i += 2
-			continue
-		}
-		name, end, _ := buildEnvironmentVariable(value, i)
-		if name == "" {
-			result.WriteByte('$')
-			i++
-			continue
-		}
-		if replacement, exists := environment[name]; exists {
-			result.WriteString(replacement)
-			i = end
-			continue
-		}
-		if isDynamicArgoCDBuildEnvironmentVariable(name) {
-			return "", fmt.Errorf(
-				"build environment variable %s cannot be determined statically",
-				name,
-			)
-		}
-		i = end
-	}
-	return result.String(), nil
+	expanded, _, err := expandEnvironmentVariables(
+		value,
+		environment,
+		func(name string, _ bool) (string, error) {
+			if isDynamicArgoCDBuildEnvironmentVariable(name) {
+				return "", fmt.Errorf(
+					"build environment variable %s cannot be determined statically",
+					name,
+				)
+			}
+			// Argo CD drops unresolved variables from kustomize options.
+			return "", nil
+		},
+	)
+	return expanded, err
 }
 
 func isDynamicArgoCDBuildEnvironmentVariable(name string) bool {

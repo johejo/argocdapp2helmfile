@@ -8,7 +8,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"unicode"
 
 	"github.com/bmatcuk/doublestar/v4"
 )
@@ -134,14 +133,8 @@ func resolveSourceLocation(
 	option string,
 	parseReference bool,
 ) (mappedSource, string, error) {
-	if raw == "" {
-		return mappedSource{}, "", errors.New("path must not be empty")
-	}
-	if strings.Contains(raw, `\`) {
-		return mappedSource{}, "", errors.New("backslashes are not supported")
-	}
-	if strings.IndexFunc(raw, unicode.IsControl) >= 0 {
-		return mappedSource{}, "", errors.New("control characters are not supported")
+	if err := validatePathCharacters(raw); err != nil {
+		return mappedSource{}, "", err
 	}
 	if strings.Contains(raw, "://") {
 		return mappedSource{}, "", fmt.Errorf("remote URLs in %s are not supported", option)
@@ -208,20 +201,8 @@ func containsValueFileGlob(value string) bool {
 
 func expandValueFileGlob(entry resolvedValueFile) ([]string, error) {
 	root := entry.mapping.localRoot
-	if strings.Contains(root, "{{") || strings.Contains(root, "}}") {
-		return nil, errors.New(
-			"config localRoot must not contain a template expression for glob expansion",
-		)
-	}
-	info, err := os.Lstat(root)
-	if err != nil {
-		return nil, fmt.Errorf("config localRoot %q: %w", root, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("config localRoot %q must not be a symlink", root)
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("config localRoot %q must be a directory", root)
+	if err := validateLocalRootDirectory(root); err != nil {
+		return nil, err
 	}
 	canonicalRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -287,6 +268,27 @@ func expandBuildEnvironment(
 	value string,
 	environment map[string]string,
 ) (expanded string, leadingDollarLiteral bool, err error) {
+	return expandEnvironmentVariables(value, environment, func(name string, braced bool) (string, error) {
+		if strings.HasPrefix(name, "ARGOCD_") ||
+			name == "KUBE_VERSION" ||
+			name == "KUBE_API_VERSIONS" {
+			return "", fmt.Errorf(
+				"build environment variable %s cannot be determined statically",
+				name,
+			)
+		}
+		if braced {
+			return "${" + name + "}", nil
+		}
+		return "$" + name, nil
+	})
+}
+
+func expandEnvironmentVariables(
+	value string,
+	environment map[string]string,
+	onUnresolved func(name string, braced bool) (string, error),
+) (expanded string, leadingDollarLiteral bool, err error) {
 	var result strings.Builder
 	for i := 0; i < len(value); {
 		if value[i] != '$' {
@@ -314,20 +316,11 @@ func expandBuildEnvironment(
 			i = end
 			continue
 		}
-		if strings.HasPrefix(name, "ARGOCD_") ||
-			name == "KUBE_VERSION" ||
-			name == "KUBE_API_VERSIONS" {
-			return "", false, fmt.Errorf(
-				"build environment variable %s cannot be determined statically",
-				name,
-			)
+		replacement, err := onUnresolved(name, braced)
+		if err != nil {
+			return "", false, err
 		}
-		if braced {
-			result.WriteString("${" + name + "}")
-		} else {
-			result.WriteByte('$')
-			result.WriteString(name)
-		}
+		result.WriteString(replacement)
 		i = end
 	}
 	return result.String(), leadingDollarLiteral, nil

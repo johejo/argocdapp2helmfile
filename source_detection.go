@@ -55,11 +55,7 @@ func validateGitChartSource(
 }
 
 func inspectableSourceRoot(root string) (string, bool) {
-	if strings.Contains(root, "{{") || strings.Contains(root, "}}") {
-		return "", false
-	}
-	info, err := os.Lstat(root)
-	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+	if validateLocalRootDirectory(root) != nil {
 		return "", false
 	}
 	canonical, err := filepath.EvalSymlinks(root)

@@ -60,6 +60,29 @@ func testConfig(t *testing.T, body string) *conversionConfig {
 	return config
 }
 
+func testConvertApplicationSetFixture(t *testing.T, name string, withConfig bool) {
+	t.Helper()
+	var config *conversionConfig
+	if withConfig {
+		var err error
+		config, err = parseConfig([]byte(readTestdata(t, "applicationset/"+name+"/config.yaml")))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	output, err := convertWithConfig(
+		[]byte(readTestdata(t, "applicationset/"+name+"/application.yaml")),
+		config,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := readTestdata(t, "applicationset/"+name+"/helmfile.yaml")
+	if string(output) != want {
+		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+	}
+}
+
 func writeTestConfig(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")

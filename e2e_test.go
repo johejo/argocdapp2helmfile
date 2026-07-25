@@ -108,12 +108,7 @@ func TestE2ERender(t *testing.T) {
 
 func readE2EFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	path := filepath.Join("testdata", "e2e", name)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read fixture %q: %v", path, err)
-	}
-	return data
+	return []byte(readTestdata(t, "e2e/"+name))
 }
 
 func decodeYAMLDocuments(t *testing.T, description string, input []byte) []any {

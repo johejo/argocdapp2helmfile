@@ -18,16 +18,21 @@ type applicationSetRenderer interface {
 
 type goTemplateRenderer struct {
 	template *template.Template
+	parsed   map[string]*template.Template
 }
 
 func (renderer goTemplateRenderer) Render(input string, params map[string]any) (string, error) {
-	field, err := renderer.template.Clone()
-	if err != nil {
-		return "", fmt.Errorf("clone template: %w", err)
-	}
-	field, err = field.Parse(input)
-	if err != nil {
-		return "", fmt.Errorf("parse template %q: %w", input, err)
+	field, cached := renderer.parsed[input]
+	if !cached {
+		clone, err := renderer.template.Clone()
+		if err != nil {
+			return "", fmt.Errorf("clone template: %w", err)
+		}
+		field, err = clone.Parse(input)
+		if err != nil {
+			return "", fmt.Errorf("parse template %q: %w", input, err)
+		}
+		renderer.parsed[input] = field
 	}
 	var output bytes.Buffer
 	if err := field.Execute(&output, params); err != nil {

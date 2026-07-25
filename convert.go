@@ -149,39 +149,33 @@ func convertApplication(
 	if err != nil {
 		return converted, err
 	}
-	chartSource, chartSourceField, refs, provenance, err := resolveSources(app, documentNumber)
+	sources, err := resolveSources(app, documentNumber)
 	if err != nil {
 		return converted, err
 	}
+	chartSource := sources.chartSource
+	chartSourceField := sources.field
+	refs := sources.refs
+	provenance := sources.comments
 	isKustomization := chartSource.Kustomize != nil
 	if isKustomization {
-		if strings.TrimSpace(chartSource.Chart) != "" {
-			return converted, fmt.Errorf(
-				"%s.chart and %s.kustomize cannot both be set",
-				chartSourceField,
-				chartSourceField,
-			)
-		}
-		if chartSource.Helm != nil {
-			return converted, fmt.Errorf(
-				"%s.helm and %s.kustomize cannot both be set",
-				chartSourceField,
-				chartSourceField,
-			)
-		}
-		if chartSource.Directory != nil {
-			return converted, fmt.Errorf(
-				"%s.directory and %s.kustomize cannot both be set",
-				chartSourceField,
-				chartSourceField,
-			)
-		}
-		if chartSource.Plugin != nil {
-			return converted, fmt.Errorf(
-				"%s.plugin and %s.kustomize cannot both be set",
-				chartSourceField,
-				chartSourceField,
-			)
+		for _, conflict := range []struct {
+			name string
+			set  bool
+		}{
+			{"chart", strings.TrimSpace(chartSource.Chart) != ""},
+			{"helm", chartSource.Helm != nil},
+			{"directory", chartSource.Directory != nil},
+			{"plugin", chartSource.Plugin != nil},
+		} {
+			if conflict.set {
+				return converted, fmt.Errorf(
+					"%s.%s and %s.kustomize cannot both be set",
+					chartSourceField,
+					conflict.name,
+					chartSourceField,
+				)
+			}
 		}
 	} else if chartSource.Directory != nil || chartSource.Plugin != nil {
 		return converted, fmt.Errorf("%s contains a non-Helm source configuration", chartSourceField)
@@ -221,6 +215,14 @@ func convertApplication(
 		return converted, fmt.Errorf("%s.targetRevision is required", chartSourceField)
 	}
 
+	baseRelease := release{
+		Name:            app.Metadata.Name,
+		Namespace:       app.Spec.Destination.Namespace,
+		KubeContext:     kubeContext,
+		HistoryMax:      valueOrZero(app.Spec.RevisionHistoryLimit),
+		CreateNamespace: slices.Contains(app.Spec.SyncPolicy.SyncOptions, "CreateNamespace=true"),
+	}
+
 	if isKustomization {
 		if repositoryType != gitRepository {
 			return converted, fmt.Errorf("%s.kustomize requires a Git repository", chartSourceField)
@@ -248,24 +250,16 @@ func convertApplication(
 		if len(values) != 0 {
 			releaseValues = []any{values}
 		}
+		kustomizeRelease := baseRelease
+		kustomizeRelease.Chart = templatePath(joinSourcePath(mapping.localRoot, chartSource.Path))
+		kustomizeRelease.Values = releaseValues
+		kustomizeRelease.Transformers = transformers
 		return convertedApplication{
-			provenanceComments: append([]string{fmt.Sprintf(
-				"document %d kustomization source: repoURL %q, path %q, targetRevision %q",
-				documentNumber,
-				chartSource.RepoURL,
-				chartSource.Path,
-				chartSource.TargetRevision,
-			)}, provenance...),
-			release: release{
-				Name:            app.Metadata.Name,
-				Namespace:       app.Spec.Destination.Namespace,
-				KubeContext:     kubeContext,
-				HistoryMax:      valueOrZero(app.Spec.RevisionHistoryLimit),
-				Chart:           templatePath(joinSourcePath(mapping.localRoot, chartSource.Path)),
-				Values:          releaseValues,
-				CreateNamespace: slices.Contains(app.Spec.SyncPolicy.SyncOptions, "CreateNamespace=true"),
-				Transformers:    transformers,
-			},
+			provenanceComments: append(
+				[]string{gitSourceProvenance("kustomization", documentNumber, chartSource)},
+				provenance...,
+			),
+			release: kustomizeRelease,
 		}, nil
 	}
 
@@ -349,32 +343,28 @@ func convertApplication(
 		set = append(set, setParameter{Name: parameter.Name, File: templatePath(resolved)})
 	}
 
+	helmRelease := baseRelease
+	helmRelease.Name = releaseName
+	helmRelease.Values = values
+	helmRelease.Set = set
+	helmRelease.SetString = setString
+	helmRelease.MissingFileHandler = missingFileHandler(helm.ignoreMissingValues)
+	helmRelease.SkipSchemaValidation = helm.skipSchemaValidation
+	helmRelease.KubeVersion = helm.kubeVersion
+	helmRelease.APIVersions = helm.apiVersions
 	converted = convertedApplication{
 		chart:              chartSource.Chart,
 		skipCRDs:           helm.skipCRDs,
 		skipCRDsApplicable: true,
 		provenanceComments: provenance,
-		release: release{
-			Name:                 releaseName,
-			Namespace:            app.Spec.Destination.Namespace,
-			KubeContext:          kubeContext,
-			HistoryMax:           valueOrZero(app.Spec.RevisionHistoryLimit),
-			Values:               values,
-			Set:                  set,
-			SetString:            setString,
-			MissingFileHandler:   missingFileHandler(helm.ignoreMissingValues),
-			SkipSchemaValidation: helm.skipSchemaValidation,
-			KubeVersion:          helm.kubeVersion,
-			APIVersions:          helm.apiVersions,
-			CreateNamespace:      slices.Contains(app.Spec.SyncPolicy.SyncOptions, "CreateNamespace=true"),
-		},
+		release:            helmRelease,
 	}
 	if repositoryType == gitRepository {
 		converted.release.Chart = templatePath(joinSourcePath(chartMapping.localRoot, chartRoot))
-		converted.provenanceComments = append([]string{fmt.Sprintf(
-			"document %d chart source: repoURL %q, path %q, targetRevision %q",
-			documentNumber, chartSource.RepoURL, chartSource.Path, chartSource.TargetRevision,
-		)}, converted.provenanceComments...)
+		converted.provenanceComments = append(
+			[]string{gitSourceProvenance("chart", documentNumber, chartSource)},
+			converted.provenanceComments...,
+		)
 	} else {
 		repository := repository{
 			URL:             chartSource.RepoURL,
@@ -385,6 +375,13 @@ func convertApplication(
 		converted.release.Version = chartSource.TargetRevision
 	}
 	return converted, nil
+}
+
+func gitSourceProvenance(kind string, documentNumber int, source applicationSource) string {
+	return fmt.Sprintf(
+		"document %d %s source: repoURL %q, path %q, targetRevision %q",
+		documentNumber, kind, source.RepoURL, source.Path, source.TargetRevision,
+	)
 }
 
 func valueOrZero(value *int) int {

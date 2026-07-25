@@ -8,20 +8,14 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-type mergeGeneratorResult struct {
-	params   []generatedGeneratorParams
-	template yaml.MapSlice
-}
-
 func generateMergeParams(
 	items yaml.MapSlice,
 	field string,
-	resolver *sourceResolver,
 	config *conversionConfig,
 	renderer applicationSetRenderer,
 	combinationDepth int,
-) (mergeGeneratorResult, error) {
-	var result mergeGeneratorResult
+) (generatorResult, error) {
+	var result generatorResult
 	var mergeKeys []string
 	var children []any
 	for _, item := range items {
@@ -63,9 +57,6 @@ func generateMergeParams(
 				return result, fmt.Errorf("%s.generators must be a sequence", field)
 			}
 		case "template":
-			if combinationDepth > 0 {
-				return result, fmt.Errorf("%s.template is not supported in a nested merge generator", field)
-			}
 			value, ok := item.Value.(yaml.MapSlice)
 			if !ok {
 				return result, fmt.Errorf("%s.template must be a mapping", field)
@@ -92,7 +83,6 @@ func generateMergeParams(
 		generated, err := parseApplicationSetGenerator(
 			child,
 			childField,
-			resolver,
 			config,
 			renderer,
 			nil,

@@ -6,44 +6,19 @@ import (
 )
 
 func TestConvertApplicationSetMergeListList(t *testing.T) {
-	testConvertApplicationSetMergeFixture(t, "merge-list-list", false)
+	testConvertApplicationSetFixture(t, "merge-list-list", false)
 }
 
 func TestConvertApplicationSetMergeListGit(t *testing.T) {
-	testConvertApplicationSetMergeFixture(t, "merge-list-git", true)
+	testConvertApplicationSetFixture(t, "merge-list-git", true)
 }
 
 func TestConvertApplicationSetLegacyMergeDottedKey(t *testing.T) {
-	testConvertApplicationSetMergeFixture(t, "legacy-merge", false)
+	testConvertApplicationSetFixture(t, "legacy-merge", false)
 }
 
 func TestConvertApplicationSetMergeNestedCombinations(t *testing.T) {
-	testConvertApplicationSetMergeFixture(t, "merge-nested-combinations", false)
-}
-
-func testConvertApplicationSetMergeFixture(t *testing.T, name string, withConfig bool) {
-	t.Helper()
-	var config *conversionConfig
-	if withConfig {
-		var err error
-		config, err = parseConfig([]byte(
-			readTestdata(t, "applicationset/"+name+"/config.yaml"),
-		))
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	output, err := convertWithConfig(
-		[]byte(readTestdata(t, "applicationset/"+name+"/application.yaml")),
-		config,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := readTestdata(t, "applicationset/"+name+"/helmfile.yaml")
-	if string(output) != want {
-		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
-	}
+	testConvertApplicationSetFixture(t, "merge-nested-combinations", false)
 }
 
 func TestApplicationSetMergeErrors(t *testing.T) {
