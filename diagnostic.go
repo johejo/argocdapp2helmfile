@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -203,7 +205,7 @@ func integerValue(value any) (int64, bool) {
 	case int64:
 		return typed, true
 	case uint:
-		return int64(typed), uint64(typed) <= uint64(^uint64(0)>>1)
+		return int64(typed), uint64(typed) <= math.MaxInt64
 	case uint8:
 		return int64(typed), true
 	case uint16:
@@ -211,7 +213,7 @@ func integerValue(value any) (int64, bool) {
 	case uint32:
 		return int64(typed), true
 	case uint64:
-		return int64(typed), typed <= uint64(^uint64(0)>>1)
+		return int64(typed), typed <= math.MaxInt64
 	default:
 		return 0, false
 	}
@@ -370,15 +372,7 @@ func mappingHasValues(value any) bool {
 
 func hasCreateNamespace(syncPolicy map[string]any) bool {
 	raw, ok := syncPolicy["syncOptions"].([]any)
-	if !ok {
-		return false
-	}
-	for _, option := range raw {
-		if option == "CreateNamespace=true" {
-			return true
-		}
-	}
-	return false
+	return ok && slices.Contains(raw, any("CreateNamespace=true"))
 }
 
 func (audit *applicationAudit) ignoreDifferences(spec map[string]any) {

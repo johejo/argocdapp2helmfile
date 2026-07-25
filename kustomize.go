@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -26,12 +27,8 @@ type kustomizeMap yaml.MapSlice
 type nonStringYAMLKey struct{}
 
 func (mapping *kustomizeMap) UnmarshalYAML(node ast.Node) error {
-	input, err := node.MarshalYAML()
-	if err != nil {
-		return err
-	}
 	var ordered yaml.MapSlice
-	if err := yaml.UnmarshalWithOptions(input, &ordered, yaml.UseOrderedMap()); err != nil {
+	if err := yaml.NodeToValue(node, &ordered, yaml.UseOrderedMap()); err != nil {
 		return err
 	}
 	root, ok := node.(*ast.MappingNode)
@@ -76,93 +73,59 @@ type kustomizeImage struct {
 	Digest  string `yaml:"digest,omitempty"`
 }
 
+func kustomizeOptionSetter[T any](
+	read func(any, string) (T, error),
+	target *T,
+) func(any, string) error {
+	return func(value any, field string) error {
+		parsed, err := read(value, field)
+		if err != nil {
+			return err
+		}
+		*target = parsed
+		return nil
+	}
+}
+
 func parseKustomizeOptions(items kustomizeMap, field string) (kustomizeOptions, error) {
 	var result kustomizeOptions
+	// Accepted for validation only: helmfile has no equivalent setting.
+	var ignored bool
+	setters := map[string]func(any, string) error{
+		"namePrefix": kustomizeOptionSetter(
+			readOptionalStringYAMLOption, &result.namePrefix),
+		"nameSuffix": kustomizeOptionSetter(
+			readOptionalStringYAMLOption, &result.nameSuffix),
+		"namespace": kustomizeOptionSetter(
+			readOptionalStringYAMLOption, &result.namespace),
+		"images": kustomizeOptionSetter(
+			parseKustomizeImages, &result.images),
+		"commonLabels": kustomizeOptionSetter(
+			readOptionalStringMapYAMLOption, &result.commonLabels),
+		"labelWithoutSelector": kustomizeOptionSetter(
+			readOptionalBooleanYAMLOption, &result.labelWithoutSelector),
+		"labelIncludeTemplates": kustomizeOptionSetter(
+			readOptionalBooleanYAMLOption, &result.labelIncludeTemplates),
+		"commonAnnotations": kustomizeOptionSetter(
+			readOptionalStringMapYAMLOption, &result.commonAnnotations),
+		"commonAnnotationsEnvsubst": kustomizeOptionSetter(
+			readOptionalBooleanYAMLOption, &result.commonAnnotationsEnvsubst),
+		"forceCommonLabels": kustomizeOptionSetter(
+			readOptionalBooleanYAMLOption, &ignored),
+		"forceCommonAnnotations": kustomizeOptionSetter(
+			readOptionalBooleanYAMLOption, &ignored),
+	}
 	for _, item := range items {
 		key, ok := item.Key.(string)
 		if !ok {
 			return result, fmt.Errorf("%s contains a non-string option name", field)
 		}
-		switch key {
-		case "namePrefix":
-			value, err := readOptionalStringYAMLOption(item.Value, field+".namePrefix")
-			if err != nil {
-				return result, err
-			}
-			result.namePrefix = value
-		case "nameSuffix":
-			value, err := readOptionalStringYAMLOption(item.Value, field+".nameSuffix")
-			if err != nil {
-				return result, err
-			}
-			result.nameSuffix = value
-		case "namespace":
-			value, err := readOptionalStringYAMLOption(item.Value, field+".namespace")
-			if err != nil {
-				return result, err
-			}
-			result.namespace = value
-		case "images":
-			images, err := parseKustomizeImages(item.Value, field+".images")
-			if err != nil {
-				return result, err
-			}
-			result.images = images
-		case "commonLabels":
-			value, err := readOptionalStringMapYAMLOption(
-				item.Value,
-				field+".commonLabels",
-			)
-			if err != nil {
-				return result, err
-			}
-			result.commonLabels = value
-		case "labelWithoutSelector":
-			value, err := readOptionalBooleanYAMLOption(
-				item.Value,
-				field+".labelWithoutSelector",
-			)
-			if err != nil {
-				return result, err
-			}
-			result.labelWithoutSelector = value
-		case "labelIncludeTemplates":
-			value, err := readOptionalBooleanYAMLOption(
-				item.Value,
-				field+".labelIncludeTemplates",
-			)
-			if err != nil {
-				return result, err
-			}
-			result.labelIncludeTemplates = value
-		case "commonAnnotations":
-			value, err := readOptionalStringMapYAMLOption(
-				item.Value,
-				field+".commonAnnotations",
-			)
-			if err != nil {
-				return result, err
-			}
-			result.commonAnnotations = value
-		case "commonAnnotationsEnvsubst":
-			value, err := readOptionalBooleanYAMLOption(
-				item.Value,
-				field+".commonAnnotationsEnvsubst",
-			)
-			if err != nil {
-				return result, err
-			}
-			result.commonAnnotationsEnvsubst = value
-		case "forceCommonLabels", "forceCommonAnnotations":
-			_, err := readOptionalBooleanYAMLOption(
-				item.Value,
-				field+"."+key,
-			)
-			if err != nil {
-				return result, err
-			}
-		default:
+		set, supported := setters[key]
+		if !supported {
 			return result, fmt.Errorf("%s.%s is not supported", field, key)
+		}
+		if err := set(item.Value, field+"."+key); err != nil {
+			return result, err
 		}
 	}
 	if result.labelIncludeTemplates && !result.labelWithoutSelector {
@@ -239,14 +202,14 @@ func parseKustomizeImages(value any, field string) ([]kustomizeImage, error) {
 
 func parseKustomizeImage(value string) (kustomizeImage, error) {
 	if value == "" {
-		return kustomizeImage{}, fmt.Errorf("must not be empty")
+		return kustomizeImage{}, errors.New("must not be empty")
 	}
 	if strings.IndexFunc(value, unicode.IsSpace) >= 0 ||
 		strings.IndexFunc(value, unicode.IsControl) >= 0 {
-		return kustomizeImage{}, fmt.Errorf("whitespace and control characters are not supported")
+		return kustomizeImage{}, errors.New("whitespace and control characters are not supported")
 	}
 	if strings.Count(value, "=") > 1 {
-		return kustomizeImage{}, fmt.Errorf("must contain at most one '='")
+		return kustomizeImage{}, errors.New("must contain at most one '='")
 	}
 
 	name := ""
@@ -258,7 +221,7 @@ func parseKustomizeImage(value string) (kustomizeImage, error) {
 			return kustomizeImage{}, fmt.Errorf("old image name: %w", err)
 		}
 		if replacement == "" {
-			return kustomizeImage{}, fmt.Errorf("replacement image must not be empty")
+			return kustomizeImage{}, errors.New("replacement image must not be empty")
 		}
 	}
 
@@ -280,7 +243,7 @@ func parseKustomizeImage(value string) (kustomizeImage, error) {
 
 func splitKustomizeImageReplacement(value string) (string, string, string, error) {
 	if strings.Count(value, "@") > 1 {
-		return "", "", "", fmt.Errorf("must contain at most one '@'")
+		return "", "", "", errors.New("must contain at most one '@'")
 	}
 	if name, digest, found := strings.Cut(value, "@"); found {
 		if err := validateKustomizeImageName(name); err != nil {
@@ -288,10 +251,10 @@ func splitKustomizeImageReplacement(value string) (string, string, string, error
 		}
 		if digest == "" || !strings.Contains(digest, ":") ||
 			strings.HasPrefix(digest, ":") || strings.HasSuffix(digest, ":") {
-			return "", "", "", fmt.Errorf("digest must use algorithm:value form")
+			return "", "", "", errors.New("digest must use algorithm:value form")
 		}
 		if strings.ContainsAny(digest, "=/@") {
-			return "", "", "", fmt.Errorf("digest contains an unsupported character")
+			return "", "", "", errors.New("digest contains an unsupported character")
 		}
 		return name, "", digest, nil
 	}
@@ -304,10 +267,10 @@ func splitKustomizeImageReplacement(value string) (string, string, string, error
 		name = value[:lastColon]
 		tag = value[lastColon+1:]
 		if tag == "" {
-			return "", "", "", fmt.Errorf("tag must not be empty")
+			return "", "", "", errors.New("tag must not be empty")
 		}
 		if strings.ContainsAny(tag, "=/:@") {
-			return "", "", "", fmt.Errorf("tag contains an unsupported character")
+			return "", "", "", errors.New("tag contains an unsupported character")
 		}
 	}
 	if err := validateKustomizeImageName(name); err != nil {
@@ -318,18 +281,18 @@ func splitKustomizeImageReplacement(value string) (string, string, string, error
 
 func validateKustomizeImageName(value string) error {
 	if value == "" {
-		return fmt.Errorf("must not be empty")
+		return errors.New("must not be empty")
 	}
 	if strings.ContainsAny(value, "=@") {
-		return fmt.Errorf("contains an unsupported character")
+		return errors.New("contains an unsupported character")
 	}
 	lastSlash := strings.LastIndexByte(value, '/')
 	if strings.LastIndexByte(value, ':') > lastSlash {
-		return fmt.Errorf("contains a tag where only an image name is allowed")
+		return errors.New("contains a tag where only an image name is allowed")
 	}
 	for segment := range strings.SplitSeq(value, "/") {
 		if segment == "" || segment == "." || segment == ".." {
-			return fmt.Errorf("must contain non-empty image name segments")
+			return errors.New("must contain non-empty image name segments")
 		}
 	}
 	return nil

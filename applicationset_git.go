@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -252,31 +253,14 @@ func generateGitDirectoryParams(
 		}
 	}
 	candidates, err := config.walkGitCandidates(root, true, func() ([]string, error) {
-		var candidates []string
-		err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			relative, err := filepath.Rel(root, current)
-			if err != nil {
-				return err
-			}
-			relative = filepath.ToSlash(relative)
-			if relative != "." && entry.IsDir() && strings.HasPrefix(entry.Name(), ".") {
-				return filepath.SkipDir
-			}
-			if entry.Type()&os.ModeSymlink != 0 {
-				if entry.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if entry.IsDir() {
-				candidates = append(candidates, relative)
-			}
-			return nil
-		})
-		return candidates, err
+		return walkGitEntries(
+			root,
+			func(relative string, entry fs.DirEntry) bool {
+				return relative != "." && entry.IsDir() &&
+					strings.HasPrefix(entry.Name(), ".")
+			},
+			func(_ string, entry fs.DirEntry) bool { return entry.IsDir() },
+		)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%s: walk config localRoot: %w", field, err)
@@ -302,6 +286,37 @@ func generateGitDirectoryParams(
 	return result, nil
 }
 
+// walkGitEntries lists root-relative slash paths. Skipped entries and symlinks
+// prune the subtree below them.
+func walkGitEntries(
+	root string,
+	skip func(relative string, entry fs.DirEntry) bool,
+	include func(relative string, entry fs.DirEntry) bool,
+) ([]string, error) {
+	var candidates []string
+	err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(root, current)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		if skip(relative, entry) || entry.Type()&os.ModeSymlink != 0 {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if include(relative, entry) {
+			candidates = append(candidates, relative)
+		}
+		return nil
+	})
+	return candidates, err
+}
+
 type gitMatcher func(pattern, name string) (bool, error)
 
 func filterGitCandidates(
@@ -325,12 +340,11 @@ func filterGitCandidates(
 		}
 	}
 	result := make([]string, 0, len(selected))
-	for candidate := range selected {
+	for _, candidate := range slices.Sorted(maps.Keys(selected)) {
 		if _, skip := excluded[candidate]; !skip {
 			result = append(result, candidate)
 		}
 	}
-	sort.Strings(result)
 	return result
 }
 
@@ -348,34 +362,15 @@ func generateGitFileParams(
 		}
 	}
 	candidates, err := config.walkGitCandidates(root, false, func() ([]string, error) {
-		var candidates []string
-		err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			relative, err := filepath.Rel(root, current)
-			if err != nil {
-				return err
-			}
-			relative = filepath.ToSlash(relative)
-			if relative != "." && entry.Name() == ".git" {
-				if entry.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if entry.Type()&os.ModeSymlink != 0 {
-				if entry.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if relative != "." && entry.Type().IsRegular() {
-				candidates = append(candidates, relative)
-			}
-			return nil
-		})
-		return candidates, err
+		return walkGitEntries(
+			root,
+			func(relative string, entry fs.DirEntry) bool {
+				return relative != "." && entry.Name() == ".git"
+			},
+			func(relative string, entry fs.DirEntry) bool {
+				return relative != "." && entry.Type().IsRegular()
+			},
+		)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%s: walk config localRoot: %w", field, err)

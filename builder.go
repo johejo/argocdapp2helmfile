@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/goccy/go-yaml"
 )
@@ -19,9 +21,8 @@ type helmfileBuilder struct {
 	repositories          map[string]repositoryRecord
 	usedRepositoryAliases map[string]struct{}
 	releaseOrigins        map[string]inputOrigin
-	sharedSkipCRDs        bool
+	sharedSkipCRDs        *bool
 	sharedSkipCRDsOrigin  inputOrigin
-	hasApplications       bool
 	resolver              *sourceResolver
 	destinationResolver   *destinationResolver
 	projector             *releaseLabelProjector
@@ -67,15 +68,17 @@ func (builder *helmfileBuilder) add(item applicationInput) error {
 	}
 	builder.releaseOrigins[converted.release.Name] = item.origin
 
-	if converted.skipCRDsApplicable && !builder.hasApplications {
-		builder.sharedSkipCRDs = converted.skipCRDs
-		builder.sharedSkipCRDsOrigin = item.origin
-		builder.hasApplications = true
-	} else if converted.skipCRDsApplicable && converted.skipCRDs != builder.sharedSkipCRDs {
-		return item.origin.wrap(fmt.Errorf(
-			"spec.source.helm.skipCrds conflicts with %s",
-			builder.sharedSkipCRDsOrigin,
-		))
+	if converted.skipCRDs != nil {
+		switch {
+		case builder.sharedSkipCRDs == nil:
+			builder.sharedSkipCRDs = converted.skipCRDs
+			builder.sharedSkipCRDsOrigin = item.origin
+		case *converted.skipCRDs != *builder.sharedSkipCRDs:
+			return item.origin.wrap(fmt.Errorf(
+				"spec.source.helm.skipCrds conflicts with %s",
+				builder.sharedSkipCRDsOrigin,
+			))
+		}
 	}
 
 	if converted.repository != nil {
@@ -121,7 +124,7 @@ func (builder *helmfileBuilder) add(item applicationInput) error {
 func (builder *helmfileBuilder) finalize() ([]byte, error) {
 	builder.addRollingSyncNeeds()
 	builder.result.HelmDefaults = &helmDefaults{
-		SkipCRDs:        builder.sharedSkipCRDs,
+		SkipCRDs:        builder.sharedSkipCRDs != nil && *builder.sharedSkipCRDs,
 		CreateNamespace: false,
 	}
 
@@ -142,12 +145,8 @@ func (builder *helmfileBuilder) finalize() ([]byte, error) {
 func (builder *helmfileBuilder) addRollingSyncNeeds() {
 	for _, steps := range builder.rollingSyncReleases {
 		var previous []int
-		highest := highestRollingSyncStep(steps)
-		for step := 0; step <= highest; step++ {
-			current, exists := steps[step]
-			if !exists {
-				continue
-			}
+		for _, step := range slices.Sorted(maps.Keys(steps)) {
+			current := steps[step]
 			if len(current) == 0 {
 				continue
 			}
@@ -157,22 +156,12 @@ func (builder *helmfileBuilder) addRollingSyncNeeds() {
 					needs = append(needs, releaseNeedsID(builder.result.Releases[index]))
 				}
 				for _, index := range current {
-					builder.result.Releases[index].Needs = append([]string(nil), needs...)
+					builder.result.Releases[index].Needs = slices.Clone(needs)
 				}
 			}
 			previous = current
 		}
 	}
-}
-
-func highestRollingSyncStep(steps map[int][]int) int {
-	highest := -1
-	for step := range steps {
-		if step > highest {
-			highest = step
-		}
-	}
-	return highest
 }
 
 func releaseNeedsID(item release) string {

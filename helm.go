@@ -1,13 +1,12 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"reflect"
 	"strings"
 
 	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
 	"github.com/goccy/go-yaml/parser"
 	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
 )
@@ -87,6 +86,8 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 			result.skipCRDs = value.(bool)
 		case "passCredentials":
 			result.passCredentials = value.(bool)
+		default:
+			panic("unhandled Helm option: " + entry.HelmOption)
 		}
 	}
 	return result, nil
@@ -176,6 +177,10 @@ func readOptionalStringSequenceYAMLOption(value any, field string) ([]string, er
 	if isIgnorableEmptyYAMLOption(value) {
 		return nil, nil
 	}
+	return readStringSequenceYAMLOption(value, field)
+}
+
+func readStringSequenceYAMLOption(value any, field string) ([]string, error) {
 	sequence, ok := value.([]any)
 	if !ok {
 		return nil, fmt.Errorf("%s must be a sequence", field)
@@ -195,29 +200,31 @@ func decodeInlineValues(inline, field string) (any, error) {
 	if strings.TrimSpace(inline) == "" {
 		return nil, nil
 	}
-	if err := requireSingleDocument([]byte(inline), field); err != nil {
+	return decodeSingleDocument([]byte(inline), field)
+}
+
+// singleDocumentBody returns nil when the document holds nothing but comments.
+func singleDocumentBody(input []byte, field string) (ast.Node, error) {
+	file, err := parser.ParseBytes(input, 0)
+	if err != nil {
+		return nil, fmt.Errorf("decode %s: %w", field, err)
+	}
+	if len(file.Docs) != 1 {
+		return nil, fmt.Errorf("%s must contain exactly one YAML document", field)
+	}
+	return file.Docs[0].Body, nil
+}
+
+func decodeSingleDocument(input []byte, field string) (any, error) {
+	body, err := singleDocumentBody(input, field)
+	if err != nil || body == nil {
 		return nil, err
 	}
-	decoder := yaml.NewDecoder(strings.NewReader(inline), yaml.UseOrderedMap())
 	var value any
-	if err := decoder.Decode(&value); err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil, nil
-		}
+	if err := yaml.NodeToValue(body, &value, yaml.UseOrderedMap()); err != nil {
 		return nil, fmt.Errorf("decode %s: %w", field, err)
 	}
 	return value, nil
-}
-
-func requireSingleDocument(input []byte, field string) error {
-	file, err := parser.ParseBytes(input, 0)
-	if err != nil {
-		return fmt.Errorf("decode %s: %w", field, err)
-	}
-	if len(file.Docs) != 1 {
-		return fmt.Errorf("%s must contain exactly one YAML document", field)
-	}
-	return nil
 }
 
 type namedParameter struct {

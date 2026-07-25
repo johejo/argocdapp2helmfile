@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 var kustomizationFileNames = []string{
@@ -55,14 +54,7 @@ func validateGitChartSource(
 }
 
 func inspectableSourceRoot(root string) (string, bool) {
-	if validateLocalRootDirectory(root) != nil {
-		return "", false
-	}
-	canonical, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return "", false
-	}
-	canonical, err = filepath.Abs(canonical)
+	canonical, err := canonicalLocalRoot(root)
 	if err != nil {
 		return "", false
 	}
@@ -91,18 +83,8 @@ func inspectableRegularFile(root, candidate string) (bool, bool) {
 }
 
 func inspectablePathWithinRoot(root, candidate string) (string, bool) {
-	canonical, err := filepath.EvalSymlinks(candidate)
-	if err != nil {
-		return "", false
-	}
-	canonical, err = filepath.Abs(canonical)
-	if err != nil {
-		return "", false
-	}
-	relative, err := filepath.Rel(root, canonical)
-	if err != nil ||
-		relative == ".." ||
-		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+	canonical, inside, err := pathWithinRoot(root, candidate)
+	if err != nil || !inside {
 		return "", false
 	}
 	return canonical, true

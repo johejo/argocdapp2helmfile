@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"reflect"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -154,7 +154,7 @@ func (config *conversionConfig) walkGitCandidates(
 }
 
 func parseConfig(input []byte) (*conversionConfig, error) {
-	if err := requireSingleDocument(input, "config"); err != nil {
+	if _, err := singleDocumentBody(input, "config"); err != nil {
 		return nil, err
 	}
 	decoder := yaml.NewDecoder(bytes.NewReader(input), yaml.DisallowUnknownField())
@@ -294,6 +294,42 @@ func validateLocalRootDirectory(root string) error {
 	return nil
 }
 
+func canonicalLocalRoot(root string) (string, error) {
+	if err := validateLocalRootDirectory(root); err != nil {
+		return "", err
+	}
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("evaluate config localRoot %q: %w", root, err)
+	}
+	canonical, err = filepath.Abs(canonical)
+	if err != nil {
+		return "", fmt.Errorf("make config localRoot %q absolute: %w", root, err)
+	}
+	return canonical, nil
+}
+
+// pathWithinRoot keeps symlinks from reaching outside root, which must already
+// be canonical.
+func pathWithinRoot(root, candidate string) (string, bool, error) {
+	canonical, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return "", false, err
+	}
+	canonical, err = filepath.Abs(canonical)
+	if err != nil {
+		return "", false, err
+	}
+	relative, err := filepath.Rel(root, canonical)
+	if err != nil {
+		return "", false, err
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return canonical, false, nil
+	}
+	return canonical, true, nil
+}
+
 func (resolver *sourceResolver) resolve(source applicationSource, field string) (mappedSource, error) {
 	if resolver == nil {
 		return mappedSource{}, fmt.Errorf("%s requires --config", field)
@@ -377,17 +413,12 @@ func releaseLabelValue(value any) (string, error) {
 		return value.String(), nil
 	case float64:
 		return strconv.FormatFloat(value, 'g', -1, 64), nil
+	case int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprint(value), nil
+	case float32:
+		return strconv.FormatFloat(float64(value), 'g', -1, 32), nil
 	default:
-		kind := reflect.TypeOf(value).Kind()
-		switch kind {
-		case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			return fmt.Sprint(value), nil
-		case reflect.Float32:
-			return strconv.FormatFloat(float64(value.(float32)), 'g', -1, 32), nil
-		default:
-			return "", fmt.Errorf("must be a string, boolean, or number, got %T", value)
-		}
+		return "", fmt.Errorf("must be a string, boolean, or number, got %T", value)
 	}
 }
 

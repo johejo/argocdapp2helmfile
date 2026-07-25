@@ -45,15 +45,29 @@ func (goTemplateRenderer) GoTemplate() bool {
 	return true
 }
 
-type legacyTemplateRenderer struct{}
+type legacyTemplateRenderer struct {
+	parsed map[string]*fasttemplate.Template
+}
 
-func (legacyTemplateRenderer) Render(input string, params map[string]any) (string, error) {
-	if err := validateLegacyDelimiters(input); err != nil {
-		return "", fmt.Errorf("parse template %q: %w", input, err)
-	}
-	field, err := fasttemplate.NewTemplate(input, "{{", "}}")
-	if err != nil {
-		return "", fmt.Errorf("parse template %q: %w", input, err)
+func newLegacyTemplateRenderer() legacyTemplateRenderer {
+	return legacyTemplateRenderer{parsed: make(map[string]*fasttemplate.Template)}
+}
+
+func (renderer legacyTemplateRenderer) Render(
+	input string,
+	params map[string]any,
+) (string, error) {
+	field, cached := renderer.parsed[input]
+	if !cached {
+		if err := validateLegacyDelimiters(input); err != nil {
+			return "", fmt.Errorf("parse template %q: %w", input, err)
+		}
+		var err error
+		field, err = fasttemplate.NewTemplate(input, "{{", "}}")
+		if err != nil {
+			return "", fmt.Errorf("parse template %q: %w", input, err)
+		}
+		renderer.parsed[input] = field
 	}
 	output, err := field.ExecuteFuncStringWithErr(func(writer io.Writer, tag string) (int, error) {
 		key := strings.TrimSpace(tag)
@@ -105,5 +119,5 @@ func newApplicationSetRenderer(
 	if goTemplate {
 		return newGoTemplateRenderer(options)
 	}
-	return legacyTemplateRenderer{}, nil
+	return newLegacyTemplateRenderer(), nil
 }

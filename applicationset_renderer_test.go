@@ -8,7 +8,7 @@ import (
 )
 
 func TestLegacyTemplateRenderer(t *testing.T) {
-	renderer := legacyTemplateRenderer{}
+	renderer := newLegacyTemplateRenderer()
 	params := map[string]any{
 		"key":        "value",
 		"Key":        "upper",
@@ -62,7 +62,7 @@ func TestLegacyTemplateRenderer(t *testing.T) {
 }
 
 func TestLegacyTemplateRendererRejectsInvalidDelimiters(t *testing.T) {
-	renderer := legacyTemplateRenderer{}
+	renderer := newLegacyTemplateRenderer()
 	for _, input := range []string{"{{key", "key}}", "{{outer {{inner}}"} {
 		t.Run(input, func(t *testing.T) {
 			_, err := renderer.Render(input, map[string]any{"key": "value"})
@@ -74,7 +74,7 @@ func TestLegacyTemplateRendererRejectsInvalidDelimiters(t *testing.T) {
 }
 
 func TestRenderLegacyTemplateMappingKeys(t *testing.T) {
-	renderer := legacyTemplateRenderer{}
+	renderer := newLegacyTemplateRenderer()
 	rendered, err := renderTemplateValue(yaml.MapSlice{
 		{Key: "{{ key }}", Value: "{{value}}"},
 	}, map[string]any{"key": "rendered", "value": "content"}, renderer)

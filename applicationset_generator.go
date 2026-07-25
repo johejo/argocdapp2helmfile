@@ -32,14 +32,42 @@ type applicationSetGenerator struct {
 	selector *labelSelector
 }
 
+type applicationSetGeneratorKind struct {
+	// combination generators nest child generators of their own.
+	combination bool
+	// valuesMap generators render their own values: mapping.
+	valuesMap bool
+	// deferredRender generators interpolate parent parameters per child
+	// instead of once before parsing.
+	deferredRender bool
+}
+
+// combinationContext names the matrix or merge generator a generator is nested
+// inside. The zero value is the top level.
+type combinationContext struct {
+	name  string
+	depth int
+}
+
+func (parent combinationContext) child(name string) combinationContext {
+	return combinationContext{name: name, depth: parent.depth + 1}
+}
+
+var applicationSetGeneratorKinds = map[string]applicationSetGeneratorKind{
+	"list":     {},
+	"git":      {valuesMap: true},
+	"clusters": {valuesMap: true},
+	"matrix":   {combination: true, deferredRender: true},
+	"merge":    {combination: true},
+}
+
 func parseApplicationSetGenerator(
 	raw yaml.MapSlice,
 	field string,
 	config *conversionConfig,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
-	combinationDepth int,
-	parentCombination string,
+	parent combinationContext,
 ) (applicationSetGenerator, error) {
 	var result applicationSetGenerator
 	var generatorName string
@@ -74,8 +102,7 @@ func parseApplicationSetGenerator(
 			result.selector = &selector
 			continue
 		}
-		if key != "list" && key != "git" && key != "clusters" &&
-			key != "matrix" && key != "merge" {
+		if _, supported := applicationSetGeneratorKinds[key]; !supported {
 			return result, fmt.Errorf("%s.%s generator is not supported", field, key)
 		}
 		if generatorName != "" {
@@ -83,12 +110,13 @@ func parseApplicationSetGenerator(
 		}
 		generatorName, generatorValue = key, item.Value
 	}
-	if parentCombination != "" && generatorName != "matrix" && generatorName != "merge" {
-		if err := rejectCombinationChildTemplate(raw, field, parentCombination); err != nil {
+	kind := applicationSetGeneratorKinds[generatorName]
+	if parent.depth > 0 && !kind.combination {
+		if err := rejectCombinationChildTemplate(raw, field, parent.name); err != nil {
 			return result, err
 		}
 	}
-	if combinationDepth > 0 && (generatorName == "matrix" || generatorName == "merge") {
+	if parent.depth > 0 && kind.combination {
 		if generatorHasTemplate(generatorValue) {
 			return result, fmt.Errorf(
 				"%s.%s.template is not supported in a nested %s generator",
@@ -98,7 +126,7 @@ func parseApplicationSetGenerator(
 			)
 		}
 	}
-	if generatorName != "matrix" && len(parentParams) != 0 {
+	if !kind.deferredRender && len(parentParams) != 0 {
 		rendered, err := renderGeneratorValue(raw, parentParams, renderer, nil)
 		if err != nil {
 			return result, fmt.Errorf("%s: render generator: %w", field, err)
@@ -116,51 +144,62 @@ func parseApplicationSetGenerator(
 			}
 		}
 	}
+	if kind.combination && parent.depth >= 2 {
+		return result, fmt.Errorf(
+			"%s.%s exceeds the supported nesting depth",
+			field,
+			generatorName,
+		)
+	}
+	if generatorName == "" {
+		return result, fmt.Errorf("%s must contain exactly one generator", field)
+	}
+	generatorField := field + "." + generatorName
+	items, ok := generatorValue.(yaml.MapSlice)
+	if !ok {
+		return result, fmt.Errorf("%s must be a mapping", generatorField)
+	}
 	switch generatorName {
 	case "list":
-		items, ok := generatorValue.(yaml.MapSlice)
-		if !ok {
-			return result, fmt.Errorf("%s.list must be a mapping", field)
-		}
-		list, err := parseListOptions(items, field+".list")
+		list, err := parseListOptions(items, generatorField)
 		if err != nil {
 			return result, err
 		}
 		result.template = list.template
-		elements := append([]any(nil), list.elements...)
-		yamlElements, err := parseElementsYAML(list.elementsYAML, field+".list.elementsYaml")
+		yamlElements, err := parseElementsYAML(
+			list.elementsYAML,
+			generatorField+".elementsYaml",
+		)
 		if err != nil {
 			return result, err
 		}
-		elements = append(elements, yamlElements...)
-		for i, rawElement := range elements {
-			elementField := fmt.Sprintf("%s.list.elements[%d]", field, i)
-			if i >= len(list.elements) {
-				elementField = fmt.Sprintf("%s.list.elementsYaml[%d]", field, i-len(list.elements))
+		groups := []struct {
+			option    string
+			elements  []any
+			normalize func(any) (map[string]any, error)
+		}{
+			{"elements", list.elements, func(element any) (map[string]any, error) {
+				return normalizeListElement(element, renderer.GoTemplate())
+			}},
+			{"elementsYaml", yamlElements, normalizeStringMap},
+		}
+		for _, group := range groups {
+			for i, rawElement := range group.elements {
+				elementField := fmt.Sprintf("%s.%s[%d]", generatorField, group.option, i)
+				params, err := group.normalize(rawElement)
+				if err != nil {
+					return result, fmt.Errorf("%s: must be a mapping: %w", elementField, err)
+				}
+				result.params = append(result.params, generatedGeneratorParams{
+					params: params,
+					path:   elementField,
+				})
 			}
-			var params map[string]any
-			var err error
-			if i < len(list.elements) {
-				params, err = normalizeListElement(rawElement, renderer.GoTemplate())
-			} else {
-				params, err = normalizeStringMap(rawElement)
-			}
-			if err != nil {
-				return result, fmt.Errorf("%s: must be a mapping: %w", elementField, err)
-			}
-			result.params = append(result.params, generatedGeneratorParams{
-				params: params,
-				path:   elementField,
-			})
 		}
 	case "git":
-		items, ok := generatorValue.(yaml.MapSlice)
-		if !ok {
-			return result, fmt.Errorf("%s.git must be a mapping", field)
-		}
-		git, err := generateGitParams(
+		generated, err := generateGitParams(
 			items,
-			field+".git",
+			generatorField,
 			config,
 			renderer,
 			parentParams,
@@ -168,16 +207,11 @@ func parseApplicationSetGenerator(
 		if err != nil {
 			return result, err
 		}
-		result.params = git.params
-		result.template = git.template
+		result.params, result.template = generated.params, generated.template
 	case "clusters":
-		items, ok := generatorValue.(yaml.MapSlice)
-		if !ok {
-			return result, fmt.Errorf("%s.clusters must be a mapping", field)
-		}
-		clusters, err := generateClusterParams(
+		generated, err := generateClusterParams(
 			items,
-			field+".clusters",
+			generatorField,
 			config,
 			renderer,
 			parentParams,
@@ -185,51 +219,32 @@ func parseApplicationSetGenerator(
 		if err != nil {
 			return result, err
 		}
-		result.params = clusters.params
-		result.template = clusters.template
+		result.params, result.template = generated.params, generated.template
 	case "matrix":
-		if combinationDepth >= 2 {
-			return result, fmt.Errorf("%s.matrix exceeds the supported nesting depth", field)
-		}
-		items, ok := generatorValue.(yaml.MapSlice)
-		if !ok {
-			return result, fmt.Errorf("%s.matrix must be a mapping", field)
-		}
-		matrix, err := generateMatrixParams(
+		generated, err := generateMatrixParams(
 			items,
-			field+".matrix",
+			generatorField,
 			config,
 			renderer,
 			parentParams,
-			combinationDepth,
+			parent,
 		)
 		if err != nil {
 			return result, err
 		}
-		result.params = matrix.params
-		result.template = matrix.template
+		result.params, result.template = generated.params, generated.template
 	case "merge":
-		if combinationDepth >= 2 {
-			return result, fmt.Errorf("%s.merge exceeds the supported nesting depth", field)
-		}
-		items, ok := generatorValue.(yaml.MapSlice)
-		if !ok {
-			return result, fmt.Errorf("%s.merge must be a mapping", field)
-		}
-		merge, err := generateMergeParams(
+		generated, err := generateMergeParams(
 			items,
-			field+".merge",
+			generatorField,
 			config,
 			renderer,
-			combinationDepth,
+			parent,
 		)
 		if err != nil {
 			return result, err
 		}
-		result.params = merge.params
-		result.template = merge.template
-	case "":
-		return result, fmt.Errorf("%s must contain exactly one generator", field)
+		result.params, result.template = generated.params, generated.template
 	}
 	if result.selector != nil {
 		filtered := make([]generatedGeneratorParams, 0, len(result.params))
@@ -371,13 +386,9 @@ func parseElementsYAML(input, field string) ([]any, error) {
 	if strings.TrimSpace(input) == "" {
 		return nil, nil
 	}
-	if err := requireSingleDocument([]byte(input), field); err != nil {
+	value, err := decodeSingleDocument([]byte(input), field)
+	if err != nil {
 		return nil, err
-	}
-	var value any
-	decoder := yaml.NewDecoder(strings.NewReader(input), yaml.UseOrderedMap())
-	if err := decoder.Decode(&value); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", field, err)
 	}
 	elements, ok := value.([]any)
 	if !ok {
@@ -407,20 +418,12 @@ func parseLabelSelector(items yaml.MapSlice, field string) (labelSelector, error
 		}
 		switch key {
 		case "matchLabels":
-			labels, ok := item.Value.(yaml.MapSlice)
-			if !ok {
-				return result, fmt.Errorf("%s.matchLabels must be a mapping", field)
+			labels, err := parseGeneratorValues(item.Value, field+".matchLabels")
+			if err != nil {
+				return result, err
 			}
 			for _, label := range labels {
-				labelKey, ok := label.Key.(string)
-				if !ok || strings.TrimSpace(labelKey) == "" {
-					return result, fmt.Errorf("%s.matchLabels keys must be non-empty strings", field)
-				}
-				labelValue, ok := label.Value.(string)
-				if !ok {
-					return result, fmt.Errorf("%s.matchLabels.%s must be a string", field, labelKey)
-				}
-				result.matchLabels[labelKey] = labelValue
+				result.matchLabels[label.key] = label.value
 			}
 		case "matchExpressions":
 			expressions, ok := item.Value.([]any)
@@ -469,17 +472,11 @@ func parseLabelExpression(items yaml.MapSlice, field string) (labelExpression, e
 			}
 			result.operator = value
 		case "values":
-			values, ok := item.Value.([]any)
-			if !ok {
-				return result, fmt.Errorf("%s.values must be a sequence", field)
+			values, err := readStringSequenceYAMLOption(item.Value, field+".values")
+			if err != nil {
+				return result, err
 			}
-			for i, raw := range values {
-				value, ok := raw.(string)
-				if !ok {
-					return result, fmt.Errorf("%s.values[%d] must be a string", field, i)
-				}
-				result.values = append(result.values, value)
-			}
+			result.values = values
 		default:
 			return result, fmt.Errorf("%s.%s is not supported", field, key)
 		}
@@ -507,9 +504,13 @@ func (selector labelSelector) matches(params map[string]any) (bool, error) {
 	if err := flattenParameters(flat, "", params); err != nil {
 		return false, err
 	}
+	return selector.matchesFlat(flat), nil
+}
+
+func (selector labelSelector) matchesFlat(flat map[string]string) bool {
 	for key, want := range selector.matchLabels {
 		if got, exists := flat[key]; !exists || got != want {
-			return false, nil
+			return false
 		}
 	}
 	for _, expression := range selector.matchExpressions {
@@ -518,23 +519,23 @@ func (selector labelSelector) matches(params map[string]any) (bool, error) {
 		switch expression.operator {
 		case "In":
 			if !exists || !contains {
-				return false, nil
+				return false
 			}
 		case "NotIn":
 			if exists && contains {
-				return false, nil
+				return false
 			}
 		case "Exists":
 			if !exists {
-				return false, nil
+				return false
 			}
 		case "DoesNotExist":
 			if exists {
-				return false, nil
+				return false
 			}
 		}
 	}
-	return true, nil
+	return true
 }
 
 func flattenParameters(output map[string]string, prefix string, value any) error {

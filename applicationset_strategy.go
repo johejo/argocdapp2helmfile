@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/goccy/go-yaml"
@@ -24,19 +25,19 @@ func parseApplicationSetStrategy(items yaml.MapSlice) (*rollingSyncStrategy, err
 	for _, item := range items {
 		key, ok := item.Key.(string)
 		if !ok {
-			return nil, fmt.Errorf("spec.strategy contains a non-string field name")
+			return nil, errors.New("spec.strategy contains a non-string field name")
 		}
 		switch key {
 		case "type":
 			value, ok := item.Value.(string)
 			if !ok {
-				return nil, fmt.Errorf("spec.strategy.type must be a string")
+				return nil, errors.New("spec.strategy.type must be a string")
 			}
 			strategyType = value
 		case "deletionOrder":
 			value, ok := item.Value.(string)
 			if !ok {
-				return nil, fmt.Errorf("spec.strategy.deletionOrder must be a string")
+				return nil, errors.New("spec.strategy.deletionOrder must be a string")
 			}
 			deletionOrder = value
 		case "rollingSync":
@@ -56,13 +57,11 @@ func parseApplicationSetStrategy(items yaml.MapSlice) (*rollingSyncStrategy, err
 		)
 	}
 	if deletionOrder != "Reverse" {
-		return nil, fmt.Errorf(
-			"spec.strategy.deletionOrder must be Reverse for RollingSync",
-		)
+		return nil, errors.New("spec.strategy.deletionOrder must be Reverse for RollingSync")
 	}
 	options, ok := rollingSync.(yaml.MapSlice)
 	if !ok {
-		return nil, fmt.Errorf("spec.strategy.rollingSync must be a mapping")
+		return nil, errors.New("spec.strategy.rollingSync must be a mapping")
 	}
 	return parseRollingSyncStrategy(options)
 }
@@ -72,9 +71,7 @@ func parseRollingSyncStrategy(items yaml.MapSlice) (*rollingSyncStrategy, error)
 	for _, item := range items {
 		key, ok := item.Key.(string)
 		if !ok {
-			return nil, fmt.Errorf(
-				"spec.strategy.rollingSync contains a non-string field name",
-			)
+			return nil, errors.New("spec.strategy.rollingSync contains a non-string field name")
 		}
 		if key != "steps" {
 			return nil, fmt.Errorf("spec.strategy.rollingSync.%s is not supported", key)
@@ -82,13 +79,11 @@ func parseRollingSyncStrategy(items yaml.MapSlice) (*rollingSyncStrategy, error)
 		var stepsOK bool
 		rawSteps, stepsOK = item.Value.([]any)
 		if !stepsOK {
-			return nil, fmt.Errorf("spec.strategy.rollingSync.steps must be a sequence")
+			return nil, errors.New("spec.strategy.rollingSync.steps must be a sequence")
 		}
 	}
 	if len(rawSteps) == 0 {
-		return nil, fmt.Errorf(
-			"spec.strategy.rollingSync.steps must contain at least one step",
-		)
+		return nil, errors.New("spec.strategy.rollingSync.steps must contain at least one step")
 	}
 	result := &rollingSyncStrategy{steps: make([]rollingSyncStep, 0, len(rawSteps))}
 	for i, rawStep := range rawSteps {
@@ -158,20 +153,11 @@ func assignRollingSyncSteps(
 	strategy *rollingSyncStrategy,
 ) error {
 	for i := range applications {
-		labels := stringMapToAny(applications[i].application.Metadata.Labels)
+		labels := applications[i].application.Metadata.Labels
 		var matches []int
 		for stepIndex, step := range strategy.steps {
 			selector := labelSelector{matchExpressions: step.expressions}
-			matched, err := selector.matches(labels)
-			if err != nil {
-				return fmt.Errorf(
-					"%s: generated Application %q labels: %w",
-					applications[i].path,
-					applications[i].application.Metadata.Name,
-					err,
-				)
-			}
-			if matched {
+			if selector.matchesFlat(labels) {
 				matches = append(matches, stepIndex)
 			}
 		}

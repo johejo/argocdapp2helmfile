@@ -29,14 +29,9 @@ func generateClusterParams(
 	}
 	result.template = options.template
 	for _, cluster := range config.clusters {
-		if options.selector != nil {
-			matches, err := options.selector.matches(stringMapToAny(cluster.Labels))
-			if err != nil {
-				return result, fmt.Errorf("%s.selector: %w", field, err)
-			}
-			if !matches {
-				continue
-			}
+		if options.selector != nil &&
+			!options.selector.matchesFlat(map[string]string(cluster.Labels)) {
+			continue
 		}
 
 		params := clusterGeneratorParams(cluster, renderer.GoTemplate())

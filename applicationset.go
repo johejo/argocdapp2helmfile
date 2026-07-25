@@ -88,8 +88,7 @@ func expandApplicationSet(node ast.Node, config *conversionConfig) ([]generatedA
 			config,
 			renderer,
 			nil,
-			0,
-			"",
+			combinationContext{},
 		)
 		if err != nil {
 			return nil, err

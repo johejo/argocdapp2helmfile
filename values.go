@@ -201,16 +201,9 @@ func containsValueFileGlob(value string) bool {
 
 func expandValueFileGlob(entry resolvedValueFile) ([]string, error) {
 	root := entry.mapping.localRoot
-	if err := validateLocalRootDirectory(root); err != nil {
+	canonicalRoot, err := canonicalLocalRoot(root)
+	if err != nil {
 		return nil, err
-	}
-	canonicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return nil, fmt.Errorf("evaluate config localRoot %q: %w", root, err)
-	}
-	canonicalRoot, err = filepath.Abs(canonicalRoot)
-	if err != nil {
-		return nil, fmt.Errorf("make config localRoot %q absolute: %w", root, err)
 	}
 
 	var matches []string
@@ -219,19 +212,11 @@ func expandValueFileGlob(entry resolvedValueFile) ([]string, error) {
 		entry.repositoryRelative,
 		func(logical string, _ fs.DirEntry) error {
 			candidate := filepath.Join(root, filepath.FromSlash(logical))
-			canonical, err := filepath.EvalSymlinks(candidate)
-			if err != nil {
-				return fmt.Errorf("evaluate matched path %q: %w", logical, err)
-			}
-			canonical, err = filepath.Abs(canonical)
-			if err != nil {
-				return fmt.Errorf("make matched path %q absolute: %w", logical, err)
-			}
-			relative, err := filepath.Rel(canonicalRoot, canonical)
+			_, inside, err := pathWithinRoot(canonicalRoot, candidate)
 			if err != nil {
 				return fmt.Errorf("check matched path %q: %w", logical, err)
 			}
-			if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			if !inside {
 				return fmt.Errorf("matched path %q resolves outside config localRoot", logical)
 			}
 			matches = append(matches, logical)

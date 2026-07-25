@@ -10,26 +10,40 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+// mergeMapSlice merges from into a clone of into. deleteOnNil makes a nil
+// incoming value remove the key; overwrite lets an incoming scalar replace a
+// value that is neither nil nor an empty collection.
+func mergeMapSlice(into, from yaml.MapSlice, deleteOnNil, overwrite bool) yaml.MapSlice {
+	result := cloneMapSlice(into)
+	for _, item := range from {
+		index := mapSliceIndex(result, item.Key)
+		if deleteOnNil && item.Value == nil {
+			if index >= 0 {
+				result = slices.Delete(result, index, index+1)
+			}
+			continue
+		}
+		if index < 0 {
+			result = append(result, cloneMapItem(item))
+			continue
+		}
+		intoMap, intoOK := result[index].Value.(yaml.MapSlice)
+		fromMap, fromOK := item.Value.(yaml.MapSlice)
+		switch {
+		case intoOK && fromOK:
+			result[index].Value = mergeMapSlice(intoMap, fromMap, deleteOnNil, overwrite)
+		case overwrite || isNilOrEmptyCollection(result[index].Value):
+			result[index].Value = cloneValue(item.Value)
+		}
+	}
+	return result
+}
+
 func mergeTemplate(override, base yaml.MapSlice) yaml.MapSlice {
 	if override == nil {
 		return cloneMapSlice(base)
 	}
-	result := cloneMapSlice(override)
-	for _, baseItem := range base {
-		index := mapSliceIndex(result, baseItem.Key)
-		if index < 0 {
-			result = append(result, cloneMapItem(baseItem))
-			continue
-		}
-		overrideMap, overrideOK := result[index].Value.(yaml.MapSlice)
-		baseMap, baseOK := baseItem.Value.(yaml.MapSlice)
-		if overrideOK && baseOK {
-			result[index].Value = mergeTemplate(overrideMap, baseMap)
-		} else if isNilOrEmptyCollection(result[index].Value) {
-			result[index].Value = cloneValue(baseItem.Value)
-		}
-	}
-	return result
+	return mergeMapSlice(override, base, false, false)
 }
 
 func cloneMapSlice(value yaml.MapSlice) yaml.MapSlice {
@@ -85,13 +99,9 @@ func mapSliceIndex(items yaml.MapSlice, key any) int {
 
 func decodeApplicationTemplatePatch(input string) (yaml.MapSlice, error) {
 	const field = "rendered spec.templatePatch"
-	if err := requireSingleDocument([]byte(input), field); err != nil {
+	value, err := decodeSingleDocument([]byte(input), field)
+	if err != nil {
 		return nil, err
-	}
-	var value any
-	decoder := yaml.NewDecoder(strings.NewReader(input), yaml.UseOrderedMap())
-	if err := decoder.Decode(&value); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", field, err)
 	}
 	patch, ok := value.(yaml.MapSlice)
 	if !ok {
@@ -139,28 +149,7 @@ func isStrategicMergePatchDirective(key string) bool {
 }
 
 func mergeApplicationTemplatePatch(target, patch yaml.MapSlice) yaml.MapSlice {
-	result := cloneMapSlice(target)
-	for _, patchItem := range patch {
-		index := mapSliceIndex(result, patchItem.Key)
-		if patchItem.Value == nil {
-			if index >= 0 {
-				result = slices.Delete(result, index, index+1)
-			}
-			continue
-		}
-		if index < 0 {
-			result = append(result, cloneMapItem(patchItem))
-			continue
-		}
-		targetMap, targetOK := result[index].Value.(yaml.MapSlice)
-		patchMap, patchOK := patchItem.Value.(yaml.MapSlice)
-		if targetOK && patchOK {
-			result[index].Value = mergeApplicationTemplatePatch(targetMap, patchMap)
-			continue
-		}
-		result[index].Value = cloneValue(patchItem.Value)
-	}
-	return result
+	return mergeMapSlice(target, patch, true, true)
 }
 
 func applicationProject(application yaml.MapSlice) (any, bool) {

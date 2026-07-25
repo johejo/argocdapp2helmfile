@@ -129,11 +129,12 @@ func convertWithDiagnostics(input []byte, config *conversionConfig) (conversionR
 }
 
 type convertedApplication struct {
-	repository         *repository
-	release            release
-	chart              string
-	skipCRDs           bool
-	skipCRDsApplicable bool
+	repository *repository
+	release    release
+	chart      string
+	// nil when the Application has no Helm source to take the shared
+	// helmDefaults.skipCRDs value from.
+	skipCRDs           *bool
 	provenanceComments []string
 }
 
@@ -374,8 +375,7 @@ func convertApplication(
 	helmRelease.APIVersions = helm.apiVersions
 	converted = convertedApplication{
 		chart:              chartSource.Chart,
-		skipCRDs:           helm.skipCRDs,
-		skipCRDsApplicable: true,
+		skipCRDs:           &helm.skipCRDs,
 		provenanceComments: provenance,
 		release:            helmRelease,
 	}
@@ -432,29 +432,11 @@ func repositoryAlias(repositoryURL string) string {
 		}
 		segment = decoded
 	}
-	alias := normalizeRepositoryAlias(segment)
+	alias := normalizeName(segment)
 	if alias == "" {
 		return "source"
 	}
 	return alias
-}
-
-func normalizeRepositoryAlias(candidate string) string {
-	var normalized strings.Builder
-	previousInvalid := false
-	for _, char := range strings.ToLower(candidate) {
-		valid := char >= 'a' && char <= 'z' ||
-			char >= '0' && char <= '9' ||
-			char == '-' || char == '.'
-		if valid {
-			normalized.WriteRune(char)
-			previousInvalid = false
-		} else if !previousInvalid {
-			normalized.WriteByte('-')
-			previousInvalid = true
-		}
-	}
-	return strings.Trim(normalized.String(), "-.")
 }
 
 func uniqueRepositoryAlias(candidate string, used map[string]struct{}) string {

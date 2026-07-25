@@ -13,7 +13,7 @@ func generateMergeParams(
 	field string,
 	config *conversionConfig,
 	renderer applicationSetRenderer,
-	combinationDepth int,
+	parent combinationContext,
 ) (generatorResult, error) {
 	var result generatorResult
 	var mergeKeys []string
@@ -25,15 +25,11 @@ func generateMergeParams(
 		}
 		switch key {
 		case "mergeKeys":
-			values, ok := item.Value.([]any)
-			if !ok {
-				return result, fmt.Errorf("%s.mergeKeys must be a sequence", field)
+			values, err := readStringSequenceYAMLOption(item.Value, field+".mergeKeys")
+			if err != nil {
+				return result, err
 			}
-			for i, raw := range values {
-				value, ok := raw.(string)
-				if !ok {
-					return result, fmt.Errorf("%s.mergeKeys[%d] must be a string", field, i)
-				}
+			for i, value := range values {
 				if strings.TrimSpace(value) == "" {
 					return result, fmt.Errorf(
 						"%s.mergeKeys[%d] must be a non-empty string",
@@ -86,8 +82,7 @@ func generateMergeParams(
 			config,
 			renderer,
 			nil,
-			combinationDepth+1,
-			"merge",
+			parent.child("merge"),
 		)
 		if err != nil {
 			return result, err

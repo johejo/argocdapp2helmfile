@@ -2,6 +2,7 @@ package diagnostic
 
 import (
 	"fmt"
+	"slices"
 )
 
 type RuleID string
@@ -282,14 +283,13 @@ var rulesByID = func() map[RuleID]Rule {
 }()
 
 func Rules() []Rule {
-	return append([]Rule(nil), rules...)
+	return slices.Clone(rules)
 }
 
 func SyncOptions() []SyncOption {
-	result := make([]SyncOption, len(syncOptions))
-	for index, option := range syncOptions {
-		result[index] = option
-		result[index].Values = append([]SyncOptionValue(nil), option.Values...)
+	result := slices.Clone(syncOptions)
+	for index := range result {
+		result[index].Values = slices.Clone(result[index].Values)
 	}
 	return result
 }

@@ -225,11 +225,17 @@ func Entries() []Entry {
 	return entries
 }
 
-func LookupHelmOption(name string) (Entry, bool) {
+var entriesByHelmOption = func() map[string]Entry {
+	result := make(map[string]Entry)
 	for _, entry := range entries {
-		if entry.HelmOption == name {
-			return entry, true
+		if entry.HelmOption != "" {
+			result[entry.HelmOption] = entry
 		}
 	}
-	return Entry{}, false
+	return result
+}()
+
+func LookupHelmOption(name string) (Entry, bool) {
+	entry, ok := entriesByHelmOption[name]
+	return entry, ok
 }

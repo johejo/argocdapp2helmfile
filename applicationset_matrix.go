@@ -12,7 +12,7 @@ func generateMatrixParams(
 	config *conversionConfig,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
-	combinationDepth int,
+	parent combinationContext,
 ) (generatorResult, error) {
 	var result generatorResult
 	var children []any
@@ -57,8 +57,7 @@ func generateMatrixParams(
 		config,
 		renderer,
 		parentParams,
-		combinationDepth+1,
-		"matrix",
+		parent.child("matrix"),
 	)
 	if err != nil {
 		return result, err
@@ -76,8 +75,7 @@ func generateMatrixParams(
 			config,
 			renderer,
 			context,
-			combinationDepth+1,
-			"matrix",
+			parent.child("matrix"),
 		)
 		if err != nil {
 			return result, fmt.Errorf("%s -> %w", firstParams.path, err)
@@ -131,6 +129,5 @@ func isGeneratorValuesPath(path []string) bool {
 	if len(path) < 2 || path[len(path)-1] != "values" {
 		return false
 	}
-	generator := path[len(path)-2]
-	return generator == "git" || generator == "clusters"
+	return applicationSetGeneratorKinds[path[len(path)-2]].valuesMap
 }

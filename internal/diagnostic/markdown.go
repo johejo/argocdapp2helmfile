@@ -3,6 +3,7 @@ package diagnostic
 import (
 	"bytes"
 	_ "embed"
+	"slices"
 	"text/template"
 )
 
@@ -37,10 +38,10 @@ func Markdown() []byte {
 }
 
 func isSyncOptionRule(rule Rule) bool {
-	for _, option := range syncOptions {
-		if option.Key == rule.Setting {
-			return true
-		}
+	if slices.ContainsFunc(syncOptions, func(option SyncOption) bool {
+		return option.Key == rule.Setting
+	}) {
+		return true
 	}
 	return rule.ID == ClientSideApplyMigrationDisabled
 }
