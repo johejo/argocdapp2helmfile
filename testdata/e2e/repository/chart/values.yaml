@@ -1,0 +1,4 @@
+replicaCount: 3
+image:
+  repository: registry.invalid/team/frontend
+  tag: v1.2.3

@@ -1,0 +1,6 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+sources:
+  - repoURL: https://github.com/example/local-manifests.git
+    targetRevision: e2e
+    root: testdata/e2e/repository

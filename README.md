@@ -36,6 +36,15 @@ yq '.items[]' applications.yaml | argocdapp2helmfile
 Diagnostics go to standard error.
 Any invalid document makes the command fail without writing a partial helmfile.
 
+## End-to-end test
+
+Install `helmfile`, `helm`, and `kustomize` on `PATH`, then run the offline E2E test:
+
+```sh
+ARGOCDAPP2HELMFILE_E2E=1 \
+  go test -count=1 -run '^TestE2E' ./...
+```
+
 ## Conversion example
 
 Input:

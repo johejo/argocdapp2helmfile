@@ -1,0 +1,5 @@
+apiVersion: v2
+name: local-chart
+description: Local chart for the offline rendering E2E test
+type: application
+version: 0.1.0

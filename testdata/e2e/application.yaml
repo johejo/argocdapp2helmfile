@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: local-chart
+spec:
+  destination:
+    namespace: helm-release
+  source:
+    repoURL: https://github.com/example/local-manifests.git
+    targetRevision: e2e
+    path: chart
+    helm:
+      valueFiles:
+        - values.yaml
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: local-kustomization
+spec:
+  destination:
+    namespace: workloads
+  source:
+    repoURL: https://github.com/example/local-manifests.git
+    targetRevision: e2e
+    path: kustomize
+    kustomize:
+      namePrefix: edge-
+      namespace: workloads
+      images:
+        - example.invalid/backend=registry.invalid/team/backend:v2.3.4
