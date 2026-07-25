@@ -1,0 +1,6 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+sources:
+  - repoURL: https://github.com/example/platform.git
+    targetRevision: main
+    root: checkouts/platform

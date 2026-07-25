@@ -20,7 +20,7 @@ type applicationSource struct {
 	Ref            string        `yaml:"ref"`
 	Helm           yaml.MapSlice `yaml:"helm"`
 	Directory      yaml.MapSlice `yaml:"directory"`
-	Kustomize      yaml.MapSlice `yaml:"kustomize"`
+	Kustomize      kustomizeMap  `yaml:"kustomize"`
 	Plugin         yaml.MapSlice `yaml:"plugin"`
 }
 

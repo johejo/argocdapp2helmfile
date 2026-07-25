@@ -1,14 +1,18 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/goccy/go-yaml"
 )
 
 func TestConvertKustomizationGolden(t *testing.T) {
 	for _, directory := range []string{
 		"kustomize/empty",
 		"kustomize/options",
+		"kustomize/metadata",
 		"kustomize/multi-source",
 		"applicationset/kustomize",
 	} {
@@ -30,6 +34,113 @@ func TestConvertKustomizationGolden(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConvertRejectsInvalidKustomizeMetadataOptions(t *testing.T) {
+	tests := map[string]string{
+		"common-labels-key.yaml":           "spec.source.kustomize.commonLabels contains a non-string key",
+		"common-labels-value.yaml":         "spec.source.kustomize.commonLabels.app.kubernetes.io/name must be a string",
+		"common-annotations-sequence.yaml": "spec.source.kustomize.commonAnnotations must be a mapping",
+		"boolean.yaml":                     "spec.source.kustomize.forceCommonLabels must be a boolean",
+		"dynamic-environment.yaml":         "ARGOCD_APP_REVISION cannot be determined statically",
+		"label-flags.yaml":                 "labelIncludeTemplates cannot be true when labelWithoutSelector is false",
+	}
+	config, err := parseConfig([]byte(readTestdata(t, "kustomize/metadata/config.yaml")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for fixture, want := range tests {
+		t.Run(fixture, func(t *testing.T) {
+			input := readTestdata(t, "kustomize/errors/"+fixture)
+			_, err := convertWithConfig([]byte(input), config)
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestKustomizeLabelFieldSpecs(t *testing.T) {
+	tests := []struct {
+		name             string
+		withoutSelector  bool
+		includeTemplates bool
+		want             []kustomizeFieldSpec
+	}{
+		{name: "default", want: commonLabelFieldSpecs},
+		{
+			name: "resource metadata only", withoutSelector: true,
+			want: resourceMetadataLabelFieldSpecs,
+		},
+		{
+			name: "resource and templates", withoutSelector: true,
+			includeTemplates: true, want: metadataLabelFieldSpecs,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			options := kustomizeOptions{
+				commonLabels:          yamlMap("app", "api"),
+				labelWithoutSelector:  test.withoutSelector,
+				labelIncludeTemplates: test.includeTemplates,
+			}
+			transformers, err := options.transformers(nil, "spec.source.kustomize")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := transformers[0].(kustomizeTransformer).FieldSpecs
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("field specs differ:\n%#v\nwant:\n%#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestExpandKustomizeBuildEnvironment(t *testing.T) {
+	environment := map[string]string{"ARGOCD_APP_NAME": "api"}
+	got, err := expandKustomizeBuildEnvironment(
+		"$ARGOCD_APP_NAME/${UNKNOWN}/$$LITERAL",
+		environment,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "api//$LITERAL" {
+		t.Fatalf("unexpected expansion: %q", got)
+	}
+
+	for _, variable := range []string{
+		"ARGOCD_APP_REVISION",
+		"ARGOCD_APP_REVISION_SHORT",
+		"ARGOCD_APP_REVISION_SHORT_8",
+		"KUBE_VERSION",
+		"KUBE_API_VERSIONS",
+	} {
+		t.Run(variable, func(t *testing.T) {
+			_, err := expandKustomizeBuildEnvironment("$"+variable, environment)
+			if err == nil || !strings.Contains(err.Error(), variable) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestKustomizeAnnotationsDoNotExpandByDefault(t *testing.T) {
+	options := kustomizeOptions{
+		commonAnnotations: yamlMap("revision", "$ARGOCD_APP_REVISION"),
+	}
+	transformers, err := options.transformers(nil, "spec.source.kustomize")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := transformers[0].(kustomizeTransformer).Annotations[0].Value
+	if got != "$ARGOCD_APP_REVISION" {
+		t.Fatalf("annotation was unexpectedly expanded: %q", got)
+	}
+}
+
+func yamlMap(key, value string) yaml.MapSlice {
+	return yaml.MapSlice{{Key: key, Value: value}}
 }
 
 func TestParseKustomizeImage(t *testing.T) {

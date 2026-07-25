@@ -398,11 +398,46 @@ source:
     images:
       - example/app:v2
       - old=registry.example.com:5000/team/app@sha256:abcdef
+    commonLabels:
+      app.kubernetes.io/name: ${ARGOCD_APP_NAME}
+    commonAnnotations:
+      app.example.com/source-path: ${ARGOCD_APP_SOURCE_PATH}
+    commonAnnotationsEnvsubst: true
 ```
 
-Supported options are `namePrefix`, `nameSuffix`, `namespace`, and `images`.
+The supported options and their Helmfile representations are:
+
+| Argo CD Kustomize option | Helmfile representation |
+| --- | --- |
+| `namePrefix`, `nameSuffix`, `namespace`, `images` | Kustomization release `values` |
+| `commonLabels` | Inline built-in `LabelTransformer` |
+| `labelWithoutSelector`, `labelIncludeTemplates` | `LabelTransformer.fieldSpecs` selection |
+| `commonAnnotations` | Inline built-in `AnnotationsTransformer` |
+| `commonAnnotationsEnvsubst` | Conversion-time annotation value expansion |
+| `forceCommonLabels`, `forceCommonAnnotations` | Accepted; no generated output |
+
 Images use Kustomize's `[old=]image[:tag|@digest]` syntax and retain input order.
-Other options are rejected.
+Transformers use the Kustomize v5.8.1 built-in field specs.
+By default, labels apply to resource metadata, workload templates, and selectors.
+With `labelWithoutSelector: true`, labels apply only to resource metadata unless
+`labelIncludeTemplates: true` also includes templates.
+`labelIncludeTemplates: true` requires `labelWithoutSelector: true`.
+
+`commonLabels` values always expand the Argo CD build environment.
+`commonAnnotations` values expand it only when `commonAnnotationsEnvsubst: true`.
+Supported variables are `ARGOCD_APP_NAME`, `ARGOCD_APP_NAMESPACE`,
+`ARGOCD_APP_PROJECT_NAME`, `ARGOCD_APP_SOURCE_PATH`, `ARGOCD_APP_SOURCE_REPO_URL`, and
+`ARGOCD_APP_SOURCE_TARGET_REVISION`.
+Revision and Kubernetes variables are rejected;
+unknown variables expand to an empty string.
+
+`forceCommonLabels` and `forceCommonAnnotations` affect Argo CD's source edits.
+Helmfile applies later transformers instead, so these options are no-ops.
+
+`replicas`, `patches`, `components`, `ignoreMissingComponents`, `version`, `kubeVersion`,
+and `apiVersions` are unsupported because the later transformer phase cannot preserve
+their ordering.
+See [Argo CD's Kustomize options][argocd-kustomize-options] for the upstream semantics.
 
 `spec.destination.namespace` remains the Helm release namespace.
 `kustomize.namespace` controls the generated manifest namespace, matching
@@ -548,6 +583,8 @@ For upstream behavior, see also
   https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/#create-namespace
 [argocd-kustomize-namespace]:
   https://argo-cd.readthedocs.io/en/stable/user-guide/kustomize/#setting-the-manifests-namespace
+[argocd-kustomize-options]:
+  https://argo-cd.readthedocs.io/en/stable/user-guide/kustomize/
 [helmfile-configuration]: https://helmfile.readthedocs.io/en/latest/configuration/
 [helmfile-kustomizations]:
   https://helmfile.readthedocs.io/en/latest/advanced-features/#deploy-kustomizations-with-helmfile

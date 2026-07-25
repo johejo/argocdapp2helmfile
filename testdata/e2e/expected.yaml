@@ -24,15 +24,23 @@ kind: Deployment
 metadata:
   name: edge-backend
   namespace: workloads
+  labels:
+    app.kubernetes.io/component: local-kustomization
+  annotations:
+    app.example.com/source-path: kustomize
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: backend
+      app.kubernetes.io/component: local-kustomization
   template:
     metadata:
       labels:
         app: backend
+        app.kubernetes.io/component: local-kustomization
+      annotations:
+        app.example.com/source-path: kustomize
     spec:
       containers:
         - name: backend

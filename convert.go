@@ -69,6 +69,7 @@ type release struct {
 	MissingFileHandler   string         `yaml:"missingFileHandler,omitempty"`
 	SkipSchemaValidation bool           `yaml:"skipSchemaValidation,omitempty"`
 	CreateNamespace      bool           `yaml:"createNamespace,omitempty"`
+	Transformers         []any          `yaml:"transformers,omitempty"`
 }
 
 type setParameter struct {
@@ -232,6 +233,13 @@ func convertApplication(
 		if err != nil {
 			return converted, err
 		}
+		transformers, err := options.transformers(
+			applicationBuildEnvironment(app, chartSource),
+			chartSourceField+".kustomize",
+		)
+		if err != nil {
+			return converted, err
+		}
 		mapping, err := resolver.resolve(chartSource, chartSourceField)
 		if err != nil {
 			return converted, err
@@ -257,6 +265,7 @@ func convertApplication(
 				Chart:           templatePath(joinSourcePath(mapping.root, chartSource.Path)),
 				Values:          releaseValues,
 				CreateNamespace: slices.Contains(app.Spec.SyncPolicy.SyncOptions, "CreateNamespace=true"),
+				Transformers:    transformers,
 			},
 		}, nil
 	}

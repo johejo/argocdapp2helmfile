@@ -27,5 +27,10 @@ spec:
     kustomize:
       namePrefix: edge-
       namespace: workloads
+      commonLabels:
+        app.kubernetes.io/component: ${ARGOCD_APP_NAME}
+      commonAnnotations:
+        app.example.com/source-path: ${ARGOCD_APP_SOURCE_PATH}
+      commonAnnotationsEnvsubst: true
       images:
         - example.invalid/backend=registry.invalid/team/backend:v2.3.4

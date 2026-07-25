@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: api
+  namespace: argocd
+spec:
+  project: production
+  destination:
+    namespace: workloads
+  source:
+    repoURL: https://github.com/example/platform.git
+    targetRevision: main
+    path: services/api
+    kustomize:
+      commonLabels:
+        app.kubernetes.io/name: ${ARGOCD_APP_NAME}
+        app.kubernetes.io/part-of: $ARGOCD_APP_PROJECT_NAME
+        unknown: before-${NOT_AN_ARGOCD_VARIABLE}-after
+      commonAnnotations:
+        app.example.com/application-namespace: $ARGOCD_APP_NAMESPACE
+        app.example.com/source: ${ARGOCD_APP_SOURCE_REPO_URL}
+        app.example.com/path: $ARGOCD_APP_SOURCE_PATH
+        app.example.com/revision: $ARGOCD_APP_SOURCE_TARGET_REVISION
+      commonAnnotationsEnvsubst: true
+      forceCommonLabels: true
+      forceCommonAnnotations: true

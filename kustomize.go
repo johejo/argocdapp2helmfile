@@ -6,13 +6,67 @@ import (
 	"unicode"
 
 	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
 )
 
 type kustomizeOptions struct {
-	namePrefix string
-	nameSuffix string
-	namespace  string
-	images     []kustomizeImage
+	namePrefix                string
+	nameSuffix                string
+	namespace                 string
+	images                    []kustomizeImage
+	commonLabels              yaml.MapSlice
+	labelWithoutSelector      bool
+	labelIncludeTemplates     bool
+	commonAnnotations         yaml.MapSlice
+	commonAnnotationsEnvsubst bool
+}
+
+type kustomizeMap yaml.MapSlice
+
+type nonStringYAMLKey struct{}
+
+func (mapping *kustomizeMap) UnmarshalYAML(node ast.Node) error {
+	input, err := node.MarshalYAML()
+	if err != nil {
+		return err
+	}
+	var ordered yaml.MapSlice
+	if err := yaml.UnmarshalWithOptions(input, &ordered, yaml.UseOrderedMap()); err != nil {
+		return err
+	}
+	root, ok := node.(*ast.MappingNode)
+	if !ok {
+		*mapping = kustomizeMap(ordered)
+		return nil
+	}
+	for _, option := range root.Values {
+		key, ok := option.Key.(*ast.StringNode)
+		if !ok || key.Value != "commonLabels" && key.Value != "commonAnnotations" {
+			continue
+		}
+		nested, ok := option.Value.(*ast.MappingNode)
+		if !ok {
+			continue
+		}
+		for _, item := range nested.Values {
+			if item.Key.Type() == ast.StringType {
+				continue
+			}
+			for i := range ordered {
+				if ordered[i].Key != key.Value {
+					continue
+				}
+				orderedNested, ok := ordered[i].Value.(yaml.MapSlice)
+				if ok && len(orderedNested) != 0 {
+					orderedNested[0].Key = nonStringYAMLKey{}
+					ordered[i].Value = orderedNested
+				}
+			}
+			break
+		}
+	}
+	*mapping = kustomizeMap(ordered)
+	return nil
 }
 
 type kustomizeImage struct {
@@ -22,7 +76,7 @@ type kustomizeImage struct {
 	Digest  string `yaml:"digest,omitempty"`
 }
 
-func parseKustomizeOptions(items yaml.MapSlice, field string) (kustomizeOptions, error) {
+func parseKustomizeOptions(items kustomizeMap, field string) (kustomizeOptions, error) {
 	var result kustomizeOptions
 	for _, item := range items {
 		key, ok := item.Key.(string)
@@ -54,9 +108,91 @@ func parseKustomizeOptions(items yaml.MapSlice, field string) (kustomizeOptions,
 				return result, err
 			}
 			result.images = images
+		case "commonLabels":
+			value, err := readOptionalStringMapYAMLOption(
+				item.Value,
+				field+".commonLabels",
+			)
+			if err != nil {
+				return result, err
+			}
+			result.commonLabels = value
+		case "labelWithoutSelector":
+			value, err := readOptionalBooleanYAMLOption(
+				item.Value,
+				field+".labelWithoutSelector",
+			)
+			if err != nil {
+				return result, err
+			}
+			result.labelWithoutSelector = value
+		case "labelIncludeTemplates":
+			value, err := readOptionalBooleanYAMLOption(
+				item.Value,
+				field+".labelIncludeTemplates",
+			)
+			if err != nil {
+				return result, err
+			}
+			result.labelIncludeTemplates = value
+		case "commonAnnotations":
+			value, err := readOptionalStringMapYAMLOption(
+				item.Value,
+				field+".commonAnnotations",
+			)
+			if err != nil {
+				return result, err
+			}
+			result.commonAnnotations = value
+		case "commonAnnotationsEnvsubst":
+			value, err := readOptionalBooleanYAMLOption(
+				item.Value,
+				field+".commonAnnotationsEnvsubst",
+			)
+			if err != nil {
+				return result, err
+			}
+			result.commonAnnotationsEnvsubst = value
+		case "forceCommonLabels", "forceCommonAnnotations":
+			_, err := readOptionalBooleanYAMLOption(
+				item.Value,
+				field+"."+key,
+			)
+			if err != nil {
+				return result, err
+			}
 		default:
 			return result, fmt.Errorf("%s.%s is not supported", field, key)
 		}
+	}
+	if result.labelIncludeTemplates && !result.labelWithoutSelector {
+		return result, fmt.Errorf(
+			"%s.labelIncludeTemplates cannot be true when labelWithoutSelector is false",
+			field,
+		)
+	}
+	return result, nil
+}
+
+func readOptionalStringMapYAMLOption(value any, field string) (yaml.MapSlice, error) {
+	if isNilOrEmptyCollection(value) {
+		return nil, nil
+	}
+	mapping, ok := value.(yaml.MapSlice)
+	if !ok {
+		return nil, fmt.Errorf("%s must be a mapping", field)
+	}
+	result := make(yaml.MapSlice, 0, len(mapping))
+	for _, item := range mapping {
+		key, ok := item.Key.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s contains a non-string key", field)
+		}
+		text, ok := item.Value.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s.%s must be a string", field, key)
+		}
+		result = append(result, yaml.MapItem{Key: key, Value: text})
 	}
 	return result, nil
 }

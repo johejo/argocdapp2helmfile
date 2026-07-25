@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: api
+spec:
+  destination:
+    namespace: workloads
+  source:
+    repoURL: https://github.com/example/platform.git
+    targetRevision: main
+    path: services/api
+    kustomize:
+      commonLabels:
+        app.example.com/revision: $ARGOCD_APP_REVISION
