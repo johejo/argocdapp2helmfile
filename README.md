@@ -118,6 +118,10 @@ An Application must identify either:
 
 ### Application mapping
 
+The `spec.source.*` paths below also apply to the manifest source selected from
+`spec.sources`.
+`spec.source` and `spec.sources` are mutually exclusive.
+
 | Argo CD Application | helmfile |
 | --- | --- |
 | `metadata.name` | Release `name` when `helm.releaseName` is absent |
