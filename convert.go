@@ -91,18 +91,40 @@ func convert(input []byte) ([]byte, error) {
 }
 
 func convertWithConfig(input []byte, config *conversionConfig) ([]byte, error) {
-	applications, err := decodeApplicationInputs(input, config)
+	result, err := convertWithDiagnostics(input, config)
 	if err != nil {
 		return nil, err
 	}
+	return result.output, nil
+}
+
+type conversionResult struct {
+	output      []byte
+	diagnostics []conversionDiagnostic
+}
+
+func convertWithDiagnostics(input []byte, config *conversionConfig) (conversionResult, error) {
+	applications, err := decodeApplicationInputs(input, config)
+	if err != nil {
+		return conversionResult{}, err
+	}
 
 	builder := newHelmfileBuilder(config)
+	var diagnostics []conversionDiagnostic
 	for _, item := range applications {
+		diagnostics = append(diagnostics, auditApplication(item)...)
 		if err := builder.add(item); err != nil {
-			return nil, err
+			return conversionResult{}, err
 		}
 	}
-	return builder.finalize()
+	output, err := builder.finalize()
+	if err != nil {
+		return conversionResult{}, err
+	}
+	return conversionResult{
+		output:      output,
+		diagnostics: diagnostics,
+	}, nil
 }
 
 type convertedApplication struct {

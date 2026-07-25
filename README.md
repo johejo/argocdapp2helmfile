@@ -34,7 +34,8 @@ yq '.items[]' applications.yaml | argocdapp2helmfile
 ```
 
 Diagnostics go to standard error.
-Any invalid document makes the command fail without writing a partial helmfile.
+Lossy synchronization settings warn by default; `--strict` rejects them.
+Conversion errors never write a partial helmfile.
 
 ## End-to-end test
 
@@ -127,7 +128,7 @@ The `spec.source.*` paths below also apply to the manifest source selected from
 | `metadata.name` | Release `name` when `helm.releaseName` is absent |
 | `spec.source.helm.releaseName` | Release `name` |
 | `spec.destination.namespace` | Release `namespace` |
-| Positive `spec.revisionHistoryLimit` | Release `historyMax` |
+| Positive `spec.revisionHistoryLimit` | Release `historyMax` (approximate) |
 | `spec.source.helm.namespace` | Accepted only when it exactly matches `spec.destination.namespace`; no additional output |
 | `spec.source.helm.version` | Accepted and intentionally ignored |
 | `spec.source.repoURL` | Repository `url`; scheme-less OCI also sets `oci: true` |
@@ -147,7 +148,7 @@ The `spec.source.*` paths below also apply to the manifest source selected from
 | `spec.source.helm.kubeVersion` | Release `kubeVersion` |
 | `spec.source.helm.apiVersions` | Release `apiVersions` |
 | `spec.source.helm.skipCrds` | Shared `helmDefaults.skipCRDs` |
-| `spec.syncPolicy.syncOptions` | Shared `helmDefaults.createNamespace: false`; exact `CreateNamespace=true` also sets release `createNamespace: true` |
+| Exact `CreateNamespace=true` sync option | Release `createNamespace: true` (approximate) |
 | `spec.destination.name` or `spec.destination.server` | Release `kubeContext` through Config `destinations` |
 | Config `releaseLabels` query result | Release `labels` entry |
 
@@ -164,6 +165,61 @@ and parameters retain input order.
 `helm.namespace`, when set, must match `spec.destination.namespace`.
 `fileParameters` follow ordinary parameters in `set`;
 a same-name `forceString` parameter is rejected because it belongs to `setString`.
+
+### Sync setting diagnostics
+
+The converter audits `spec.syncPolicy`, `spec.ignoreDifferences`, and
+`spec.revisionHistoryLimit`.
+It does not audit metadata, project, `sourceHydrator`, or
+`argocd.argoproj.io/sync-options` resource annotations.
+
+`approximate` means that the output has related but non-equivalent behavior.
+`intentionally-ignored` is understood but emits no setting.
+`unconvertible` has no Helmfile equivalent.
+Supported and ineffective settings do not produce diagnostics.
+
+| Setting | Result |
+| --- | --- |
+| Omitted fields; disabled automated sync; zero retry; empty metadata or differences | supported |
+| `CreateNamespace=false`, `ApplyOutOfSyncOnly=false`, `Validate=true`, `SkipDryRunOnMissingResource=false` | supported |
+| `PrunePropagationPolicy=foreground`, `PruneLast=false`, `Replace=false`, `Force=false`, `ServerSideApply=false` | supported |
+| `ClientSideApplyMigration=true`, `FailOnSharedResource=false`, `RespectIgnoreDifferences=false`, `Prune=true`, `Delete=true` | supported |
+| Positive `revisionHistoryLimit` | `approximate`; sets `historyMax` |
+| Zero or negative `revisionHistoryLimit` | conversion error |
+| Effective `automated.enabled` | `intentionally-ignored` |
+| Effective `automated.prune`, `selfHeal`, or `allowEmpty` | `unconvertible` |
+| Effective nonzero `retry.limit` | `unconvertible` |
+| Nonempty `managedNamespaceMetadata` with `CreateNamespace=true` | `unconvertible` |
+| Nonempty `ignoreDifferences` | `unconvertible` |
+| `CreateNamespace=true` | `approximate`; sets release `createNamespace: true` |
+| `ApplyOutOfSyncOnly=true` | `intentionally-ignored` |
+| `Validate=false` or `SkipDryRunOnMissingResource=true` | `unconvertible` |
+| Non-default `PrunePropagationPolicy` | `unconvertible` |
+| `PruneLast=true`, `Replace=true`, `Force=true`, or `ServerSideApply=true` | `unconvertible` |
+| Effective `ClientSideApplyMigration=false` | `unconvertible` |
+| `FailOnSharedResource=true` or `RespectIgnoreDifferences=true` | `unconvertible` |
+| `Prune=false\|confirm` or `Delete=false\|confirm` | `unconvertible` |
+| Unknown, malformed, or conflicting duplicate sync options | `unconvertible` |
+
+Sync options use Argo CD's exact, case-sensitive strings.
+Whitespace is not normalized, identical duplicates are audited once, and conflicting
+duplicates are `unconvertible`.
+`ServerSideApply=true`, `Replace=true`, `PruneLast=true`, and
+`RespectIgnoreDifferences=true` always produce diagnostics, even when another setting
+makes them ineffective.
+
+Each diagnostic is one line in document and generated Application order.
+ApplicationSet diagnostics include the generator origin and rendered Application name:
+
+```text
+argocdapp2helmfile: warning: document 1: spec.generators[0].list.elements[0]: Application "api": spec.syncPolicy.syncOptions[0]: unconvertible: sync option "ServerSideApply=true" has no Helmfile equivalent
+```
+
+Normal execution warns, writes the helmfile, and exits 0.
+`--strict` reports diagnostics as errors, writes nothing, and exits 1.
+Conversion errors report only the error and write nothing.
+
+Helmfile does not reproduce Argo CD's controller, diff engine, or apply ownership.
 
 ### ApplicationSet generators
 

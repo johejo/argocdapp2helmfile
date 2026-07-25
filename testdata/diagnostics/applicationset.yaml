@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: rendered-options
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - list:
+        elements:
+          - name: api
+            option: ServerSideApply=true
+          - name: worker
+            option: CreateNamespace=true
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      syncPolicy:
+        syncOptions:
+          - '{{ .option }}'
+      source:
+        repoURL: https://example.com/charts
+        chart: chart
+        targetRevision: 1.2.3

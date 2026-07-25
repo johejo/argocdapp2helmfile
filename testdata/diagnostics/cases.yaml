@@ -1,0 +1,128 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: critical-options
+spec:
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+      - ClientSideApplyMigration=false
+      - Replace=true
+      - PruneLast=true
+      - RespectIgnoreDifferences=true
+      - Validate=false
+      - SkipDryRunOnMissingResource=true
+      - PrunePropagationPolicy=background
+      - Force=true
+      - FailOnSharedResource=true
+      - Prune=false
+      - Delete=confirm
+  source:
+    repoURL: https://example.com/charts
+    chart: chart
+    targetRevision: 1.2.3
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: controller-settings
+spec:
+  revisionHistoryLimit: 3
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: true
+      selfHeal: true
+      allowEmpty: true
+    retry:
+      limit: 2
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+    managedNamespaceMetadata:
+      labels:
+        owner: platform
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+  source:
+    repoURL: https://example.com/charts
+    chart: chart
+    targetRevision: 1.2.3
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: duplicate-options
+spec:
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+      - ServerSideApply=true
+      - Mystery=true
+      - Mystery=true
+      - " CreateNamespace=true"
+      - "CreateNamespace=true "
+      - Validate=false
+      - Validate=true
+  source:
+    repoURL: https://example.com/charts
+    chart: chart
+    targetRevision: 1.2.3
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: defaults
+spec:
+  syncPolicy:
+    automated:
+      enabled: false
+      prune: true
+      selfHeal: true
+      allowEmpty: true
+    retry:
+      limit: 0
+    syncOptions:
+      - CreateNamespace=false
+      - ApplyOutOfSyncOnly=false
+      - Validate=true
+      - SkipDryRunOnMissingResource=false
+      - PrunePropagationPolicy=foreground
+      - PruneLast=false
+      - Replace=false
+      - Force=false
+      - ServerSideApply=false
+      - ClientSideApplyMigration=true
+      - FailOnSharedResource=false
+      - RespectIgnoreDifferences=false
+      - Prune=true
+      - Delete=true
+    managedNamespaceMetadata:
+      labels: {}
+      annotations: {}
+  ignoreDifferences: []
+  source:
+    repoURL: https://example.com/charts
+    chart: chart
+    targetRevision: 1.2.3
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ineffective-migration
+spec:
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=false
+      - ClientSideApplyMigration=false
+  source:
+    repoURL: https://example.com/charts
+    chart: chart
+    targetRevision: 1.2.3

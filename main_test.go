@@ -36,6 +36,82 @@ func TestRunErrorsAreAtomic(t *testing.T) {
 	}
 }
 
+func TestRunWritesWarningsAndHelmfile(t *testing.T) {
+	input := readTestdata(t, "revision-history/application.yaml")
+	var stdout, stderr bytes.Buffer
+	if code := run(nil, strings.NewReader(input), &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d, want 0: %s", code, stderr.String())
+	}
+	if want := readTestdata(t, "revision-history/helmfile.yaml"); stdout.String() != want {
+		t.Fatalf("unexpected stdout:\n%s\nwant:\n%s", stdout.String(), want)
+	}
+	if strings.Count(stderr.String(), "\n") != 2 {
+		t.Fatalf("stderr does not contain two one-line warnings:\n%s", stderr.String())
+	}
+	for _, name := range []string{"frontend", "worker"} {
+		want := `argocdapp2helmfile: warning: document `
+		if !strings.Contains(stderr.String(), want) ||
+			!strings.Contains(stderr.String(), `Application "`+name+`"`) ||
+			!strings.Contains(stderr.String(), "spec.revisionHistoryLimit: approximate:") {
+			t.Fatalf("stderr is missing the warning for %q:\n%s", name, stderr.String())
+		}
+	}
+}
+
+func TestRunStrictWritesAllDiagnosticsWithoutHelmfile(t *testing.T) {
+	input := readTestdata(t, "revision-history/application.yaml")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"--strict"}, strings.NewReader(input), &stdout, &stderr); code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout was not empty: %q", stdout.String())
+	}
+	if strings.Count(stderr.String(), "\n") != 2 ||
+		strings.Count(stderr.String(), "argocdapp2helmfile: error:") != 2 {
+		t.Fatalf("stderr does not contain two strict diagnostics:\n%s", stderr.String())
+	}
+}
+
+func TestRunConversionErrorSuppressesDiagnostics(t *testing.T) {
+	input := readTestdata(t, "diagnostics/atomic-error.yaml")
+	var stdout, stderr bytes.Buffer
+	if code := run(nil, strings.NewReader(input), &stdout, &stderr); code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout was not empty: %q", stdout.String())
+	}
+	if strings.Contains(stderr.String(), "warning:") {
+		t.Fatalf("conversion diagnostics were written before an error: %s", stderr.String())
+	}
+	if strings.Count(stderr.String(), "\n") != 1 {
+		t.Fatalf("stderr is not one error line: %q", stderr.String())
+	}
+}
+
+func TestParseArgs(t *testing.T) {
+	for _, args := range [][]string{
+		{"--strict", "--config", "config.yaml"},
+		{"--config", "config.yaml", "--strict"},
+	} {
+		strict, configPath, ok := parseArgs(args)
+		if !ok || !strict || configPath != "config.yaml" {
+			t.Errorf("parseArgs(%q) = %t, %q, %t", args, strict, configPath, ok)
+		}
+	}
+	for _, args := range [][]string{
+		{"--strict", "--strict"},
+		{"--config"},
+		{"--config", "a", "--config", "b"},
+		{"unknown"},
+	} {
+		if _, _, ok := parseArgs(args); ok {
+			t.Errorf("parseArgs(%q) unexpectedly succeeded", args)
+		}
+	}
+}
+
 func minimalApplication(helm string) string {
 	return `apiVersion: argoproj.io/v1alpha1
 kind: Application

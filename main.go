@@ -12,11 +12,18 @@ func main() {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	strict, configPath, ok := parseArgs(args)
+	if !ok {
+		fmt.Fprintln(
+			stderr,
+			"argocdapp2helmfile: usage: argocdapp2helmfile [--strict] [--config PATH]",
+		)
+		return 1
+	}
+
 	var config *conversionConfig
-	switch {
-	case len(args) == 0:
-	case len(args) == 2 && args[0] == "--config":
-		input, err := os.ReadFile(args[1])
+	if configPath != "" {
+		input, err := os.ReadFile(configPath)
 		if err != nil {
 			writeDiagnostic(stderr, fmt.Errorf("read config: %w", err))
 			return 1
@@ -26,9 +33,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			writeDiagnostic(stderr, err)
 			return 1
 		}
-	default:
-		fmt.Fprintln(stderr, "argocdapp2helmfile: usage: argocdapp2helmfile [--config PATH]")
-		return 1
 	}
 
 	input, err := io.ReadAll(stdin)
@@ -36,16 +40,55 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		writeDiagnostic(stderr, fmt.Errorf("read input: %w", err))
 		return 1
 	}
-	output, err := convertWithConfig(input, config)
+	result, err := convertWithDiagnostics(input, config)
 	if err != nil {
 		writeDiagnostic(stderr, err)
 		return 1
 	}
-	if _, err := stdout.Write(output); err != nil {
+	level := "warning"
+	if strict {
+		level = "error"
+	}
+	for _, diagnostic := range result.diagnostics {
+		fmt.Fprintf(
+			stderr,
+			"argocdapp2helmfile: %s: %s\n",
+			level,
+			diagnostic,
+		)
+	}
+	if strict && len(result.diagnostics) != 0 {
+		return 1
+	}
+	if _, err := stdout.Write(result.output); err != nil {
 		writeDiagnostic(stderr, fmt.Errorf("write output: %w", err))
 		return 1
 	}
 	return 0
+}
+
+func parseArgs(args []string) (strict bool, configPath string, ok bool) {
+	for index := 0; index < len(args); index++ {
+		switch args[index] {
+		case "--strict":
+			if strict {
+				return false, "", false
+			}
+			strict = true
+		case "--config":
+			if configPath != "" || index+1 == len(args) {
+				return false, "", false
+			}
+			index++
+			configPath = args[index]
+			if configPath == "" || strings.HasPrefix(configPath, "--") {
+				return false, "", false
+			}
+		default:
+			return false, "", false
+		}
+	}
+	return strict, configPath, true
 }
 
 func writeDiagnostic(stderr io.Writer, err error) {

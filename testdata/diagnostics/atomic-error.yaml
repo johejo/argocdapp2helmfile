@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: warning-before-error
+spec:
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+  source:
+    repoURL: https://example.com/charts
+    chart: chart
+    targetRevision: 1.2.3
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: conversion-error
+spec:
+  source:
+    repoURL: https://example.com/charts
+    targetRevision: 1.2.3
