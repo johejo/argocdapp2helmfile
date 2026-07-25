@@ -139,7 +139,7 @@ func parseGitGeneratorOptions(items yaml.MapSlice, field string) (gitGeneratorOp
 			}
 			result.template = value
 		case "requeueAfterSeconds":
-			// A one-shot CLI has nothing to requeue. Accept the value without validation.
+			// A one-shot CLI has nothing to requeue.
 		default:
 			return result, fmt.Errorf("%s.%s is not supported", field, key)
 		}
@@ -240,20 +240,20 @@ func resolveGitGeneratorRoot(
 			revision,
 		)
 	}
-	if strings.Contains(entry.Root, "{{") || strings.Contains(entry.Root, "}}") {
-		return "", fmt.Errorf("%s config root must not contain a template expression", field)
+	if strings.Contains(entry.LocalRoot, "{{") || strings.Contains(entry.LocalRoot, "}}") {
+		return "", fmt.Errorf("%s config localRoot must not contain a template expression", field)
 	}
-	info, err := os.Lstat(entry.Root)
+	info, err := os.Lstat(entry.LocalRoot)
 	if err != nil {
-		return "", fmt.Errorf("%s config root %q: %w", field, entry.Root, err)
+		return "", fmt.Errorf("%s config localRoot %q: %w", field, entry.LocalRoot, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("%s config root %q must not be a symlink", field, entry.Root)
+		return "", fmt.Errorf("%s config localRoot %q must not be a symlink", field, entry.LocalRoot)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("%s config root %q must be a directory", field, entry.Root)
+		return "", fmt.Errorf("%s config localRoot %q must be a directory", field, entry.LocalRoot)
 	}
-	return entry.Root, nil
+	return entry.LocalRoot, nil
 }
 
 func generateGitDirectoryParams(
@@ -293,7 +293,7 @@ func generateGitDirectoryParams(
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%s: walk config root: %w", field, err)
+		return nil, fmt.Errorf("%s: walk config localRoot: %w", field, err)
 	}
 	matches := filterGitCandidates(candidates, options.directories, path.Match)
 	result := make([]generatedGeneratorParams, 0, len(matches))
@@ -388,7 +388,7 @@ func generateGitFileParams(
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%s: walk config root: %w", field, err)
+		return nil, fmt.Errorf("%s: walk config localRoot: %w", field, err)
 	}
 	matches := filterGitCandidates(candidates, options.files, doublestar.Match)
 	var result []generatedGeneratorParams

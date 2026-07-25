@@ -3,4 +3,4 @@ kind: Config
 sources:
   - repoURL: https://github.com/example/platform.git
     targetRevision: release-1
-    root: checkouts/platform
+    localRoot: checkouts/platform

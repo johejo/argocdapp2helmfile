@@ -3,4 +3,4 @@ kind: Config
 sources:
   - repoURL: https://github.com/example/apps.git
     targetRevision: main
-    root: testdata/applicationset/legacy-matrix/repository
+    localRoot: testdata/applicationset/legacy-matrix/repository

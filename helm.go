@@ -143,8 +143,7 @@ func parseHelmOptions(items yaml.MapSlice, field string) (helmOptions, error) {
 			}
 			result.passCredentials = value
 		case "skipTests", "version":
-			// These compatibility and invocation options do not change the
-			// release definition represented by the generated helmfile.
+			// These options do not affect the generated helmfile.
 			continue
 		default:
 			if !isIgnorableEmptyYAMLOption(item.Value) {

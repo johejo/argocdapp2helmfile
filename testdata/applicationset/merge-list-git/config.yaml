@@ -3,4 +3,4 @@ kind: Config
 sources:
   - repoURL: https://github.com/example/overrides.git
     targetRevision: main
-    root: testdata/applicationset/merge-list-git/repository
+    localRoot: testdata/applicationset/merge-list-git/repository

@@ -49,8 +49,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 func writeDiagnostic(stderr io.Writer, err error) {
-	// Parser errors can contain annotated source excerpts. Keep the CLI contract
-	// of one diagnostic line while retaining the meaningful tokens and location.
+	// Collapse annotated parser errors to one diagnostic line.
 	message := strings.Join(strings.Fields(err.Error()), " ")
 	fmt.Fprintf(stderr, "argocdapp2helmfile: %s\n", message)
 }

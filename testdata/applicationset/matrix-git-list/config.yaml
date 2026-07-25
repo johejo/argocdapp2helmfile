@@ -3,4 +3,4 @@ kind: Config
 sources:
   - repoURL: https://github.com/example/environments.git
     targetRevision: main
-    root: testdata/applicationset/matrix-git-list/repository
+    localRoot: testdata/applicationset/matrix-git-list/repository

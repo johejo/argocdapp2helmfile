@@ -103,17 +103,17 @@ func TestApplicationSetGitGeneratorErrors(t *testing.T) {
 			resolver: resolver,
 			want:     `has no config source entry`,
 		},
-		"missing root": {
+		"missing localRoot": {
 			input:    base,
 			resolver: missingResolver,
-			want:     `config root`,
+			want:     `config localRoot`,
 		},
-		"templated root": {
+		"templated localRoot": {
 			input:    base,
 			resolver: templateResolver,
-			want:     `config root must not contain a template expression`,
+			want:     `config localRoot must not contain a template expression`,
 		},
-		"symlink root": {
+		"symlink localRoot": {
 			input:    base,
 			resolver: symlinkResolver,
 			want:     `must not be a symlink`,

@@ -3,7 +3,7 @@ kind: Config
 sources:
   - repoURL: https://github.com/example/config.git
     targetRevision: main
-    root: testdata/applicationset/cluster-matrix/repository
+    localRoot: testdata/applicationset/cluster-matrix/repository
 clusters:
   - name: first
     server: https://first.example.com

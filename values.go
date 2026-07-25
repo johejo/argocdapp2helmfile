@@ -80,7 +80,7 @@ func resolveValueFiles(
 			)
 		}
 		for _, match := range matches {
-			output := joinSourcePath(entry.mapping.root, match)
+			output := joinSourcePath(entry.mapping.localRoot, match)
 			if _, exists := explicit[output]; exists {
 				continue
 			}
@@ -115,7 +115,7 @@ func resolveValuePath(
 	return resolvedValueFile{
 		mapping:            mapping,
 		repositoryRelative: repositoryRelative,
-		output:             joinSourcePath(mapping.root, repositoryRelative),
+		output:             joinSourcePath(mapping.localRoot, repositoryRelative),
 		glob:               isGlob,
 	}, nil
 }
@@ -125,7 +125,7 @@ func resolveSourcePath(raw string, context valueFileContext, option string) (str
 	if err != nil {
 		return "", err
 	}
-	return joinSourcePath(mapping.root, repositoryRelative), nil
+	return joinSourcePath(mapping.localRoot, repositoryRelative), nil
 }
 
 func resolveSourceLocation(
@@ -207,27 +207,29 @@ func containsValueFileGlob(value string) bool {
 }
 
 func expandValueFileGlob(entry resolvedValueFile) ([]string, error) {
-	root := entry.mapping.root
+	root := entry.mapping.localRoot
 	if strings.Contains(root, "{{") || strings.Contains(root, "}}") {
-		return nil, errors.New("config root must not contain a template expression for glob expansion")
+		return nil, errors.New(
+			"config localRoot must not contain a template expression for glob expansion",
+		)
 	}
 	info, err := os.Lstat(root)
 	if err != nil {
-		return nil, fmt.Errorf("config root %q: %w", root, err)
+		return nil, fmt.Errorf("config localRoot %q: %w", root, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("config root %q must not be a symlink", root)
+		return nil, fmt.Errorf("config localRoot %q must not be a symlink", root)
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("config root %q must be a directory", root)
+		return nil, fmt.Errorf("config localRoot %q must be a directory", root)
 	}
 	canonicalRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return nil, fmt.Errorf("evaluate config root %q: %w", root, err)
+		return nil, fmt.Errorf("evaluate config localRoot %q: %w", root, err)
 	}
 	canonicalRoot, err = filepath.Abs(canonicalRoot)
 	if err != nil {
-		return nil, fmt.Errorf("make config root %q absolute: %w", root, err)
+		return nil, fmt.Errorf("make config localRoot %q absolute: %w", root, err)
 	}
 
 	var matches []string
@@ -249,7 +251,7 @@ func expandValueFileGlob(entry resolvedValueFile) ([]string, error) {
 				return fmt.Errorf("check matched path %q: %w", logical, err)
 			}
 			if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-				return fmt.Errorf("matched path %q resolves outside config root", logical)
+				return fmt.Errorf("matched path %q resolves outside config localRoot", logical)
 			}
 			matches = append(matches, logical)
 			return nil

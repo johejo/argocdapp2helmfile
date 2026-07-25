@@ -3,4 +3,4 @@ kind: Config
 sources:
   - repoURL: https://github.com/example/clusters.git
     targetRevision: main
-    root: testdata/applicationset/matrix-errors/git-values-duplicate/repository
+    localRoot: testdata/applicationset/matrix-errors/git-values-duplicate/repository

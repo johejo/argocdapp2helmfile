@@ -44,7 +44,7 @@ type applicationSetResource struct {
 	Spec struct {
 		GoTemplate        bool     `yaml:"goTemplate"`
 		GoTemplateOptions []string `yaml:"goTemplateOptions"`
-		// Deprecated compatibility field. Selectors are always applied at every depth.
+		// Retained for compatibility; selectors always apply at every depth.
 		ApplyNestedSelectors *bool           `yaml:"applyNestedSelectors"`
 		Generators           []yaml.MapSlice `yaml:"generators"`
 		Template             yaml.MapSlice   `yaml:"template"`

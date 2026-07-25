@@ -3,4 +3,4 @@ kind: Config
 sources:
   - repoURL: https://github.com/example/local-manifests.git
     targetRevision: e2e
-    root: testdata/e2e/repository
+    localRoot: testdata/e2e/repository

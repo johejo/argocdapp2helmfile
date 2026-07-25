@@ -135,7 +135,7 @@ The `spec.source.*` paths below also apply to the manifest source selected from
 | `spec.source.chart` | Release chart as `<alias>/<chart>` |
 | `spec.source.targetRevision` for a packaged chart | Release `version` |
 | Git `spec.source.repoURL` | Config source identity; HTTP(S), `git@host:path`, or `ssh://user@host/path` |
-| Git `spec.source.path` | Helm chart or explicit Kustomization path below the configured source root |
+| Git `spec.source.path` | Helm chart or explicit Kustomization path below the configured `localRoot` |
 | Git `spec.source.targetRevision` | Config source identity and provenance, not a chart version |
 | `spec.source.helm.valueFiles` | Release `values` paths |
 | `spec.source.helm.values` | Parsed inline `values` entry |
@@ -257,7 +257,8 @@ Legacy `elementsYaml` values retain their decoded YAML shape.
 
 The Git generator supports either `directories` or `files`.
 Its `repoURL` and `revision` must exactly match a Config `sources` entry,
-whose `root` is explored from the converter's current working directory.
+whose `localRoot` must resolve from the converter's current working directory to an
+existing non-symlink directory without helmfile template expressions.
 
 Directory patterns use Go's `path.Match` rules.
 File patterns use doublestar rules,
@@ -279,7 +280,6 @@ respectively.
 Legacy file content and generator `values` are flattened into dot-separated keys,
 with scalar values converted to strings.
 
-The root must be an existing non-symlink directory without helmfile template expressions.
 Hidden directories are skipped by directory generators;
 `.git` and symlinks are skipped by file generators.
 See the
@@ -388,10 +388,10 @@ clusters:
 sources:
   - repoURL: git@github.com:example/platform-charts.git
     targetRevision: release-1
-    root: checkouts/platform-charts
+    localRoot: checkouts/platform-charts
   - repoURL: https://github.com/example/values.git
     targetRevision: main
-    root: '{{ requiredEnv "VALUES_ROOT" }}'
+    localRoot: '{{ requiredEnv "VALUES_ROOT" }}'
 releaseLabels:
   - name: argocd.skipTests
     query: .spec.source.helm.skipTests // false
@@ -469,9 +469,10 @@ the dump.
 
 A `sources` entry matches the Application's literal `repoURL` and
 `targetRevision` pair.
-Its required `root` is copied unchanged as the prefix for generated paths.
-It may be absolute, relative, or contain a helmfile template expression.
-Roots need not be unique.
+Its required `localRoot` is copied unchanged as the prefix for generated paths.
+It may be absolute, relative, or contain a helmfile template expression,
+and the converter does not expand shell paths.
+`localRoot` values need not be unique.
 A Git source without a matching entry is an error.
 
 For a Git-hosted chart, use `path` rather than `chart`:
@@ -485,7 +486,7 @@ source:
 
 With the config above, the release chart becomes
 `checkouts/platform-charts/charts/my-app`.
-A path of `.` refers to the configured root.
+A path of `.` refers to the configured `localRoot`.
 No repository or release `version` is emitted because `targetRevision` selects
 the Git source, not the version in `Chart.yaml`.
 
@@ -577,10 +578,8 @@ Path resolution follows these rules:
 - normalized paths may not escape their configured source; and
 - explicit paths retain input order.
 
-Roots are used as written;
-the converter does not expand shell paths or check explicit value-file paths.
-
-For templated roots, use a `.gotmpl` output and provide the value at runtime:
+For templated `localRoot` values, use a `.gotmpl` output and provide the value at
+runtime:
 
 ```sh
 argocdapp2helmfile --config config.yaml \
@@ -592,8 +591,8 @@ VALUES_ROOT="$PWD/checkouts/values" \
 The converter expands `*`, `?`, character classes, and recursive `**` patterns
 in value-file paths relative to the chart or `$ref` repository root.
 A source used by a pattern must have an existing, non-symlink directory as its
-Config `root`; that root cannot contain a helmfile template expression.
-Explicit value files do not impose this local-root requirement.
+Config `localRoot`; that directory cannot contain a helmfile template expression.
+Explicit value files are not checked against the local filesystem.
 
 Matches retain doublestar traversal order rather than being globally sorted.
 Duplicate normalized paths are removed.
@@ -633,8 +632,6 @@ No `labels` mapping is emitted when there are no rules or every result is omitte
 This projection is opt-in.
 `spec.source.helm.skipTests` is otherwise accepted and intentionally ignored
 because it controls Argo CD's Helm invocation, not a helmfile release.
-`spec.source.helm.version` is also accepted regardless of its value or type
-and intentionally ignored as an Argo CD backward-compatibility field.
 
 ## Conversion behavior and constraints
 

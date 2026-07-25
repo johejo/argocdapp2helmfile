@@ -3,4 +3,4 @@ kind: Config
 sources:
   - repoURL: git@example.com:charts.git
     targetRevision: main
-    root: testdata/value-files/glob/repository
+    localRoot: testdata/value-files/glob/repository

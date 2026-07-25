@@ -3,4 +3,4 @@ kind: Config
 sources:
   - repoURL: https://github.com/example/config.git
     targetRevision: main
-    root: testdata/applicationset/git-directory/repository
+    localRoot: testdata/applicationset/git-directory/repository

@@ -3,4 +3,4 @@ kind: Config
 sources:
   - repoURL: ssh://git@git.example.com/platform/manifests.git
     targetRevision: 0123456789abcdef
-    root: '{{ requiredEnv "MANIFESTS_ROOT" }}'
+    localRoot: '{{ requiredEnv "MANIFESTS_ROOT" }}'

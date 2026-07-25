@@ -3,7 +3,7 @@ kind: Config
 sources:
   - repoURL: https://github.com/example/clusters.git
     targetRevision: main
-    root: testdata/applicationset/matrix-git-git/clusters-repository
+    localRoot: testdata/applicationset/matrix-git-git/clusters-repository
   - repoURL: https://github.com/example/apps.git
     targetRevision: release
-    root: testdata/applicationset/matrix-git-git/apps-repository
+    localRoot: testdata/applicationset/matrix-git-git/apps-repository

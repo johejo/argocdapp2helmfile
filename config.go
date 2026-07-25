@@ -32,7 +32,7 @@ type configResource struct {
 type sourceConfigEntry struct {
 	RepoURL        string `yaml:"repoURL"`
 	TargetRevision string `yaml:"targetRevision"`
-	Root           string `yaml:"root"`
+	LocalRoot      string `yaml:"localRoot"`
 }
 
 type destinationConfigEntry struct {
@@ -85,7 +85,7 @@ type sourceKey struct {
 }
 
 type mappedSource struct {
-	root string
+	localRoot string
 }
 
 type sourceResolver struct {
@@ -148,8 +148,8 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 		if strings.TrimSpace(entry.TargetRevision) == "" {
 			return nil, fmt.Errorf("%s.targetRevision is required", field)
 		}
-		if strings.TrimSpace(entry.Root) == "" {
-			return nil, fmt.Errorf("%s.root is required", field)
+		if strings.TrimSpace(entry.LocalRoot) == "" {
+			return nil, fmt.Errorf("%s.localRoot is required", field)
 		}
 		key := sourceKey{repoURL: entry.RepoURL, targetRevision: entry.TargetRevision}
 		if _, exists := resolver.entries[key]; exists {
@@ -257,7 +257,7 @@ func (resolver *sourceResolver) resolve(source applicationSource, field string) 
 			field, source.RepoURL, source.TargetRevision,
 		)
 	}
-	return mappedSource{root: entry.Root}, nil
+	return mappedSource{localRoot: entry.LocalRoot}, nil
 }
 
 func (resolver *destinationResolver) resolve(destination applicationDestination, field string) (string, error) {

@@ -124,7 +124,7 @@ func TestConvertUsesConfigSourcesAndReleaseLabelsTogether(t *testing.T) {
 	config := testConfig(t, `sources:
   - repoURL: https://github.com/example/charts.git
     targetRevision: main
-    root: ./sources/charts
+    localRoot: ./sources/charts
 releaseLabels:
   - name: argocd.project
     query: .spec.project

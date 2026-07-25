@@ -3,7 +3,7 @@ kind: Config
 sources:
   - repoURL: https://github.com/example/platform.git
     targetRevision: main
-    root: checkouts/platform
+    localRoot: checkouts/platform
   - repoURL: https://github.com/example/values.git
     targetRevision: main
-    root: checkouts/values
+    localRoot: checkouts/values

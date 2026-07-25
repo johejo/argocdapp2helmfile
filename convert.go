@@ -260,7 +260,7 @@ func convertApplication(
 				Namespace:       app.Spec.Destination.Namespace,
 				KubeContext:     kubeContext,
 				HistoryMax:      valueOrZero(app.Spec.RevisionHistoryLimit),
-				Chart:           templatePath(joinSourcePath(mapping.root, chartSource.Path)),
+				Chart:           templatePath(joinSourcePath(mapping.localRoot, chartSource.Path)),
 				Values:          releaseValues,
 				CreateNamespace: slices.Contains(app.Spec.SyncPolicy.SyncOptions, "CreateNamespace=true"),
 				Transformers:    transformers,
@@ -366,7 +366,7 @@ func convertApplication(
 		},
 	}
 	if repositoryType == gitRepository {
-		converted.release.Chart = templatePath(joinSourcePath(chartMapping.root, chartRoot))
+		converted.release.Chart = templatePath(joinSourcePath(chartMapping.localRoot, chartRoot))
 		converted.provenanceComments = append([]string{fmt.Sprintf(
 			"document %d chart source: repoURL %q, path %q, targetRevision %q",
 			documentNumber, chartSource.RepoURL, chartSource.Path, chartSource.TargetRevision,

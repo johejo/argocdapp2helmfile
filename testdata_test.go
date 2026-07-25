@@ -30,7 +30,13 @@ func testSourceResolver(t *testing.T, sources ...testSource) *sourceResolver {
 	var config strings.Builder
 	config.WriteString("apiVersion: argocdapp2helmfile/v1alpha1\nkind: Config\nsources:\n")
 	for _, source := range sources {
-		fmt.Fprintf(&config, "  - repoURL: %q\n    targetRevision: %q\n    root: %q\n", source.repoURL, source.targetRevision, source.root)
+		fmt.Fprintf(
+			&config,
+			"  - repoURL: %q\n    targetRevision: %q\n    localRoot: %q\n",
+			source.repoURL,
+			source.targetRevision,
+			source.root,
+		)
 	}
 	parsed, err := parseConfig([]byte(config.String()))
 	if err != nil {

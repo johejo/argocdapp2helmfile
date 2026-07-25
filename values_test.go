@@ -129,7 +129,7 @@ func TestConvertValueFileGlobMissingHandling(t *testing.T) {
 	}
 }
 
-func TestConvertValueFileGlobRootRequirements(t *testing.T) {
+func TestConvertValueFileGlobLocalRootRequirements(t *testing.T) {
 	fileRoot := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(fileRoot, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
@@ -214,7 +214,7 @@ func TestConvertValueFileGlobSymlinks(t *testing.T) {
 
 	input = applicationWithValueFiles(t, "        - values/outside*.yaml\n")
 	if output, err := convertWithResolver([]byte(input), resolver); err == nil ||
-		!strings.Contains(err.Error(), "resolves outside config root") {
+		!strings.Contains(err.Error(), "resolves outside config localRoot") {
 		t.Fatalf("unexpected result: %v\n%s", err, output)
 	}
 
@@ -324,7 +324,7 @@ func TestConvertValueFileGlobErrors(t *testing.T) {
 	}
 }
 
-func TestConvertDoesNotInspectExplicitValueFileOrTemplateRoot(t *testing.T) {
+func TestConvertDoesNotInspectExplicitValueFileOrTemplateLocalRoot(t *testing.T) {
 	resolver := testSourceResolver(t, testSource{
 		repoURL:        globRepositoryURL,
 		targetRevision: "main",

@@ -14,23 +14,28 @@ kind: Config
 sources:
   - repoURL: https://github.com/example/repo.git
     targetRevision: main
-    root: '{{ requiredEnv "REPO_ROOT" }}'
+    localRoot: '{{ requiredEnv "REPO_ROOT" }}'
 `
 	tests := map[string]string{
-		"apiVersion":    strings.Replace(valid, configAPIVersion, "other/v1", 1),
-		"kind":          strings.Replace(valid, "Config", "Other", 1),
-		"unknown field": valid + "unknown: true\n",
-		"empty root":    strings.Replace(valid, `root: '{{ requiredEnv "REPO_ROOT" }}'`, `root: ""`, 1),
-		"legacy env":    strings.Replace(valid, `root: '{{ requiredEnv "REPO_ROOT" }}'`, "env: REPO_ROOT", 1),
+		"apiVersion":      strings.Replace(valid, configAPIVersion, "other/v1", 1),
+		"kind":            strings.Replace(valid, "Config", "Other", 1),
+		"unknown field":   valid + "unknown: true\n",
+		"empty localRoot": strings.Replace(valid, `localRoot: '{{ requiredEnv "REPO_ROOT" }}'`, `localRoot: ""`, 1),
+		"legacy env": strings.Replace(
+			valid,
+			`localRoot: '{{ requiredEnv "REPO_ROOT" }}'`,
+			"env: REPO_ROOT",
+			1,
+		),
 		"allowDirty": strings.Replace(
 			valid,
-			`root: '{{ requiredEnv "REPO_ROOT" }}'`,
-			"root: /repo\n    allowDirty: true",
+			`localRoot: '{{ requiredEnv "REPO_ROOT" }}'`,
+			"localRoot: /repo\n    allowDirty: true",
 			1,
 		),
 		"duplicate key": valid + `  - repoURL: https://github.com/example/repo.git
     targetRevision: main
-    root: /other
+    localRoot: /other
 `,
 		"old kind": strings.Replace(valid, "kind: Config", "kind: SourceMap", 1),
 		"multiple documents": valid + `---
@@ -47,16 +52,16 @@ kind: Config
 	}
 }
 
-func TestConfigAllowsLiteralAndDuplicateRoots(t *testing.T) {
+func TestConfigAllowsLiteralAndDuplicateLocalRoots(t *testing.T) {
 	const config = `apiVersion: argocdapp2helmfile/v1alpha1
 kind: Config
 sources:
   - repoURL: https://github.com/example/charts.git
     targetRevision: main
-    root: '{{ requiredEnv "SOURCES_ROOT" }}'
+    localRoot: '{{ requiredEnv "SOURCES_ROOT" }}'
   - repoURL: https://github.com/example/values.git
     targetRevision: main
-    root: '{{ requiredEnv "SOURCES_ROOT" }}'
+    localRoot: '{{ requiredEnv "SOURCES_ROOT" }}'
 `
 	parsed, err := parseConfig([]byte(config))
 	if err != nil {
@@ -68,8 +73,8 @@ sources:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.root != `{{ requiredEnv "SOURCES_ROOT" }}` {
-		t.Fatalf("unexpected root: %q", resolved.root)
+	if resolved.localRoot != `{{ requiredEnv "SOURCES_ROOT" }}` {
+		t.Fatalf("unexpected localRoot: %q", resolved.localRoot)
 	}
 }
 
@@ -216,14 +221,14 @@ func TestConvertRequiresMappedGitSource(t *testing.T) {
 	}
 }
 
-func TestRunWithConfigDoesNotResolveRoot(t *testing.T) {
+func TestRunWithConfigDoesNotResolveLocalRoot(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	config := `apiVersion: argocdapp2helmfile/v1alpha1
 kind: Config
 sources:
   - repoURL: https://github.com/example/charts.git
     targetRevision: main
-    root: '{{ requiredEnv "REPO_ROOT" }}'
+    localRoot: '{{ requiredEnv "REPO_ROOT" }}'
 `
 	if err := os.WriteFile(configPath, []byte(config), 0o644); err != nil {
 		t.Fatal(err)
