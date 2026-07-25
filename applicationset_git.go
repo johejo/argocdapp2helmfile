@@ -547,7 +547,7 @@ func setLegacyGitPathParams(
 
 func flattenLegacyGitFileParams(params map[string]any) map[string]any {
 	flat := make(map[string]string, len(params))
-	// The input is always a mapping, so flattenParameters cannot fail.
+	// Maps cannot trigger flattenParameters errors.
 	_ = flattenParameters(flat, "", params)
 	return stringMapToAny(flat)
 }

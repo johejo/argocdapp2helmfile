@@ -2,8 +2,12 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"strings"
 	"testing"
+
+	"github.com/johejo/argocdapp2helmfile/internal/diagnostic"
 )
 
 func TestRunErrorsAreAtomic(t *testing.T) {
@@ -95,22 +99,94 @@ func TestParseArgs(t *testing.T) {
 		{"--strict", "--config", "config.yaml"},
 		{"--config", "config.yaml", "--strict"},
 	} {
-		strict, configPath, ok := parseArgs(args)
-		if !ok || !strict || configPath != "config.yaml" {
-			t.Errorf("parseArgs(%q) = %t, %q, %t", args, strict, configPath, ok)
+		options, ok := parseArgs(args)
+		if !ok || !options.strict || options.configPath != "config.yaml" {
+			t.Errorf("parseArgs(%q) = %#v, %t", args, options, ok)
 		}
 	}
 	for _, args := range [][]string{
 		{"--strict", "--strict"},
 		{"--config"},
 		{"--config", "a", "--config", "b"},
+		{"--help-diagnostics", "--help-diagnostics"},
+		{"--help-diagnostics", "--strict"},
+		{"--config", "a", "--help-diagnostics"},
 		{"unknown"},
 	} {
-		if _, _, ok := parseArgs(args); ok {
+		if _, ok := parseArgs(args); ok {
 			t.Errorf("parseArgs(%q) unexpectedly succeeded", args)
 		}
 	}
 }
+
+func TestRunHelpDiagnosticsDoesNotReadInput(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run(
+		[]string{"--help-diagnostics"},
+		errorReader{},
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0: %s", code, stderr.String())
+	}
+	if !bytes.Equal(stdout.Bytes(), diagnostic.Markdown()) {
+		t.Fatal("--help-diagnostics output differs from the renderer")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr was not empty: %q", stderr.String())
+	}
+}
+
+func TestRunHelpDiagnosticsRejectsOtherArguments(t *testing.T) {
+	for _, args := range [][]string{
+		{"--help-diagnostics", "--strict"},
+		{"--strict", "--help-diagnostics"},
+		{"--help-diagnostics", "--config", "config.yaml"},
+		{"--help-diagnostics", "--help-diagnostics"},
+		{"--help-diagnostics", "application.yaml"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, strings.NewReader("invalid: ["), &stdout, &stderr); code != 1 {
+			t.Errorf("run(%q) exit code = %d, want 1", args, code)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("run(%q) wrote stdout: %q", args, stdout.String())
+		}
+	}
+}
+
+func TestRunHelpDiagnosticsReportsWriteFailure(t *testing.T) {
+	var stderr bytes.Buffer
+	code := run(
+		[]string{"--help-diagnostics"},
+		strings.NewReader("invalid: ["),
+		errorWriter{},
+		&stderr,
+	)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if got := stderr.String(); !strings.Contains(got, "write diagnostics reference: write failed") ||
+		strings.Count(got, "\n") != 1 {
+		t.Fatalf("unexpected stderr: %q", got)
+	}
+}
+
+type errorReader struct{}
+
+func (errorReader) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
+
+type errorWriter struct{}
+
+func (errorWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+var _ io.Reader = errorReader{}
+var _ io.Writer = errorWriter{}
 
 func minimalApplication(helm string) string {
 	return `apiVersion: argoproj.io/v1alpha1

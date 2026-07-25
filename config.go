@@ -115,10 +115,7 @@ type conversionConfig struct {
 	destinationResolver *destinationResolver
 	clusters            []clusterConfigEntry
 	labelProjector      *releaseLabelProjector
-	// gitWalks memoizes repository walks for one conversion: a matrix
-	// generator re-expands its second child once per parent parameter set,
-	// and the filesystem does not change while the CLI runs.
-	gitWalks map[gitWalkKey][]string
+	gitWalks            map[gitWalkKey][]string
 }
 
 type gitWalkKey struct {
@@ -133,8 +130,6 @@ func (config *conversionConfig) sources() *sourceResolver {
 	return config.sourceResolver
 }
 
-// walkGitCandidates returns the repository-relative candidate paths under root,
-// running walk only the first time a given root is scanned.
 func (config *conversionConfig) walkGitCandidates(
 	root string,
 	directories bool,

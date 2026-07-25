@@ -4,21 +4,15 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-)
 
-type diagnosticCategory string
-
-const (
-	diagnosticApproximate          diagnosticCategory = "approximate"
-	diagnosticIntentionallyIgnored diagnosticCategory = "intentionally-ignored"
-	diagnosticUnconvertible        diagnosticCategory = "unconvertible"
+	diagnosticrule "github.com/johejo/argocdapp2helmfile/internal/diagnostic"
 )
 
 type conversionDiagnostic struct {
 	origin      inputOrigin
 	application string
 	path        string
-	category    diagnosticCategory
+	category    diagnosticrule.Disposition
 	message     string
 }
 
@@ -61,15 +55,16 @@ type applicationAudit struct {
 
 func (audit *applicationAudit) add(
 	path string,
-	category diagnosticCategory,
-	message string,
+	ruleID diagnosticrule.RuleID,
+	args ...any,
 ) {
+	rule := diagnosticrule.MustLookup(ruleID)
 	audit.diagnostics = append(audit.diagnostics, conversionDiagnostic{
 		origin:      audit.input.origin,
 		application: audit.name,
 		path:        path,
-		category:    category,
-		message:     message,
+		category:    rule.Disposition,
+		message:     diagnosticrule.Message(ruleID, args...),
 	})
 }
 
@@ -78,8 +73,7 @@ func (audit *applicationAudit) revisionHistoryLimit() {
 	if limit != nil && *limit > 0 {
 		audit.add(
 			"spec.revisionHistoryLimit",
-			diagnosticApproximate,
-			"Helmfile historyMax limits Helm release history but does not reproduce Argo CD revision history",
+			diagnosticrule.RevisionHistoryPositive,
 		)
 	}
 }
@@ -93,8 +87,7 @@ func (audit *applicationAudit) automated(syncPolicy map[string]any) {
 	if !ok {
 		audit.add(
 			"spec.syncPolicy.automated",
-			diagnosticUnconvertible,
-			"expected a mapping",
+			diagnosticrule.AutomatedNotMapping,
 		)
 		return
 	}
@@ -105,8 +98,7 @@ func (audit *applicationAudit) automated(syncPolicy map[string]any) {
 		if !ok {
 			audit.add(
 				"spec.syncPolicy.automated.enabled",
-				diagnosticUnconvertible,
-				"expected a boolean or null",
+				diagnosticrule.AutomatedEnabledNotBool,
 			)
 			enabled = false
 		} else {
@@ -118,25 +110,30 @@ func (audit *applicationAudit) automated(syncPolicy map[string]any) {
 	}
 	audit.add(
 		"spec.syncPolicy.automated.enabled",
-		diagnosticIntentionallyIgnored,
-		"Helmfile runs only when invoked and does not reproduce Argo CD automated sync",
+		diagnosticrule.AutomatedEnabled,
 	)
 
 	prune := audit.enabledBoolean(
 		automated,
 		"prune",
 		"spec.syncPolicy.automated.prune",
+		diagnosticrule.AutomatedPruneNotBool,
+		diagnosticrule.AutomatedPrune,
 	)
 	audit.enabledBoolean(
 		automated,
 		"selfHeal",
 		"spec.syncPolicy.automated.selfHeal",
+		diagnosticrule.AutomatedSelfHealNotBool,
+		diagnosticrule.AutomatedSelfHeal,
 	)
 	if prune {
 		audit.enabledBoolean(
 			automated,
 			"allowEmpty",
 			"spec.syncPolicy.automated.allowEmpty",
+			diagnosticrule.AutomatedAllowEmptyNotBool,
+			diagnosticrule.AutomatedAllowEmpty,
 		)
 	}
 }
@@ -145,6 +142,8 @@ func (audit *applicationAudit) enabledBoolean(
 	values map[string]any,
 	field string,
 	path string,
+	invalidRule diagnosticrule.RuleID,
+	enabledRule diagnosticrule.RuleID,
 ) bool {
 	raw, exists := values[field]
 	if !exists || raw == nil {
@@ -152,15 +151,11 @@ func (audit *applicationAudit) enabledBoolean(
 	}
 	value, ok := raw.(bool)
 	if !ok {
-		audit.add(path, diagnosticUnconvertible, "expected a boolean")
+		audit.add(path, invalidRule)
 		return false
 	}
 	if value {
-		audit.add(
-			path,
-			diagnosticUnconvertible,
-			"the enabled Argo CD controller behavior has no Helmfile equivalent",
-		)
+		audit.add(path, enabledRule)
 	}
 	return value
 }
@@ -172,7 +167,7 @@ func (audit *applicationAudit) retry(syncPolicy map[string]any) {
 	}
 	retry, ok := raw.(map[string]any)
 	if !ok {
-		audit.add("spec.syncPolicy.retry", diagnosticUnconvertible, "expected a mapping")
+		audit.add("spec.syncPolicy.retry", diagnosticrule.RetryNotMapping)
 		return
 	}
 	rawLimit, exists := retry["limit"]
@@ -183,16 +178,14 @@ func (audit *applicationAudit) retry(syncPolicy map[string]any) {
 	if !ok {
 		audit.add(
 			"spec.syncPolicy.retry.limit",
-			diagnosticUnconvertible,
-			"expected an integer",
+			diagnosticrule.RetryLimitNotInt,
 		)
 		return
 	}
 	if limit != 0 {
 		audit.add(
 			"spec.syncPolicy.retry",
-			diagnosticUnconvertible,
-			"Argo CD retry behavior has no Helmfile equivalent",
+			diagnosticrule.RetryEnabled,
 		)
 	}
 }
@@ -247,8 +240,7 @@ func (audit *applicationAudit) syncOptions(syncPolicy map[string]any) {
 		if !ok {
 			audit.add(
 				syncOptionPath(index),
-				diagnosticUnconvertible,
-				"sync option must be a string",
+				diagnosticrule.SyncOptionNotString,
 			)
 			continue
 		}
@@ -290,11 +282,8 @@ func (audit *applicationAudit) syncOptions(syncPolicy map[string]any) {
 			if !seenConflict[option.key] {
 				audit.add(
 					syncOptionPath(option.index),
-					diagnosticUnconvertible,
-					fmt.Sprintf(
-						"sync option %q has conflicting duplicate values",
-						option.key,
-					),
+					diagnosticrule.SyncOptionConflict,
+					option.key,
 				)
 				seenConflict[option.key] = true
 			}
@@ -316,94 +305,40 @@ func (audit *applicationAudit) syncOption(
 	option syncOptionOccurrence,
 	serverSideApply bool,
 ) {
-	unsupported := func(message string) {
-		audit.add(syncOptionPath(option.index), diagnosticUnconvertible, message)
-	}
-	ignored := func(message string) {
-		audit.add(syncOptionPath(option.index), diagnosticIntentionallyIgnored, message)
-	}
-	approximate := func(message string) {
-		audit.add(syncOptionPath(option.index), diagnosticApproximate, message)
-	}
-	unknown := func() {
-		unsupported(fmt.Sprintf("sync option %q is unknown or cannot be interpreted", option.text))
+	path := syncOptionPath(option.index)
+	if option.key == "" {
+		audit.add(path, diagnosticrule.SyncOptionMalformed, option.text)
+		return
 	}
 
-	switch option.key {
-	case "CreateNamespace":
-		switch option.value {
-		case "true":
-			approximate(
-				"Helmfile createNamespace creates a namespace but does not reproduce Argo CD namespace management",
-			)
-		case "false":
-		default:
-			unknown()
-		}
-	case "ApplyOutOfSyncOnly":
-		switch option.value {
-		case "true":
-			ignored("Helmfile does not reproduce Argo CD selective sync")
-		case "false":
-		default:
-			unknown()
-		}
-	case "Validate":
-		audit.booleanOption(option, "false", unsupported, unknown)
-	case "SkipDryRunOnMissingResource":
-		audit.booleanOption(option, "true", unsupported, unknown)
-	case "PrunePropagationPolicy":
-		switch option.value {
-		case "foreground":
-		case "background", "orphan":
-			unsupported(
-				"non-default Argo CD prune propagation has no Helmfile equivalent",
-			)
-		default:
-			unknown()
-		}
-	case "PruneLast", "Replace", "Force", "ServerSideApply",
-		"FailOnSharedResource", "RespectIgnoreDifferences":
-		audit.booleanOption(option, "true", unsupported, unknown)
-	case "ClientSideApplyMigration":
-		switch option.value {
-		case "true":
-		case "false":
-			if serverSideApply {
-				unsupported(
-					"disabling client-side apply migration has no Helmfile equivalent",
-				)
-			}
-		default:
-			unknown()
-		}
-	case "Prune", "Delete":
-		switch option.value {
-		case "true":
-		case "false", "confirm":
-			unsupported(
-				fmt.Sprintf("Argo CD %s behavior has no Helmfile equivalent", option.key),
-			)
-		default:
-			unknown()
-		}
-	default:
-		unknown()
+	ruleID, knownKey, knownValue := diagnosticrule.LookupSyncOption(option.key, option.value)
+	if !knownKey {
+		audit.add(path, diagnosticrule.SyncOptionUnknown, option.text)
+		return
 	}
-}
-
-func (audit *applicationAudit) booleanOption(
-	option syncOptionOccurrence,
-	unsupportedValue string,
-	unsupported func(string),
-	unknown func(),
-) {
-	switch option.value {
-	case unsupportedValue:
-		unsupported(fmt.Sprintf("sync option %q has no Helmfile equivalent", option.text))
-	case "true", "false":
+	if !knownValue {
+		audit.add(path, diagnosticrule.SyncOptionValueUnknown, option.text)
+		return
+	}
+	if ruleID == diagnosticrule.ClientSideApplyMigrationFalse && serverSideApply {
+		ruleID = diagnosticrule.ClientSideApplyMigrationDisabled
+	}
+	rule := diagnosticrule.MustLookup(ruleID)
+	if rule.Disposition == diagnosticrule.Supported {
+		return
+	}
+	switch ruleID {
+	case diagnosticrule.ValidateFalse, diagnosticrule.SkipDryRunTrue,
+		diagnosticrule.PruneLastTrue, diagnosticrule.ReplaceTrue,
+		diagnosticrule.ForceTrue, diagnosticrule.ServerSideApplyTrue,
+		diagnosticrule.FailOnSharedResourceTrue,
+		diagnosticrule.RespectIgnoreDifferencesTrue:
+		audit.add(path, ruleID, option.text)
+	case diagnosticrule.PruneFalse, diagnosticrule.PruneConfirm,
+		diagnosticrule.DeleteFalse, diagnosticrule.DeleteConfirm:
+		audit.add(path, ruleID, option.key)
 	default:
-		unknown()
+		audit.add(path, ruleID)
 	}
 }
 
@@ -416,16 +351,14 @@ func (audit *applicationAudit) managedNamespaceMetadata(syncPolicy map[string]an
 	if !ok {
 		audit.add(
 			"spec.syncPolicy.managedNamespaceMetadata",
-			diagnosticUnconvertible,
-			"expected a mapping",
+			diagnosticrule.ManagedNamespaceNotMapping,
 		)
 		return
 	}
 	if mappingHasValues(metadata["labels"]) || mappingHasValues(metadata["annotations"]) {
 		audit.add(
 			"spec.syncPolicy.managedNamespaceMetadata",
-			diagnosticUnconvertible,
-			"Argo CD managed namespace labels and annotations have no Helmfile equivalent",
+			diagnosticrule.ManagedNamespaceValues,
 		)
 	}
 }
@@ -457,16 +390,14 @@ func (audit *applicationAudit) ignoreDifferences(spec map[string]any) {
 	if !ok {
 		audit.add(
 			"spec.ignoreDifferences",
-			diagnosticUnconvertible,
-			"expected a sequence",
+			diagnosticrule.IgnoreDifferencesNotSequence,
 		)
 		return
 	}
 	if len(values) != 0 {
 		audit.add(
 			"spec.ignoreDifferences",
-			diagnosticUnconvertible,
-			"Helmfile does not reproduce Argo CD diff customization",
+			diagnosticrule.IgnoreDifferencesValues,
 		)
 	}
 }

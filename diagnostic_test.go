@@ -26,6 +26,10 @@ func TestConvertWithDiagnosticsClassifiesSyncSettings(t *testing.T) {
 	if len(diagnostics) != 27 {
 		t.Fatalf("diagnostic count = %d, want 27:\n%s", len(diagnostics), strings.Join(diagnostics, "\n"))
 	}
+	if got, want := strings.Join(diagnostics, "\n")+"\n",
+		readTestdata(t, "diagnostics/expected.txt"); got != want {
+		t.Fatalf("diagnostics changed:\n%s\nwant:\n%s", got, want)
+	}
 
 	for index := range 12 {
 		assertDiagnostic(
@@ -101,6 +105,134 @@ func TestApplicationSetDiagnosticsUseRenderedValuesAndGeneratorOrigins(t *testin
 	}
 	if !strings.Contains(string(result.output), "    createNamespace: true\n") {
 		t.Fatalf("CreateNamespace conversion was not preserved:\n%s", result.output)
+	}
+}
+
+func TestSyncOptionEvaluation(t *testing.T) {
+	tests := []struct {
+		name         string
+		values       []any
+		wantCategory string
+		wantPath     string
+		wantMessage  string
+		wantCount    int
+	}{
+		{
+			name:      "supported",
+			values:    []any{"Validate=true"},
+			wantCount: 0,
+		},
+		{
+			name:         "approximate",
+			values:       []any{"CreateNamespace=true"},
+			wantCategory: "approximate",
+			wantPath:     "spec.syncPolicy.syncOptions[0]",
+			wantMessage:  "Helmfile createNamespace creates a namespace",
+			wantCount:    1,
+		},
+		{
+			name:         "intentionally ignored",
+			values:       []any{"ApplyOutOfSyncOnly=true"},
+			wantCategory: "intentionally-ignored",
+			wantPath:     "spec.syncPolicy.syncOptions[0]",
+			wantMessage:  "selective sync",
+			wantCount:    1,
+		},
+		{
+			name:         "unconvertible",
+			values:       []any{"Validate=false"},
+			wantCategory: "unconvertible",
+			wantPath:     "spec.syncPolicy.syncOptions[0]",
+			wantMessage:  `"Validate=false" has no Helmfile equivalent`,
+			wantCount:    1,
+		},
+		{
+			name:         "unknown option",
+			values:       []any{"validate=true"},
+			wantCategory: "unconvertible",
+			wantPath:     "spec.syncPolicy.syncOptions[0]",
+			wantMessage:  `"validate=true" is unknown or cannot be interpreted`,
+			wantCount:    1,
+		},
+		{
+			name:         "unknown value",
+			values:       []any{"Validate=TRUE"},
+			wantCategory: "unconvertible",
+			wantPath:     "spec.syncPolicy.syncOptions[0]",
+			wantMessage:  `"Validate=TRUE" is unknown or cannot be interpreted`,
+			wantCount:    1,
+		},
+		{
+			name:         "malformed",
+			values:       []any{"Validate"},
+			wantCategory: "unconvertible",
+			wantPath:     "spec.syncPolicy.syncOptions[0]",
+			wantMessage:  `"Validate" is unknown or cannot be interpreted`,
+			wantCount:    1,
+		},
+		{
+			name:         "non-string",
+			values:       []any{true},
+			wantCategory: "unconvertible",
+			wantPath:     "spec.syncPolicy.syncOptions[0]",
+			wantMessage:  "sync option must be a string",
+			wantCount:    1,
+		},
+		{
+			name:         "identical duplicate",
+			values:       []any{"Validate=false", "Validate=false"},
+			wantCategory: "unconvertible",
+			wantPath:     "spec.syncPolicy.syncOptions[0]",
+			wantMessage:  `"Validate=false" has no Helmfile equivalent`,
+			wantCount:    1,
+		},
+		{
+			name:         "conflicting duplicate",
+			values:       []any{"Validate=false", "Validate=true"},
+			wantCategory: "unconvertible",
+			wantPath:     "spec.syncPolicy.syncOptions[0]",
+			wantMessage:  `"Validate" has conflicting duplicate values`,
+			wantCount:    1,
+		},
+		{
+			name: "migration dependency",
+			values: []any{
+				"ServerSideApply=true",
+				"ClientSideApplyMigration=false",
+			},
+			wantCategory: "unconvertible",
+			wantPath:     "spec.syncPolicy.syncOptions[0]",
+			wantMessage:  `"ServerSideApply=true" has no Helmfile equivalent`,
+			wantCount:    2,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			audit := applicationAudit{name: "app"}
+			audit.syncOptions(map[string]any{"syncOptions": test.values})
+			if len(audit.diagnostics) != test.wantCount {
+				t.Fatalf(
+					"diagnostic count = %d, want %d: %#v",
+					len(audit.diagnostics),
+					test.wantCount,
+					audit.diagnostics,
+				)
+			}
+			if test.wantCount == 0 {
+				return
+			}
+			got := audit.diagnostics[0]
+			if string(got.category) != test.wantCategory ||
+				got.path != test.wantPath ||
+				!strings.Contains(got.message, test.wantMessage) {
+				t.Errorf(
+					"diagnostic = category %q, path %q, message %q",
+					got.category,
+					got.path,
+					got.message,
+				)
+			}
+		})
 	}
 }
 

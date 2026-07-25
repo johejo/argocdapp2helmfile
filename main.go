@@ -5,25 +5,43 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/johejo/argocdapp2helmfile/internal/diagnostic"
 )
+
+//go:generate go run ./internal/cmd/gendiagnostics
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
+type commandOptions struct {
+	strict          bool
+	configPath      string
+	helpDiagnostics bool
+}
+
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	strict, configPath, ok := parseArgs(args)
+	options, ok := parseArgs(args)
 	if !ok {
 		fmt.Fprintln(
 			stderr,
-			"argocdapp2helmfile: usage: argocdapp2helmfile [--strict] [--config PATH]",
+			"argocdapp2helmfile: usage: "+
+				"argocdapp2helmfile [--strict] [--config PATH] | --help-diagnostics",
 		)
 		return 1
 	}
+	if options.helpDiagnostics {
+		if _, err := stdout.Write(diagnostic.Markdown()); err != nil {
+			writeDiagnostic(stderr, fmt.Errorf("write diagnostics reference: %w", err))
+			return 1
+		}
+		return 0
+	}
 
 	var config *conversionConfig
-	if configPath != "" {
-		input, err := os.ReadFile(configPath)
+	if options.configPath != "" {
+		input, err := os.ReadFile(options.configPath)
 		if err != nil {
 			writeDiagnostic(stderr, fmt.Errorf("read config: %w", err))
 			return 1
@@ -46,7 +64,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	level := "warning"
-	if strict {
+	if options.strict {
 		level = "error"
 	}
 	for _, diagnostic := range result.diagnostics {
@@ -57,7 +75,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			diagnostic,
 		)
 	}
-	if strict && len(result.diagnostics) != 0 {
+	if options.strict && len(result.diagnostics) != 0 {
 		return 1
 	}
 	if _, err := stdout.Write(result.output); err != nil {
@@ -67,28 +85,37 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func parseArgs(args []string) (strict bool, configPath string, ok bool) {
+func parseArgs(args []string) (commandOptions, bool) {
+	var options commandOptions
 	for index := 0; index < len(args); index++ {
 		switch args[index] {
 		case "--strict":
-			if strict {
-				return false, "", false
+			if options.strict {
+				return commandOptions{}, false
 			}
-			strict = true
+			options.strict = true
 		case "--config":
-			if configPath != "" || index+1 == len(args) {
-				return false, "", false
+			if options.configPath != "" || index+1 == len(args) {
+				return commandOptions{}, false
 			}
 			index++
-			configPath = args[index]
-			if configPath == "" || strings.HasPrefix(configPath, "--") {
-				return false, "", false
+			options.configPath = args[index]
+			if options.configPath == "" || strings.HasPrefix(options.configPath, "--") {
+				return commandOptions{}, false
 			}
+		case "--help-diagnostics":
+			if options.helpDiagnostics {
+				return commandOptions{}, false
+			}
+			options.helpDiagnostics = true
 		default:
-			return false, "", false
+			return commandOptions{}, false
 		}
 	}
-	return strict, configPath, true
+	if options.helpDiagnostics && (options.strict || options.configPath != "") {
+		return commandOptions{}, false
+	}
+	return options, true
 }
 
 func writeDiagnostic(stderr io.Writer, err error) {

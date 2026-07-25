@@ -21,8 +21,6 @@ type generatedGeneratorParams struct {
 	path   string
 }
 
-// generatorResult is what every generator kind returns: the parameter sets it
-// produced plus the optional per-generator Application template.
 type generatorResult struct {
 	params   []generatedGeneratorParams
 	template yaml.MapSlice

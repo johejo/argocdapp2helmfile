@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
+	diagnosticrule "github.com/johejo/argocdapp2helmfile/internal/diagnostic"
 )
 
 type applicationDestination struct {
@@ -156,13 +157,10 @@ func convertApplication(
 	if app.Spec.RevisionHistoryLimit != nil {
 		switch {
 		case *app.Spec.RevisionHistoryLimit == 0:
-			return converted, errors.New(
-				"spec.revisionHistoryLimit cannot be 0: Argo CD disables revision history, " +
-					"but Helmfile historyMax 0 means unlimited history",
-			)
+			return converted, diagnosticrule.Error(diagnosticrule.RevisionHistoryZero)
 		case *app.Spec.RevisionHistoryLimit < 0:
-			return converted, fmt.Errorf(
-				"spec.revisionHistoryLimit cannot convert %d: history limit must be greater than 0",
+			return converted, diagnosticrule.Error(
+				diagnosticrule.RevisionHistoryNegative,
 				*app.Spec.RevisionHistoryLimit,
 			)
 		}

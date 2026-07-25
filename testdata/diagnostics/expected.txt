@@ -1,0 +1,27 @@
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[0]: unconvertible: sync option "ServerSideApply=true" has no Helmfile equivalent
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[1]: unconvertible: disabling client-side apply migration has no Helmfile equivalent
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[2]: unconvertible: sync option "Replace=true" has no Helmfile equivalent
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[3]: unconvertible: sync option "PruneLast=true" has no Helmfile equivalent
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[4]: unconvertible: sync option "RespectIgnoreDifferences=true" has no Helmfile equivalent
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[5]: unconvertible: sync option "Validate=false" has no Helmfile equivalent
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[6]: unconvertible: sync option "SkipDryRunOnMissingResource=true" has no Helmfile equivalent
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[7]: unconvertible: non-default Argo CD prune propagation has no Helmfile equivalent
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[8]: unconvertible: sync option "Force=true" has no Helmfile equivalent
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[9]: unconvertible: sync option "FailOnSharedResource=true" has no Helmfile equivalent
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[10]: unconvertible: Argo CD Prune behavior has no Helmfile equivalent
+document 1: Application "critical-options": spec.syncPolicy.syncOptions[11]: unconvertible: Argo CD Delete behavior has no Helmfile equivalent
+document 2: Application "controller-settings": spec.revisionHistoryLimit: approximate: Helmfile historyMax limits Helm release history but does not reproduce Argo CD revision history
+document 2: Application "controller-settings": spec.syncPolicy.automated.enabled: intentionally-ignored: Helmfile runs only when invoked and does not reproduce Argo CD automated sync
+document 2: Application "controller-settings": spec.syncPolicy.automated.prune: unconvertible: the enabled Argo CD controller behavior has no Helmfile equivalent
+document 2: Application "controller-settings": spec.syncPolicy.automated.selfHeal: unconvertible: the enabled Argo CD controller behavior has no Helmfile equivalent
+document 2: Application "controller-settings": spec.syncPolicy.automated.allowEmpty: unconvertible: the enabled Argo CD controller behavior has no Helmfile equivalent
+document 2: Application "controller-settings": spec.syncPolicy.retry: unconvertible: Argo CD retry behavior has no Helmfile equivalent
+document 2: Application "controller-settings": spec.syncPolicy.syncOptions[0]: approximate: Helmfile createNamespace creates a namespace but does not reproduce Argo CD namespace management
+document 2: Application "controller-settings": spec.syncPolicy.syncOptions[1]: intentionally-ignored: Helmfile does not reproduce Argo CD selective sync
+document 2: Application "controller-settings": spec.syncPolicy.managedNamespaceMetadata: unconvertible: Argo CD managed namespace labels and annotations have no Helmfile equivalent
+document 2: Application "controller-settings": spec.ignoreDifferences: unconvertible: Helmfile does not reproduce Argo CD diff customization
+document 3: Application "duplicate-options": spec.syncPolicy.syncOptions[0]: unconvertible: sync option "ServerSideApply=true" has no Helmfile equivalent
+document 3: Application "duplicate-options": spec.syncPolicy.syncOptions[2]: unconvertible: sync option "Mystery=true" is unknown or cannot be interpreted
+document 3: Application "duplicate-options": spec.syncPolicy.syncOptions[4]: unconvertible: sync option " CreateNamespace=true" is unknown or cannot be interpreted
+document 3: Application "duplicate-options": spec.syncPolicy.syncOptions[5]: unconvertible: sync option "CreateNamespace=true " is unknown or cannot be interpreted
+document 3: Application "duplicate-options": spec.syncPolicy.syncOptions[6]: unconvertible: sync option "Validate" has conflicting duplicate values
