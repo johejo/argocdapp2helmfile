@@ -412,8 +412,9 @@ Packaged charts require `$ref` paths;
 remote value-file and file-parameter URLs are not supported.
 
 Helmfile installs a Kustomization as a temporary Helm chart through its
-[Kustomization support][helmfile-kustomizations], which requires
-Kustomize/chartify tooling at runtime.
+[Kustomization support][helmfile-kustomizations].
+The standalone Helmfile binary requires an external `kustomize` binary,
+while the official Helmfile container includes it.
 Deletion, history, and hook semantics therefore follow Helm rather than direct
 Argo CD Kustomize management.
 
