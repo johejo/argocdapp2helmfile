@@ -1,0 +1,12 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: storefront
+spec:
+  destination:
+    namespace: storefront-system
+  source:
+    repoURL: https://github.com/example/platform.git
+    targetRevision: release-1
+    path: deploy/storefront
+    kustomize: {}

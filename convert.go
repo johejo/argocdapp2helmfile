@@ -111,6 +111,7 @@ type convertedApplication struct {
 	release            release
 	chart              string
 	skipCRDs           bool
+	skipCRDsApplicable bool
 	provenanceComments []string
 }
 
@@ -153,6 +154,39 @@ func convertApplication(
 	if err != nil {
 		return converted, err
 	}
+	isKustomization := chartSource.Kustomize != nil
+	if isKustomization {
+		if strings.TrimSpace(chartSource.Chart) != "" {
+			return converted, fmt.Errorf(
+				"%s.chart and %s.kustomize cannot both be set",
+				chartSourceField,
+				chartSourceField,
+			)
+		}
+		if chartSource.Helm != nil {
+			return converted, fmt.Errorf(
+				"%s.helm and %s.kustomize cannot both be set",
+				chartSourceField,
+				chartSourceField,
+			)
+		}
+		if chartSource.Directory != nil {
+			return converted, fmt.Errorf(
+				"%s.directory and %s.kustomize cannot both be set",
+				chartSourceField,
+				chartSourceField,
+			)
+		}
+		if chartSource.Plugin != nil {
+			return converted, fmt.Errorf(
+				"%s.plugin and %s.kustomize cannot both be set",
+				chartSourceField,
+				chartSourceField,
+			)
+		}
+	} else if chartSource.Directory != nil || chartSource.Plugin != nil {
+		return converted, fmt.Errorf("%s contains a non-Helm source configuration", chartSourceField)
+	}
 	repositoryType, err := classifyRepositoryURL(chartSource.RepoURL)
 	if err != nil {
 		return converted, err
@@ -162,7 +196,7 @@ func convertApplication(
 	if hasChart && hasPath {
 		return converted, fmt.Errorf("%s.chart and %s.path cannot both be set", chartSourceField, chartSourceField)
 	}
-	if hasPath && repositoryType == httpRepository {
+	if (hasPath || isKustomization) && repositoryType == httpRepository {
 		repositoryType = gitRepository
 	}
 	if repositoryType == gitRepository {
@@ -185,6 +219,46 @@ func convertApplication(
 	}
 	if strings.TrimSpace(chartSource.TargetRevision) == "" {
 		return converted, fmt.Errorf("%s.targetRevision is required", chartSourceField)
+	}
+
+	if isKustomization {
+		if repositoryType != gitRepository {
+			return converted, fmt.Errorf("%s.kustomize requires a Git repository", chartSourceField)
+		}
+		options, err := parseKustomizeOptions(
+			chartSource.Kustomize,
+			chartSourceField+".kustomize",
+		)
+		if err != nil {
+			return converted, err
+		}
+		mapping, err := resolver.resolve(chartSource, chartSourceField)
+		if err != nil {
+			return converted, err
+		}
+		values := options.values()
+		var releaseValues []any
+		if len(values) != 0 {
+			releaseValues = []any{values}
+		}
+		return convertedApplication{
+			provenanceComments: append([]string{fmt.Sprintf(
+				"document %d kustomization source: repoURL %q, path %q, targetRevision %q",
+				documentNumber,
+				chartSource.RepoURL,
+				chartSource.Path,
+				chartSource.TargetRevision,
+			)}, provenance...),
+			release: release{
+				Name:            app.Metadata.Name,
+				Namespace:       app.Spec.Destination.Namespace,
+				KubeContext:     kubeContext,
+				HistoryMax:      valueOrZero(app.Spec.RevisionHistoryLimit),
+				Chart:           templatePath(joinSourcePath(mapping.root, chartSource.Path)),
+				Values:          releaseValues,
+				CreateNamespace: slices.Contains(app.Spec.SyncPolicy.SyncOptions, "CreateNamespace=true"),
+			},
+		}, nil
 	}
 
 	helm, err := parseHelmOptions(chartSource.Helm, chartSourceField+".helm")
@@ -267,6 +341,7 @@ func convertApplication(
 	converted = convertedApplication{
 		chart:              chartSource.Chart,
 		skipCRDs:           helm.skipCRDs,
+		skipCRDsApplicable: true,
 		provenanceComments: provenance,
 		release: release{
 			Name:                 releaseName,

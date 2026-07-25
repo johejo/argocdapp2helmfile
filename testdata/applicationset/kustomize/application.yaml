@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: kustomizations
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - list:
+        elements:
+          - name: frontend
+            path: services/frontend
+            tag: v4
+          - name: worker
+            path: services/worker
+            tag: v5
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        namespace: workloads
+      source:
+        repoURL: https://github.com/example/platform.git
+        targetRevision: main
+        path: '{{ .path }}'
+        kustomize:
+          images:
+            - '{{ .name }}:{{ .tag }}'

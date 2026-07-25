@@ -1,0 +1,21 @@
+# document 1 kustomization source: repoURL "ssh://git@git.example.com/platform/manifests.git", path "services/api", targetRevision "0123456789abcdef"
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: api
+    namespace: release-namespace
+    chart: '{{ requiredEnv "MANIFESTS_ROOT" }}/services/api'
+    values:
+      - namePrefix: edge-
+        nameSuffix: -prod
+        namespace: manifest-namespace
+        images:
+          - name: example/app
+            newTag: v2
+          - name: old
+            newName: registry.example.com:5000/team/app
+            digest: sha256:abcdef0123456789
+          - name: registry.example.com:5000/sidecar
+          - name: backend
+            newName: registry.example.com/team/backend
+            newTag: "2026.07"

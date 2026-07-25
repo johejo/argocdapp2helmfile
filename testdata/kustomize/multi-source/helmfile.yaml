@@ -1,0 +1,11 @@
+# document 1 kustomization source: repoURL "https://github.com/example/platform.git", path "services/payments", targetRevision "main"
+# document 1 values source ref "values": repoURL "https://github.com/example/values.git", targetRevision "main"
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: payments
+    chart: 'checkouts/platform/services/payments'
+    values:
+      - images:
+          - name: payments
+            newTag: v3

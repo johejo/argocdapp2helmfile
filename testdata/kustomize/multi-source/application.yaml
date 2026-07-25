@@ -1,0 +1,15 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: payments
+spec:
+  sources:
+    - repoURL: https://github.com/example/platform.git
+      targetRevision: main
+      path: services/payments
+      kustomize:
+        images:
+          - payments:v3
+    - repoURL: https://github.com/example/values.git
+      targetRevision: main
+      ref: values

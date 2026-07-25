@@ -57,16 +57,23 @@ func resolveSources(app application, documentNumber int) (applicationSource, str
 	var comments []string
 	for i, source := range app.Spec.Sources {
 		field := fmt.Sprintf("spec.sources[%d]", i)
-		isChartSource := strings.TrimSpace(source.Chart) != "" ||
-			strings.TrimSpace(source.Path) != "" && strings.TrimSpace(source.Ref) == ""
-		if isChartSource {
+		isManifestSource := strings.TrimSpace(source.Chart) != "" ||
+			strings.TrimSpace(source.Path) != "" && strings.TrimSpace(source.Ref) == "" ||
+			source.Kustomize != nil
+		if isManifestSource {
 			if chartSourceField != "" {
-				return applicationSource{}, "", nil, nil, errors.New("spec.sources must contain exactly one Helm chart source")
+				return applicationSource{}, "", nil, nil, errors.New(
+					"spec.sources must contain exactly one manifest source",
+				)
 			}
 			if strings.TrimSpace(source.Ref) != "" {
-				return applicationSource{}, "", nil, nil, fmt.Errorf("%s.ref is not supported on the Helm chart source", field)
+				return applicationSource{}, "", nil, nil, fmt.Errorf(
+					"%s.ref is not supported on the manifest source",
+					field,
+				)
 			}
-			if source.Directory != nil || source.Kustomize != nil || source.Plugin != nil {
+			if source.Kustomize == nil &&
+				(source.Directory != nil || source.Plugin != nil) {
 				return applicationSource{}, "", nil, nil, fmt.Errorf("%s contains a non-Helm source configuration", field)
 			}
 			chartSource = source
@@ -102,7 +109,9 @@ func resolveSources(app application, documentNumber int) (applicationSource, str
 		))
 	}
 	if chartSourceField == "" {
-		return applicationSource{}, "", nil, nil, errors.New("spec.sources must contain exactly one Helm chart source")
+		return applicationSource{}, "", nil, nil, errors.New(
+			"spec.sources must contain exactly one manifest source",
+		)
 	}
 	return chartSource, chartSourceField, refs, comments, nil
 }

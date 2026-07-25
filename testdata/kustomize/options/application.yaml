@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: api
+spec:
+  destination:
+    namespace: release-namespace
+  source:
+    repoURL: ssh://git@git.example.com/platform/manifests.git
+    targetRevision: 0123456789abcdef
+    path: services/api
+    kustomize:
+      images:
+        - example/app:v2
+        - old=registry.example.com:5000/team/app@sha256:abcdef0123456789
+        - registry.example.com:5000/sidecar
+        - backend=registry.example.com/team/backend:2026.07
+      namespace: manifest-namespace
+      nameSuffix: -prod
+      namePrefix: edge-

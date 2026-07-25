@@ -1,0 +1,7 @@
+# document 1 kustomization source: repoURL "https://github.com/example/platform.git", path "deploy/storefront", targetRevision "release-1"
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: storefront
+    namespace: storefront-system
+    chart: 'checkouts/platform/deploy/storefront'

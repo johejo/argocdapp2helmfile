@@ -17,7 +17,7 @@ go install github.com/johejo/argocdapp2helmfile@latest
 argocdapp2helmfile <application.yaml >helmfile.yaml
 ```
 
-Use `--config` for destination kube contexts, Git-hosted charts,
+Use `--config` for destination kube contexts, Git-hosted charts or Kustomizations,
 external values repositories, or release labels:
 
 ```sh
@@ -104,7 +104,8 @@ supported `ApplicationSet`.
 An Application must identify either:
 
 - a packaged chart in an HTTP(S) or scheme-less OCI Helm repository; or
-- a chart directory in a Git repository.
+- a Git directory, treated as a chart unless explicitly selected as a
+  Kustomization with `kustomize: {}`.
 
 ### Application mapping
 
@@ -121,7 +122,7 @@ An Application must identify either:
 | `spec.source.chart` | Release chart as `<alias>/<chart>` |
 | `spec.source.targetRevision` for a packaged chart | Release `version` |
 | Git `spec.source.repoURL` | Config source identity; HTTP(S), `git@host:path`, or `ssh://user@host/path` |
-| Git `spec.source.path` | Chart path below the configured source root |
+| Git `spec.source.path` | Helm chart or explicit Kustomization path below the configured source root |
 | Git `spec.source.targetRevision` | Config source identity and provenance, not a chart version |
 | `spec.source.helm.valueFiles` | Release `values` paths |
 | `spec.source.helm.values` | Parsed inline `values` entry |
@@ -137,7 +138,7 @@ An Application must identify either:
 | `spec.destination.name` or `spec.destination.server` | Release `kubeContext` through Config `destinations` |
 | Config `releaseLabels` query result | Release `labels` entry |
 
-The required fields are `metadata.name`, the chart source's `repoURL` and
+The required fields are `metadata.name`, the manifest source's `repoURL` and
 `targetRevision`, and either `chart` for a Helm repository or `path` for Git.
 
 Argo CD documents Helm value precedence, from lowest to highest, as
@@ -348,7 +349,7 @@ the converter does not read a kubeconfig or verify that the context exists.
 If an Application sets either field, `--config` and a matching entry are required.
 If neither is set, `kubeContext` is omitted.
 
-### Git charts, external values, and paths
+### Git charts, Kustomizations, external values, and paths
 
 A `sources` entry matches the Application's literal `repoURL` and
 `targetRevision` pair.
@@ -372,14 +373,49 @@ A path of `.` refers to the configured root.
 No repository or release `version` is emitted because `targetRevision` selects
 the Git source, not the version in `Chart.yaml`.
 
+A Git `path` remains a Helm chart unless the source contains an explicit
+non-null `kustomize` mapping.
+Use `kustomize: {}` when no options are needed:
+
+```yaml
+source:
+  repoURL: https://github.com/example/platform.git
+  targetRevision: release-1
+  path: deploy/my-app
+  kustomize:
+    namePrefix: edge-
+    nameSuffix: -prod
+    namespace: manifests
+    images:
+      - example/app:v2
+      - old=registry.example.com:5000/team/app@sha256:abcdef
+```
+
+Supported options are `namePrefix`, `nameSuffix`, `namespace`, and `images`.
+Images use Kustomize's `[old=]image[:tag|@digest]` syntax and retain input order.
+Other options are rejected.
+
+`spec.destination.namespace` remains the Helm release namespace.
+`kustomize.namespace` controls the generated manifest namespace, matching
+[Argo CD's Kustomize namespace semantics][argocd-kustomize-namespace].
+
+`kustomize` cannot be combined with `chart`, `helm`, `directory`, or `plugin`.
+
 A multi-source Application is supported when exactly one source is a Helm chart
-and every other source is a values-only source with a unique `ref`.
+or explicit Kustomization and every other source is a values-only source with a
+unique `ref`.
 For example, `$values/prod/values.yaml` resolves to
 `{{ requiredEnv "VALUES_ROOT" }}/prod/values.yaml`.
 The `$ref` token is valid only at the start of a value-file or file-parameter path.
 Generated output includes provenance comments for Git chart and values sources.
 Packaged charts require `$ref` paths;
 remote value-file and file-parameter URLs are not supported.
+
+Helmfile installs a Kustomization as a temporary Helm chart through its
+[Kustomization support][helmfile-kustomizations], which requires
+Kustomize/chartify tooling at runtime.
+Deletion, history, and hook semantics therefore follow Helm rather than direct
+Argo CD Kustomize management.
 
 Path resolution follows these rules:
 
@@ -469,9 +505,11 @@ and intentionally ignored as an Argo CD backward-compatibility field.
   Omission preserves their defaults;
   zero and negative values are rejected because Argo CD zero disables history,
   while Helm zero means unlimited history.
-- `skipCrds` is per Application in Argo CD but `helmDefaults.skipCRDs` is shared.
-  Every Application must therefore have the same effective value, with omission
-  treated as `false`.
+- `skipCrds` is per Helm Application in Argo CD but `helmDefaults.skipCRDs` is
+  shared.
+  Every converted Helm chart must therefore have the same effective value, with
+  omission treated as `false`.
+  Kustomization releases do not participate in this comparison.
   Generated `skipCRDs` output requires helmfile v1.3.0 or newer.
 - Empty YAML documents are rejected.
   Errors identify the one-based document number and, for ApplicationSets, the
@@ -498,7 +536,11 @@ For upstream behavior, see also
   https://argo-cd.readthedocs.io/en/latest/operator-manual/applicationset/GoTemplate/
 [argocd-create-namespace]:
   https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/#create-namespace
+[argocd-kustomize-namespace]:
+  https://argo-cd.readthedocs.io/en/stable/user-guide/kustomize/#setting-the-manifests-namespace
 [helmfile-configuration]: https://helmfile.readthedocs.io/en/latest/configuration/
+[helmfile-kustomizations]:
+  https://helmfile.readthedocs.io/en/latest/advanced-features/#deploy-kustomizations-with-helmfile
 
 ## License
 

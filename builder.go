@@ -71,11 +71,11 @@ func (builder *helmfileBuilder) add(item applicationInput) error {
 	}
 	builder.releaseOrigins[converted.release.Name] = item.origin
 
-	if !builder.hasApplications {
+	if converted.skipCRDsApplicable && !builder.hasApplications {
 		builder.sharedSkipCRDs = converted.skipCRDs
 		builder.sharedSkipCRDsOrigin = item.origin
 		builder.hasApplications = true
-	} else if converted.skipCRDs != builder.sharedSkipCRDs {
+	} else if converted.skipCRDsApplicable && converted.skipCRDs != builder.sharedSkipCRDs {
 		if item.origin.path == "" &&
 			builder.sharedSkipCRDsOrigin.path == "" &&
 			builder.sharedSkipCRDsOrigin.document == 1 {

@@ -1,0 +1,19 @@
+# document 1 kustomization source: repoURL "https://github.com/example/platform.git", path "services/frontend", targetRevision "main"
+# document 1 kustomization source: repoURL "https://github.com/example/platform.git", path "services/worker", targetRevision "main"
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: frontend
+    namespace: workloads
+    chart: 'checkouts/platform/services/frontend'
+    values:
+      - images:
+          - name: frontend
+            newTag: v4
+  - name: worker
+    namespace: workloads
+    chart: 'checkouts/platform/services/worker'
+    values:
+      - images:
+          - name: worker
+            newTag: v5
