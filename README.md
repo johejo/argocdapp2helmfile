@@ -548,8 +548,9 @@ unknown variables expand to an empty string.
 Helmfile applies later transformers instead, so these options are no-ops.
 
 `replicas`, `patches`, `components`, `ignoreMissingComponents`, `version`, `kubeVersion`,
-and `apiVersions` are unsupported because the later transformer phase cannot preserve
-their ordering.
+and `apiVersions` are unsupported.
+They require source edits or build controls that Helmfile's Kustomization integration
+does not expose.
 See [Argo CD's Kustomize options][argocd-kustomize-options] for the upstream semantics.
 
 `spec.destination.namespace` remains the Helm release namespace.
