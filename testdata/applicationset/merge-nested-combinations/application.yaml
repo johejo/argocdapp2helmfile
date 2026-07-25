@@ -1,0 +1,116 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: merge-nested-combinations
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - merge:
+        mergeKeys: [environment]
+        generators:
+          - matrix:
+              generators:
+                - list:
+                    elements:
+                      - environment: dev
+                        enabled: "true"
+                      - environment: ignored
+                        enabled: "false"
+                  selector:
+                    matchLabels:
+                      enabled: "true"
+                - list:
+                    elements:
+                      - name: matrix-base
+                        chart: nginx
+                        version: 1.0.0
+            selector:
+              matchLabels:
+                environment: dev
+          - list:
+              elements:
+                - environment: dev
+                  name: matrix-overridden
+    - merge:
+        mergeKeys: [environment]
+        generators:
+          - list:
+              elements:
+                - environment: prod
+                  name: matrix-override-base
+                  chart: nginx
+                  version: 2.0.0
+          - matrix:
+              generators:
+                - list:
+                    elements:
+                      - environment: prod
+                - list:
+                    elements:
+                      - name: matrix-override
+                        selected: "true"
+                  selector:
+                    matchLabels:
+                      selected: "true"
+            selector:
+              matchLabels:
+                environment: prod
+    - merge:
+        mergeKeys: [environment]
+        generators:
+          - merge:
+              mergeKeys: [environment]
+              generators:
+                - list:
+                    elements:
+                      - environment: stage
+                        name: nested-merge-base
+                        chart: nginx
+                        version: 3.0.0
+                - list:
+                    elements:
+                      - environment: stage
+                        name: nested-merge-inner
+            selector:
+              matchLabels:
+                environment: stage
+          - list:
+              elements:
+                - environment: stage
+                  name: nested-merge-outer
+    - merge:
+        mergeKeys: [environment]
+        generators:
+          - list:
+              elements:
+                - environment: qa
+                  name: nested-override-base
+                  chart: nginx
+                  version: 4.0.0
+          - merge:
+              mergeKeys: [environment]
+              generators:
+                - list:
+                    elements:
+                      - environment: qa
+                        name: nested-override-inner-base
+                        selected: "true"
+                  selector:
+                    matchLabels:
+                      selected: "true"
+                - list:
+                    elements:
+                      - environment: qa
+                        name: nested-override-final
+            selector:
+              matchLabels:
+                environment: qa
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'

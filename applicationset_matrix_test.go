@@ -29,6 +29,10 @@ func TestConvertApplicationSetNestedMatrix(t *testing.T) {
 	testConvertApplicationSetMatrixFixture(t, "matrix-nested", false)
 }
 
+func TestConvertApplicationSetMatrixMerge(t *testing.T) {
+	testConvertApplicationSetMatrixFixture(t, "matrix-merge", false)
+}
+
 func TestConvertApplicationSetLegacyMatrix(t *testing.T) {
 	testConvertApplicationSetMatrixFixture(t, "legacy-matrix", true)
 }

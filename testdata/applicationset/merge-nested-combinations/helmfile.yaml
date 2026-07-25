@@ -1,0 +1,18 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: matrix-overridden
+    chart: source/nginx
+    version: 1.0.0
+  - name: matrix-override
+    chart: source/nginx
+    version: 2.0.0
+  - name: nested-merge-outer
+    chart: source/nginx
+    version: 3.0.0
+  - name: nested-override-final
+    chart: source/nginx
+    version: 4.0.0

@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: matrix-merge
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - matrix:
+        generators:
+          - merge:
+              mergeKeys: [environment]
+              generators:
+                - list:
+                    elements:
+                      - environment: dev
+                        name: first-base
+                        chart: nginx
+                        version: 1.0.0
+                - list:
+                    elements:
+                      - environment: dev
+                        name: first-merged
+          - list:
+              elements:
+                - namespace: '{{ .environment }}-namespace'
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - cluster: east
+                  mergeKey: id
+                - cluster: west
+                  mergeKey: id
+          - merge:
+              mergeKeys: ['{{ .mergeKey }}']
+              generators:
+                - list:
+                    elements:
+                      - id: application
+                        name: '{{ .cluster }}-base'
+                        namespace: default
+                        chart: nginx
+                        version: 2.0.0
+                - list:
+                    elements:
+                      - id: application
+                        name: '{{ .cluster }}-merged'
+                        cluster: '{{ .cluster }}'
+                        selected: "true"
+                  selector:
+                    matchLabels:
+                      cluster: '{{ .cluster }}'
+                      selected: "true"
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      destination:
+        namespace: '{{ .namespace }}'
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'

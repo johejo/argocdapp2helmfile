@@ -17,6 +17,10 @@ func TestConvertApplicationSetLegacyMergeDottedKey(t *testing.T) {
 	testConvertApplicationSetMergeFixture(t, "legacy-merge", false)
 }
 
+func TestConvertApplicationSetMergeNestedCombinations(t *testing.T) {
+	testConvertApplicationSetMergeFixture(t, "merge-nested-combinations", false)
+}
+
 func testConvertApplicationSetMergeFixture(t *testing.T, name string, withConfig bool) {
 	t.Helper()
 	var config *conversionConfig
@@ -59,10 +63,6 @@ func TestApplicationSetMergeErrors(t *testing.T) {
 			fixture: "one-child.yaml",
 			want:    "merge.generators must contain at least two generators",
 		},
-		"unsupported child": {
-			fixture: "unsupported-child.yaml",
-			want:    "merge.generators[1].matrix generator is not supported in a merge generator",
-		},
 		"List child template": {
 			fixture: "list-child-template.yaml",
 			want:    "merge.generators[0].list.template is not supported in a merge generator",
@@ -83,6 +83,21 @@ func TestApplicationSetMergeErrors(t *testing.T) {
 			fixture: "unknown-field.yaml",
 			want:    "merge.extra is not supported",
 		},
+		"deeply nested combination": {
+			fixture: "deeply-nested-combination.yaml",
+			want: "spec.generators[0].merge.generators[0].matrix.generators[0].merge " +
+				"exceeds the supported nesting depth",
+		},
+		"nested merge template": {
+			fixture: "nested-merge-template.yaml",
+			want: "spec.generators[0].matrix.generators[0].merge.template is not supported " +
+				"in a nested merge generator",
+		},
+		"nested terminal template": {
+			fixture: "nested-terminal-template.yaml",
+			want: "spec.generators[0].merge.generators[0].matrix.generators[0].list.template " +
+				"is not supported in a matrix generator",
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -92,6 +107,18 @@ func TestApplicationSetMergeErrors(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestApplicationSetNestedCombinationRenderErrorReportsEveryOrigin(t *testing.T) {
+	input := readTestdata(t, "applicationset/merge-errors/nested-origin.yaml")
+	_, err := convert([]byte(input))
+	want := "spec.generators[0].merge.generators[0].matrix.generators[0].list.elements[0] × " +
+		"spec.generators[0].merge.generators[0].matrix.generators[1].list.elements[0] ← " +
+		"spec.generators[0].merge.generators[1].merge.generators[0].list.elements[0] ← " +
+		"spec.generators[0].merge.generators[1].merge.generators[1].list.elements[0]"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

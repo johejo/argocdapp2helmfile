@@ -33,8 +33,8 @@ func parseApplicationSetGenerator(
 	resolver *sourceResolver,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
-	matrixDepth int,
-	mergeChild bool,
+	combinationDepth int,
+	parentCombination string,
 ) (applicationSetGenerator, error) {
 	var result applicationSetGenerator
 	var generatorName string
@@ -77,24 +77,19 @@ func parseApplicationSetGenerator(
 		}
 		generatorName, generatorValue = key, item.Value
 	}
-	if mergeChild && generatorName != "list" && generatorName != "git" {
-		if generatorName == "" {
-			return result, fmt.Errorf("%s must contain exactly one generator", field)
-		}
-		return result, fmt.Errorf(
-			"%s.%s generator is not supported in a merge generator",
-			field,
-			generatorName,
-		)
-	}
-	if mergeChild {
-		if err := rejectCombinationChildTemplate(raw, field, "merge"); err != nil {
+	if parentCombination != "" && generatorName != "matrix" && generatorName != "merge" {
+		if err := rejectCombinationChildTemplate(raw, field, parentCombination); err != nil {
 			return result, err
 		}
 	}
-	if matrixDepth > 0 && generatorName != "matrix" {
-		if err := rejectCombinationChildTemplate(raw, field, "matrix"); err != nil {
-			return result, err
+	if combinationDepth > 0 && (generatorName == "matrix" || generatorName == "merge") {
+		if generatorHasTemplate(generatorValue) {
+			return result, fmt.Errorf(
+				"%s.%s.template is not supported in a nested %s generator",
+				field,
+				generatorName,
+				generatorName,
+			)
 		}
 	}
 	if generatorName != "matrix" && len(parentParams) != 0 {
@@ -167,7 +162,7 @@ func parseApplicationSetGenerator(
 		result.params = git.params
 		result.template = git.template
 	case "matrix":
-		if matrixDepth >= 2 {
+		if combinationDepth >= 2 {
 			return result, fmt.Errorf("%s.matrix exceeds the supported nesting depth", field)
 		}
 		items, ok := generatorValue.(yaml.MapSlice)
@@ -180,7 +175,7 @@ func parseApplicationSetGenerator(
 			resolver,
 			renderer,
 			parentParams,
-			matrixDepth,
+			combinationDepth,
 		)
 		if err != nil {
 			return result, err
@@ -188,8 +183,8 @@ func parseApplicationSetGenerator(
 		result.params = matrix.params
 		result.template = matrix.template
 	case "merge":
-		if matrixDepth > 0 {
-			return result, fmt.Errorf("%s.merge generator is not supported in a matrix generator", field)
+		if combinationDepth >= 2 {
+			return result, fmt.Errorf("%s.merge exceeds the supported nesting depth", field)
 		}
 		items, ok := generatorValue.(yaml.MapSlice)
 		if !ok {
@@ -200,6 +195,7 @@ func parseApplicationSetGenerator(
 			field+".merge",
 			resolver,
 			renderer,
+			combinationDepth,
 		)
 		if err != nil {
 			return result, err
@@ -279,6 +275,19 @@ func rejectCombinationChildTemplate(raw yaml.MapSlice, field, parent string) err
 		}
 	}
 	return nil
+}
+
+func generatorHasTemplate(value any) bool {
+	options, ok := value.(yaml.MapSlice)
+	if !ok {
+		return false
+	}
+	for _, option := range options {
+		if option.Key == "template" {
+			return true
+		}
+	}
+	return false
 }
 
 type labelSelector struct {

@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: nested-merge-template
+spec:
+  generators:
+    - matrix:
+        generators:
+          - merge:
+              mergeKeys: [environment]
+              generators:
+                - list:
+                    elements:
+                      - environment: dev
+                - list:
+                    elements:
+                      - environment: dev
+              template: {}
+          - list:
+              elements:
+                - region: east
+  template:
+    metadata:
+      name: test
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: nginx
+        targetRevision: 1.0.0

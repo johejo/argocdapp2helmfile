@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: nested-origin
+spec:
+  goTemplate: true
+  goTemplateOptions: [missingkey=error]
+  generators:
+    - merge:
+        mergeKeys: [environment]
+        generators:
+          - matrix:
+              generators:
+                - list:
+                    elements:
+                      - environment: dev
+                        name: base
+                - list:
+                    elements:
+                      - chart: nginx
+                        version: 1.0.0
+          - merge:
+              mergeKeys: [environment]
+              generators:
+                - list:
+                    elements:
+                      - environment: dev
+                        name: inner-base
+                - list:
+                    elements:
+                      - environment: dev
+                        name: inner-override
+  template:
+    metadata:
+      name: '{{ .missing }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ .chart }}'
+        targetRevision: '{{ .version }}'

@@ -251,14 +251,19 @@ See the
 [Argo CD Git generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/)
 for the upstream generator model.
 
+Matrix and Merge may contain a Matrix or Merge child one level deep.
+Nested combination generators may contain only List or Git children.
+Only top-level generator templates are supported,
+while selectors apply at every level.
+
 #### Matrix generator
 
-Matrix supports every two-child combination of List, Git, and a one-level nested Matrix.
-Each nested Matrix must itself have exactly two List or Git children;
-a third Matrix level is rejected.
+Matrix requires exactly two List, Git, Matrix, or Merge children.
 
 The first child's parameters may be used to render the second child,
-including dynamic List `elementsYaml` and Git fields.
+including a nested Merge definition,
+dynamic List `elementsYaml`,
+and Git fields.
 Git `values` may reference parent, Git path, and Git parameter-file fields together.
 Results retain child order,
 and the first child's values take precedence recursively when parameter maps overlap.
@@ -267,16 +272,13 @@ For Git × Git,
 `pathParamPrefix` is recommended when both children need to retain their path parameters.
 Without prefixes,
 the normal first-child-wins merge behavior applies to the shared `path` key.
-A top-level Matrix `template` is supported;
-child-generator and nested Matrix templates are rejected.
-Selectors apply at every generator level.
 See the
 [Argo CD Matrix generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Matrix/)
 for the upstream generator constraints and parameter model.
 
 #### Merge generator
 
-Merge accepts two or more List or Git children.
+Merge accepts two or more List, Git, Matrix, or Merge children.
 It preserves the first child's results and order,
 then applies matching children in declaration order using `mergeKeys`.
 Maps merge recursively;
@@ -284,10 +286,8 @@ scalars and sequences use the later value.
 Unmatched overrides are ignored,
 and results missing any merge key do not match.
 
-Children expand and apply selectors independently without cross-generator rendering.
+Children expand and apply selectors independently.
 Complete merge-key tuples must be unique within each child.
-A top-level `template` is supported,
-but child templates and combination-generator children are not.
 Go templates do not support dotted merge keys;
 legacy mode matches their flattened form.
 See the

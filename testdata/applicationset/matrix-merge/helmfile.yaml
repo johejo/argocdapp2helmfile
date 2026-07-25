@@ -1,0 +1,18 @@
+repositories:
+  - name: source
+    url: https://charts.example.com
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: first-merged
+    namespace: dev-namespace
+    chart: source/nginx
+    version: 1.0.0
+  - name: east-merged
+    namespace: default
+    chart: source/nginx
+    version: 2.0.0
+  - name: west-merged
+    namespace: default
+    chart: source/nginx
+    version: 2.0.0

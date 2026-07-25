@@ -17,7 +17,7 @@ func generateMatrixParams(
 	resolver *sourceResolver,
 	renderer applicationSetRenderer,
 	parentParams map[string]any,
-	matrixDepth int,
+	combinationDepth int,
 ) (matrixGeneratorResult, error) {
 	var result matrixGeneratorResult
 	var children []any
@@ -34,7 +34,7 @@ func generateMatrixParams(
 				return result, fmt.Errorf("%s.generators must be a sequence", field)
 			}
 		case "template":
-			if matrixDepth > 0 {
+			if combinationDepth > 0 {
 				return result, fmt.Errorf("%s.template is not supported in a nested matrix generator", field)
 			}
 			value, ok := item.Value.(yaml.MapSlice)
@@ -65,8 +65,8 @@ func generateMatrixParams(
 		resolver,
 		renderer,
 		parentParams,
-		matrixDepth+1,
-		false,
+		combinationDepth+1,
+		"matrix",
 	)
 	if err != nil {
 		return result, err
@@ -84,8 +84,8 @@ func generateMatrixParams(
 			resolver,
 			renderer,
 			context,
-			matrixDepth+1,
-			false,
+			combinationDepth+1,
+			"matrix",
 		)
 		if err != nil {
 			return result, fmt.Errorf("%s -> %w", firstParams.path, err)

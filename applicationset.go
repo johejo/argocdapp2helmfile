@@ -86,7 +86,7 @@ func expandApplicationSet(node ast.Node, resolver *sourceResolver) ([]generatedA
 			renderer,
 			nil,
 			0,
-			false,
+			"",
 		)
 		if err != nil {
 			return nil, err

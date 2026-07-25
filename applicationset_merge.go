@@ -18,6 +18,7 @@ func generateMergeParams(
 	field string,
 	resolver *sourceResolver,
 	renderer applicationSetRenderer,
+	combinationDepth int,
 ) (mergeGeneratorResult, error) {
 	var result mergeGeneratorResult
 	var mergeKeys []string
@@ -61,6 +62,9 @@ func generateMergeParams(
 				return result, fmt.Errorf("%s.generators must be a sequence", field)
 			}
 		case "template":
+			if combinationDepth > 0 {
+				return result, fmt.Errorf("%s.template is not supported in a nested merge generator", field)
+			}
 			value, ok := item.Value.(yaml.MapSlice)
 			if !ok {
 				return result, fmt.Errorf("%s.template must be a mapping", field)
@@ -90,8 +94,8 @@ func generateMergeParams(
 			resolver,
 			renderer,
 			nil,
-			0,
-			true,
+			combinationDepth+1,
+			"merge",
 		)
 		if err != nil {
 			return result, err
