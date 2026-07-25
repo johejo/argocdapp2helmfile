@@ -303,6 +303,9 @@ func convertApplication(
 		if err != nil {
 			return converted, err
 		}
+		if err := validateGitChartSource(mapping, chartSource, chartSourceField); err != nil {
+			return converted, err
+		}
 		chartMapping = &mapping
 		chartRoot = chartSource.Path
 	}

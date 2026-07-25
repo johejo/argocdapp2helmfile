@@ -495,6 +495,8 @@ the Git source, not the version in `Chart.yaml`.
 
 A Git `path` remains a Helm chart unless the source contains an explicit
 non-null `kustomize` mapping.
+When `localRoot` is inspectable, a standard Kustomization file without
+`Chart.yaml` is an error that suggests adding the mapping.
 Use `kustomize: {}` when no options are needed:
 
 ```yaml
