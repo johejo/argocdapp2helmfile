@@ -218,6 +218,18 @@ func TestConvertDefaultsGitTargetRevision(t *testing.T) {
 	}
 }
 
+func TestConvertTrimsChartAndTargetRevision(t *testing.T) {
+	input := readTestdata(t, "whitespace-source/application.yaml")
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := readTestdata(t, "whitespace-source/helmfile.yaml")
+	if string(output) != want {
+		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
+	}
+}
+
 func TestConvertRejectsWhitespaceGitTargetRevision(t *testing.T) {
 	input := readTestdata(t, "default-git-target-revision/whitespace-application.yaml")
 	if output, err := convert([]byte(input)); err == nil ||

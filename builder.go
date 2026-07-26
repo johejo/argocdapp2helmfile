@@ -104,6 +104,22 @@ func (builder *helmfileBuilder) add(item applicationInput) error {
 		}
 		converted.release.Chart = record.alias + "/" + converted.chart
 	}
+	// convertApplication leaves Chart unset for a packaged chart and relies on the
+	// block above to complete it, so anything other than a nonempty local path or
+	// alias/chart reference would silently emit "chart: null".
+	var chartIsSet bool
+	switch chart := converted.release.Chart.(type) {
+	case templatePath:
+		chartIsSet = chart != ""
+	case string:
+		chartIsSet = chart != ""
+	}
+	if !chartIsSet {
+		return item.origin.wrap(fmt.Errorf(
+			"release %q has no chart reference",
+			converted.release.Name,
+		))
+	}
 	builder.result.Releases = append(builder.result.Releases, converted.release)
 	if item.rollingStep != nil {
 		steps := builder.rollingSyncReleases[item.origin.document]

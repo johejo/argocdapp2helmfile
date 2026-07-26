@@ -307,11 +307,10 @@ func MustLookup(id RuleID) Rule {
 	return rule
 }
 
+// Message renders a rule's diagnostic message. Callers must supply one argument
+// per format verb; a mismatch surfaces as fmt's %!verb(MISSING) marker.
 func Message(id RuleID, args ...any) string {
 	rule := MustLookup(id)
-	if len(args) == 0 {
-		return rule.Message
-	}
 	return fmt.Sprintf(rule.Message, args...)
 }
 

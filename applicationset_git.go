@@ -518,6 +518,10 @@ func setGitPathParams(params map[string]any, prefix string, pathObject map[strin
 	params[prefix] = map[string]any{"path": pathObject}
 }
 
+// setLegacyGitPathParams matches Argo CD, which indexes segments as path[0] and
+// drops the segments key. flattenLegacyGitFileParams uses the generic
+// flattenParameters instead, producing path.segments.0; the two are not
+// interchangeable.
 func setLegacyGitPathParams(
 	params map[string]any,
 	prefix string,

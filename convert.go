@@ -81,6 +81,10 @@ type setParameter struct {
 	File  templatePath `yaml:"file,omitempty"`
 }
 
+// templatePath is a local path that is always single-quoted, because a configured
+// source root may be a helmfile template expression and an unquoted value
+// starting with '{' would be read as a YAML flow mapping. Packaged chart
+// references are plain strings instead, since they cannot contain one.
 type templatePath string
 
 func (value templatePath) MarshalYAML() ([]byte, error) {
@@ -178,13 +182,21 @@ func convertApplication(
 	chartSourceField := sources.field
 	refs := sources.refs
 	provenance := sources.comments
+	// Trim once here so the emitted values cannot keep whitespace the emptiness
+	// tests below ignore. A blank targetRevision keeps its value because it is
+	// rejected rather than defaulted the way an omitted one is.
+	chartSource.Chart = strings.TrimSpace(chartSource.Chart)
+	chartSource.Path = strings.TrimSpace(chartSource.Path)
+	if trimmed := strings.TrimSpace(chartSource.TargetRevision); trimmed != "" {
+		chartSource.TargetRevision = trimmed
+	}
 	isKustomization := chartSource.Kustomize != nil
 	if isKustomization {
 		for _, conflict := range []struct {
 			name string
 			set  bool
 		}{
-			{"chart", strings.TrimSpace(chartSource.Chart) != ""},
+			{"chart", chartSource.Chart != ""},
 			{"helm", chartSource.Helm != nil},
 			{"directory", chartSource.Directory != nil},
 			{"plugin", chartSource.Plugin != nil},
@@ -201,16 +213,20 @@ func convertApplication(
 	} else if chartSource.Directory != nil || chartSource.Plugin != nil {
 		return converted, fmt.Errorf("%s contains a non-Helm source configuration", chartSourceField)
 	}
-	repositoryType, err := classifyRepositoryURL(chartSource.RepoURL)
+	// An HTTP URL may address either a Helm repository or a Git remote, so the URL
+	// shape (urlKind) and how the manifests are obtained (repositoryType) are not
+	// the same thing. Branch on repositoryType only.
+	urlKind, err := classifyRepositoryURL(chartSource.RepoURL)
 	if err != nil {
 		return converted, err
 	}
-	hasChart := strings.TrimSpace(chartSource.Chart) != ""
-	hasPath := strings.TrimSpace(chartSource.Path) != ""
+	hasChart := chartSource.Chart != ""
+	hasPath := chartSource.Path != ""
 	if hasChart && hasPath {
 		return converted, fmt.Errorf("%s.chart and %s.path cannot both be set", chartSourceField, chartSourceField)
 	}
-	if (hasPath || isKustomization) && repositoryType == httpRepository {
+	repositoryType := urlKind
+	if (hasPath || isKustomization) && urlKind == httpRepository {
 		repositoryType = gitRepository
 	}
 	if repositoryType == gitRepository {

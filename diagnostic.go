@@ -14,6 +14,7 @@ type conversionDiagnostic struct {
 	origin      inputOrigin
 	application string
 	path        string
+	rule        diagnosticrule.RuleID
 	category    diagnosticrule.Disposition
 	message     string
 }
@@ -65,6 +66,7 @@ func (audit *applicationAudit) add(
 		origin:      audit.input.origin,
 		application: audit.name,
 		path:        path,
+		rule:        ruleID,
 		category:    rule.Disposition,
 		message:     diagnosticrule.Message(ruleID, args...),
 	})

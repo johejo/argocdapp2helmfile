@@ -1,0 +1,10 @@
+repositories:
+  - name: stable
+    url: https://charts.example.com/stable
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: nginx
+    namespace: nginx
+    chart: stable/nginx
+    version: 15.9.0

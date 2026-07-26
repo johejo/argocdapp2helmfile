@@ -1,10 +1,19 @@
 package main
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+
+	diagnosticrule "github.com/johejo/argocdapp2helmfile/internal/diagnostic"
 )
+
+// syncOptionSetting is the placeholder the catalog stores for rules that describe
+// a malformed or unrecognized sync option rather than a single setting.
+const syncOptionSetting = "spec.syncPolicy.syncOptions[index]"
+
+var syncOptionPathPattern = regexp.MustCompile(`^spec\.syncPolicy\.syncOptions\[\d+\]$`)
 
 func TestConvertWithDiagnosticsClassifiesSyncSettings(t *testing.T) {
 	input := readTestdata(t, "diagnostics/cases.yaml")
@@ -233,6 +242,97 @@ func TestSyncOptionEvaluation(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+// Enumerating the catalog rather than a fixed list makes a newly added sync option
+// rule fail here unless applicationAudit.syncOption passes its format arguments.
+func TestSyncOptionMessagesRenderEveryFormatArgument(t *testing.T) {
+	syncOptionKeys := make(map[string]struct{})
+	seen := make(map[diagnosticrule.RuleID]struct{})
+	for _, option := range diagnosticrule.SyncOptions() {
+		syncOptionKeys[option.Key] = struct{}{}
+		for _, value := range option.Values {
+			text := option.Key + "=" + value.Value
+			// ClientSideApplyMigration=false only reports while server-side apply
+			// is enabled, so each option is also paired with it.
+			for _, values := range [][]any{{text}, {text, "ServerSideApply=true"}} {
+				audit := applicationAudit{name: "app"}
+				audit.syncOptions(map[string]any{"syncOptions": values})
+				for _, diagnostic := range audit.diagnostics {
+					assertRenderedMessage(t, diagnostic)
+					seen[diagnostic.rule] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// Guards against the loop above passing vacuously.
+	for _, rule := range diagnosticrule.Rules() {
+		if rule.Disposition == diagnosticrule.Supported {
+			continue
+		}
+		if _, isSyncOption := syncOptionKeys[rule.Setting]; !isSyncOption {
+			continue
+		}
+		if _, exists := seen[rule.ID]; !exists {
+			t.Errorf("sync option rule %q was never rendered", rule.ID)
+		}
+	}
+}
+
+// Keeps the paths reported by diagnostic.go from drifting away from the Setting
+// the catalog documents for the same rule.
+func TestDiagnosticPathsMatchTheRuleCatalog(t *testing.T) {
+	syncOptionKeys := make(map[string]struct{})
+	for _, option := range diagnosticrule.SyncOptions() {
+		syncOptionKeys[option.Key] = struct{}{}
+	}
+
+	for _, name := range []string{"diagnostics/cases.yaml", "diagnostics/applicationset.yaml"} {
+		result, err := convertWithDiagnostics([]byte(readTestdata(t, name)), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.diagnostics) == 0 {
+			t.Fatalf("%s produced no diagnostics", name)
+		}
+		for _, diagnostic := range result.diagnostics {
+			assertRenderedMessage(t, diagnostic)
+			rule := diagnosticrule.MustLookup(diagnostic.rule)
+			_, isSyncOption := syncOptionKeys[rule.Setting]
+			if isSyncOption || rule.Setting == syncOptionSetting {
+				if !syncOptionPathPattern.MatchString(diagnostic.path) {
+					t.Errorf(
+						"rule %q reported path %q, want an indexed sync option path",
+						diagnostic.rule,
+						diagnostic.path,
+					)
+				}
+				continue
+			}
+			if diagnostic.path != rule.Setting {
+				t.Errorf(
+					"rule %q reported path %q, want %q from the catalog",
+					diagnostic.rule,
+					diagnostic.path,
+					rule.Setting,
+				)
+			}
+		}
+	}
+}
+
+// No catalog message contains a literal percent sign, so any percent that
+// survives rendering is one of fmt's argument mismatch markers.
+func assertRenderedMessage(t *testing.T, diagnostic conversionDiagnostic) {
+	t.Helper()
+	if strings.Contains(diagnostic.message, "%") {
+		t.Errorf(
+			"rule %q rendered an unsubstituted format verb: %q",
+			diagnostic.rule,
+			diagnostic.message,
+		)
 	}
 }
 
