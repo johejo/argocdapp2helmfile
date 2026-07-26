@@ -298,13 +298,14 @@ func canonicalLocalRoot(root string) (string, error) {
 	if err := validateLocalRootDirectory(root); err != nil {
 		return "", err
 	}
-	canonical, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return "", fmt.Errorf("evaluate config localRoot %q: %w", root, err)
-	}
-	canonical, err = filepath.Abs(canonical)
+	// Absolute first: EvalSymlinks only resolves the components it is given.
+	canonical, err := filepath.Abs(root)
 	if err != nil {
 		return "", fmt.Errorf("make config localRoot %q absolute: %w", root, err)
+	}
+	canonical, err = filepath.EvalSymlinks(canonical)
+	if err != nil {
+		return "", fmt.Errorf("evaluate config localRoot %q: %w", root, err)
 	}
 	return canonical, nil
 }

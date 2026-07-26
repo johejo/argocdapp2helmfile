@@ -248,3 +248,46 @@ sources:
 		t.Fatalf("unexpected output:\n%s", stdout.String())
 	}
 }
+
+func TestRelativeLocalRootResolvesSymlinkedWorkingDirectory(t *testing.T) {
+	packageDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked := filepath.Join(t.TempDir(), "workspace")
+	if err := os.Symlink(packageDir, linked); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(linked)
+
+	t.Run("kustomization diagnostic", func(t *testing.T) {
+		config, err := parseConfig([]byte(readTestdata(t, "kustomize/detection/config.yaml")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = convertWithConfig(
+			[]byte(readTestdata(t, "kustomize/detection/application.yaml")),
+			config,
+		)
+		if err == nil || !strings.Contains(err.Error(), "appears to be a Kustomization") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("value file glob", func(t *testing.T) {
+		config, err := parseConfig([]byte(readTestdata(t, "value-files/glob/config.yaml")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		output, err := convertWithConfig(
+			[]byte(readTestdata(t, "value-files/glob/application.yaml")),
+			config,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(output), "repository/chart/values/00.yaml") {
+			t.Fatalf("glob was not expanded:\n%s", output)
+		}
+	})
+}

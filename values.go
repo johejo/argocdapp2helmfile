@@ -211,7 +211,7 @@ func expandValueFileGlob(entry resolvedValueFile) ([]string, error) {
 		os.DirFS(root),
 		entry.repositoryRelative,
 		func(logical string, _ fs.DirEntry) error {
-			candidate := filepath.Join(root, filepath.FromSlash(logical))
+			candidate := filepath.Join(canonicalRoot, filepath.FromSlash(logical))
 			_, inside, err := pathWithinRoot(canonicalRoot, candidate)
 			if err != nil {
 				return fmt.Errorf("check matched path %q: %w", logical, err)
