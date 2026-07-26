@@ -361,7 +361,7 @@ var buildEnvironmentVariables = []BuildEnvironmentVariable{
 	},
 	{
 		Name: "ARGOCD_APP_SOURCE_PATH", Kind: BuildEnvironmentStatic,
-		Source: "Manifest source `path`",
+		Source: "Trimmed manifest source `path`",
 	},
 	{
 		Name: "ARGOCD_APP_SOURCE_REPO_URL", Kind: BuildEnvironmentStatic,
@@ -369,7 +369,7 @@ var buildEnvironmentVariables = []BuildEnvironmentVariable{
 	},
 	{
 		Name: "ARGOCD_APP_SOURCE_TARGET_REVISION", Kind: BuildEnvironmentStatic,
-		Source: "Manifest source `targetRevision`",
+		Source: "Trimmed manifest source `targetRevision`, without the Git `HEAD` default",
 	},
 	{
 		Name: "ARGOCD_APP_REVISION", Kind: BuildEnvironmentDynamic,

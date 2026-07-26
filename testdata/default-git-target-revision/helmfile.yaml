@@ -10,7 +10,7 @@ releases:
   - name: git-chart
     chart: 'checkouts/platform/charts/app'
     values:
-      - 'checkouts/platform/charts/app/environments/HEAD.yaml'
+      - 'checkouts/platform/charts/app/environments/default.yaml'
     set:
       - name: settings
         file: 'checkouts/platform/charts/app/files/config.txt'

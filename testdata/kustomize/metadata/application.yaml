@@ -9,12 +9,14 @@ spec:
     namespace: workloads
   source:
     repoURL: https://github.com/example/platform.git
-    targetRevision: main
-    path: services/api
+    # Surrounding whitespace is accepted and trimmed consistently for output and expansion.
+    targetRevision: " main "
+    path: " services/api "
     kustomize:
       commonLabels:
         app.kubernetes.io/name: ${ARGOCD_APP_NAME}
         app.kubernetes.io/part-of: $ARGOCD_APP_PROJECT_NAME
+        app.example.com/source-path: $ARGOCD_APP_SOURCE_PATH
         unknown: before-${NOT_AN_ARGOCD_VARIABLE}-after
       commonAnnotations:
         app.example.com/application-namespace: $ARGOCD_APP_NAMESPACE

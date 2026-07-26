@@ -85,9 +85,9 @@ path of a `$ref` value file.
 | `ARGOCD_APP_NAME` | `metadata.name` |
 | `ARGOCD_APP_NAMESPACE` | `metadata.namespace` |
 | `ARGOCD_APP_PROJECT_NAME` | `spec.project`, or `default` when it is omitted |
-| `ARGOCD_APP_SOURCE_PATH` | Manifest source `path` |
+| `ARGOCD_APP_SOURCE_PATH` | Trimmed manifest source `path` |
 | `ARGOCD_APP_SOURCE_REPO_URL` | Manifest source `repoURL` |
-| `ARGOCD_APP_SOURCE_TARGET_REVISION` | Manifest source `targetRevision` |
+| `ARGOCD_APP_SOURCE_TARGET_REVISION` | Trimmed manifest source `targetRevision`, without the Git `HEAD` default |
 
 The remaining variables are rejected wherever expansion applies.
 

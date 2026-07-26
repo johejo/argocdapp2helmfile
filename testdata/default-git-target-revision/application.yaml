@@ -8,7 +8,7 @@ spec:
     path: charts/app
     helm:
       valueFiles:
-        - environments/$ARGOCD_APP_SOURCE_TARGET_REVISION.yaml
+        - environments/default.yaml
       fileParameters:
         - name: settings
           path: files/config.txt

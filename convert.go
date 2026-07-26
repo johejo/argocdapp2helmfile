@@ -142,15 +142,17 @@ type convertedApplication struct {
 	provenanceComments []string
 }
 
-// chartSourceSelection is the Application's manifest source after trimming and
-// validation, together with the repository kind that decides how it converts.
+// chartSourceSelection carries the trimmed and validated manifest source, the
+// repository kind that decides how it converts, and the build environment
+// captured before applying converter-only defaults.
 type chartSourceSelection struct {
-	source          applicationSource
-	field           string
-	repositoryType  repositoryKind
-	isKustomization bool
-	refs            map[string]applicationSource
-	provenance      []string
+	source           applicationSource
+	buildEnvironment map[string]string
+	field            string
+	repositoryType   repositoryKind
+	isKustomization  bool
+	refs             map[string]applicationSource
+	provenance       []string
 }
 
 func convertApplication(
@@ -218,6 +220,7 @@ func selectChartSource(app application, documentNumber int) (chartSourceSelectio
 	if err != nil {
 		return selected, err
 	}
+	buildEnvironment := applicationBuildEnvironment(app, sources.chartSource)
 	chartSource := sources.chartSource
 	chartSourceField := sources.field
 	// Trim once here so the emitted values cannot keep whitespace the emptiness
@@ -291,12 +294,13 @@ func selectChartSource(app application, documentNumber int) (chartSourceSelectio
 	}
 
 	return chartSourceSelection{
-		source:          chartSource,
-		field:           chartSourceField,
-		repositoryType:  repositoryType,
-		isKustomization: isKustomization,
-		refs:            sources.refs,
-		provenance:      sources.comments,
+		source:           chartSource,
+		buildEnvironment: buildEnvironment,
+		field:            chartSourceField,
+		repositoryType:   repositoryType,
+		isKustomization:  isKustomization,
+		refs:             sources.refs,
+		provenance:       sources.comments,
 	}, nil
 }
 
@@ -322,7 +326,7 @@ func convertKustomizeApplication(
 		return converted, err
 	}
 	transformers, err := options.transformers(
-		applicationBuildEnvironment(app, chartSource),
+		selected.buildEnvironment,
 		chartSourceField+".kustomize",
 	)
 	if err != nil {
@@ -405,7 +409,7 @@ func convertHelmApplication(
 	sourceContext := valueFileContext{
 		chartMapping: chartMapping,
 		chartRoot:    chartRoot,
-		environment:  applicationBuildEnvironment(app, chartSource),
+		environment:  selected.buildEnvironment,
 		refs:         selected.refs,
 		resolver:     resolver,
 	}

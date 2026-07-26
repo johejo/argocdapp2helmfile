@@ -1,0 +1,11 @@
+# document 1 chart source: repoURL "https://github.com/example/platform.git", path "charts/api", targetRevision "HEAD"
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: api
+    chart: 'checkouts/platform/charts/api'
+    values:
+      - 'checkouts/platform/charts/api/environments/.yaml'
+    set:
+      - name: declared-revision
+        value: source-

@@ -243,6 +243,12 @@ func applicationBuildEnvironment(app application, source applicationSource) map[
 	if project == "" {
 		project = "default"
 	}
+	// The converter accepts surrounding whitespace that Argo CD would later fail
+	// to resolve, so expose the same trimmed source that conversion accepts.
+	// Converter-only defaults such as Git targetRevision=HEAD are applied after
+	// this environment is captured.
+	source.Path = strings.TrimSpace(source.Path)
+	source.TargetRevision = strings.TrimSpace(source.TargetRevision)
 	return map[string]string{
 		"ARGOCD_APP_NAME":                   app.Metadata.Name,
 		"ARGOCD_APP_NAMESPACE":              app.Metadata.Namespace,

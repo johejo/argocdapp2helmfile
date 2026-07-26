@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"strings"
 	"testing"
 )
@@ -216,6 +217,86 @@ func TestConvertDefaultsGitTargetRevision(t *testing.T) {
 	if string(output) != want {
 		t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
 	}
+}
+
+func TestConvertBuildEnvironmentDoesNotUseDefaultGitRevision(t *testing.T) {
+	assertConvertFixture(t, "build-environment-target-revision", true)
+}
+
+func TestChartSourceSelectionCapturesBuildEnvironmentBeforeDefaults(t *testing.T) {
+	t.Run("conversion and diagnostic parity", func(t *testing.T) {
+		inputText := readTestdata(t, "default-git-target-revision/application.yaml")
+		applications, err := decodeApplicationInputs([]byte(inputText), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, decoded := range applications {
+			sources, err := resolveSources(decoded.application, i+1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected, err := selectChartSource(decoded.application, i+1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantEnvironment := applicationBuildEnvironment(
+				decoded.application,
+				sources.chartSource,
+			)
+			if !maps.Equal(selected.buildEnvironment, wantEnvironment) {
+				t.Fatalf(
+					"document %d conversion and diagnostic environments differ: %#v != %#v",
+					i+1,
+					selected.buildEnvironment,
+					wantEnvironment,
+				)
+			}
+		}
+	})
+
+	t.Run("default Git revision", func(t *testing.T) {
+		inputText := readTestdata(t, "default-git-target-revision/application.yaml")
+		applications, err := decodeApplicationInputs([]byte(inputText), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selected, err := selectChartSource(applications[0].application, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selected.source.TargetRevision != "HEAD" {
+			t.Fatalf("targetRevision was not defaulted: %#v", selected.source)
+		}
+		if selected.buildEnvironment["ARGOCD_APP_SOURCE_TARGET_REVISION"] != "" {
+			t.Fatalf(
+				"build environment targetRevision was defaulted: %#v",
+				selected.buildEnvironment,
+			)
+		}
+	})
+
+	t.Run("trimmed Git source", func(t *testing.T) {
+		inputText := readTestdata(t, "kustomize/metadata/application.yaml")
+		applications, err := decodeApplicationInputs([]byte(inputText), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selected, err := selectChartSource(applications[0].application, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selected.source.Path != "services/api" ||
+			selected.source.TargetRevision != "main" {
+			t.Fatalf("source was not normalized: %#v", selected.source)
+		}
+		if selected.buildEnvironment["ARGOCD_APP_SOURCE_PATH"] != "services/api" ||
+			selected.buildEnvironment["ARGOCD_APP_SOURCE_TARGET_REVISION"] != "main" {
+			t.Fatalf(
+				"build environment source was not trimmed: %#v",
+				selected.buildEnvironment,
+			)
+		}
+	})
 }
 
 func TestConvertTrimsChartAndTargetRevision(t *testing.T) {
