@@ -126,11 +126,15 @@ An Application must identify either:
 See the generated [Application mapping reference](docs/application-mapping.md),
 also available with `--help-application-mapping`.
 
-### ApplicationSet generators
+### ApplicationSet
 
-ApplicationSets may use either Go templates or the legacy fasttemplate syntax
-and must contain one or more supported generators.
-Set `spec.goTemplate: true` to use Go templates:
+An ApplicationSet must contain one or more List, Git, Cluster, Matrix, or Merge generators.
+The converter expands the set locally,
+then applies the normal Application conversion and validation rules to every result.
+Generators and elements retain their input order.
+
+ApplicationSets may use either Go templates or the legacy fasttemplate syntax;
+set `spec.goTemplate: true` to use Go templates:
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -163,165 +167,44 @@ spec:
         targetRevision: '{{ .version }}'
 ```
 
-The converter expands the set locally, then applies the normal Application
-conversion and validation rules to every result.
-Multiple generators and elements retain their input order.
+Parameter names, selector operators, pattern matching, and merge precedence follow the
+[Argo CD generator documentation][argocd-applicationset-generators].
+The converter adds these requirements:
 
-#### RollingSync
-
-`strategy.type: RollingSync` is converted to
-[helmfile `needs`][helmfile-releases-dag] when:
-
-- `strategy.deletionOrder` is `Reverse`;
-- `rollingSync.steps` is non-empty and uses only `In` and `NotIn`
-  `matchExpressions`;
-- `maxUpdate` is omitted or is the string `"100%"`; and
-- every generated Application matches exactly one step by its final labels.
-
-Empty steps are skipped.
-Each subsequent non-empty step depends on the preceding non-empty step,
-within the same ApplicationSet.
-
-Unlike [Argo CD Progressive Syncs][argocd-progressive-syncs],
-helmfile does not wait for Application health or reproduce manual gates and
-partial concurrency.
-Run without label selectors to preserve ordering,
-or use `--include-transitive-needs` because selectors ignore `needs` by default.
-
-Go template expressions use a leading dot, such as `{{ .name }}`.
-They provide Sprig functions except `env`, `expandenv`, and `getHostByName`,
-plus `normalize`, `slugify`, `toYaml`, `fromYaml`, and `fromYamlArray`.
-Supported `goTemplateOptions` are `missingkey=default`, `missingkey=invalid`,
-`missingkey=zero`, and `missingkey=error`.
-
-When `goTemplate` is `false` or omitted,
-legacy expressions use flat keys without a leading dot, such as `{{name}}`.
-Whitespace inside delimiters is ignored,
-and undefined or non-string parameters are left unchanged.
-`goTemplateOptions` are ignored in this mode.
-
-Supported List features are:
-
-- nested YAML values in `elements` when Go templates are enabled;
-- literal `elementsYaml`;
-- generator-level `template` overrides for top-level List generators;
-- selectors using `matchLabels` and the `In`, `NotIn`, `Exists`, and
-  `DoesNotExist` operators;
-- templating of every string field and string mapping key; and
-- a YAML or JSON `templatePatch`.
-
-Explicit legacy List `elements` accept string fields.
-Their reserved `values` mapping is exposed as flat `values.<key>` parameters.
-Legacy `elementsYaml` values retain their decoded YAML shape.
-
-#### Git generator
-
-The Git generator supports either `directories` or `files`.
-Its `repoURL` and `revision` must exactly match a Config `sources` entry,
-whose `localRoot` must resolve from the converter's current working directory to an
-existing non-symlink directory without helmfile template expressions.
-
-Directory patterns use Go's `path.Match` rules.
-File patterns use doublestar rules,
-where `*` matches one component and `**` matches recursively.
-Excludes take precedence,
-duplicates are removed,
-and results are generated in lexical order.
-
-Templates receive Argo CD-compatible path parameters.
-File generators read YAML or JSON mappings and mapping sequences.
-`pathParamPrefix`, generator `values`, selectors,
-top-level generator templates, and `templatePatch` are supported.
-
-Go templates use path parameters such as `.path.path`, `.path.basename`,
-and `.path.segments`.
-Legacy templates use flat parameters such as `path`, `path.basename`, and `path[0]`.
-`pathParamPrefix: repo` changes these to `.repo.path.path` and `repo.path`,
-respectively.
-Legacy file content and generator `values` are flattened into dot-separated keys,
-with scalar values converted to strings.
-
-Hidden directories are skipped by directory generators;
-`.git` and symlinks are skipped by file generators.
-See the
-[Argo CD Git generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Git/)
-for the upstream generator model.
-
-#### Cluster generator
-
-The Cluster generator expands the Config `clusters` snapshot in declaration order.
-It requires `--config`; an omitted or empty inventory generates no Applications.
-
-Each entry exposes `name`, `nameNormalized`, `server`, and `project`.
-An omitted `project` is an empty string.
-Go templates receive nested `metadata` and `values` maps;
-legacy templates receive flat `metadata.labels.<key>`,
-`metadata.annotations.<key>`, and `values.<key>` parameters.
-
-The `clusters.selector` matches inventory labels,
-while a sibling `selector` filters all generated parameters.
-Cluster `values` may reference cluster and Matrix parent parameters.
-Selectors use the same operators as List and Git;
-top-level template overrides are supported.
-
-`flatList: true` is not supported.
-The parameter shape follows the
-[Argo CD Cluster generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Cluster/).
-
-Matrix and Merge may contain a Matrix or Merge child one level deep.
-Nested combination generators may contain only List, Git, or Cluster children.
-Only top-level generator templates are supported,
-while selectors apply at every level.
-
-#### Matrix generator
-
-Matrix requires exactly two List, Git, Cluster, Matrix, or Merge children.
-
-The first child's parameters may be used to render the second child,
-including a nested Merge definition,
-dynamic List `elementsYaml`,
-and Git fields.
-Git `values` may reference parent, Git path, and Git parameter-file fields together.
-Results retain child order,
-and the first child's values take precedence recursively when parameter maps overlap.
-
-For Git × Git,
-`pathParamPrefix` is recommended when both children need to retain their path parameters.
-Without prefixes,
-the normal first-child-wins merge behavior applies to the shared `path` key.
-See the
-[Argo CD Matrix generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Matrix/)
-for the upstream generator constraints and parameter model.
-
-#### Merge generator
-
-Merge accepts two or more List, Git, Cluster, Matrix, or Merge children.
-It preserves the first child's results and order,
-then applies matching children in declaration order using `mergeKeys`.
-Maps merge recursively;
-scalars and sequences use the later value.
-Unmatched overrides are ignored,
-and results missing any merge key do not match.
-
-Children expand and apply selectors independently.
-Complete merge-key tuples must be unique within each child.
-Go templates do not support dotted merge keys;
-legacy mode matches their flattened form.
-See the
-[Argo CD Merge generator documentation](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Merge/)
-for the upstream generator model.
-
-`templatePatch` is rendered once per selected generator parameter set
-with the configured template mode.
-Mappings merge recursively,
-while scalars and sequences replace the template value;
-`null` deletes a field.
-The patch is applied after template rendering,
-and patched metadata is available to `releaseLabels` queries.
-As in Argo CD, the pre-patch `spec.project` is always retained.
-
-The rendered patch must be one YAML or JSON mapping.
-Strategic Merge Patch directives are rejected.
+- Go templates require a leading dot, such as `{{ .name }}`,
+  and provide Sprig functions except `env`, `expandenv`, and `getHostByName`,
+  plus `normalize`, `slugify`, `toYaml`, `fromYaml`, and `fromYamlArray`.
+  Supported `goTemplateOptions` are `missingkey=default`, `missingkey=invalid`,
+  `missingkey=zero`, and `missingkey=error`.
+- Legacy expressions use flat keys without a leading dot, such as `{{name}}`.
+  Nested parameters are flattened into dot-separated keys,
+  scalar values are converted to strings,
+  undefined or non-string parameters are left unchanged,
+  and `goTemplateOptions` are ignored.
+- The Git generator never fetches:
+  its `repoURL` and `revision` must exactly match a Config `sources` entry,
+  whose `localRoot` must resolve from the converter's current working directory to an
+  existing non-symlink directory without helmfile template expressions.
+- The Cluster generator expands the Config `clusters` snapshot in declaration order and
+  therefore requires `--config`;
+  an omitted or empty inventory generates no Applications.
+  `flatList: true` is not supported.
+- Matrix requires exactly two children and Merge accepts two or more.
+  Either may contain one Matrix or Merge child one level deep,
+  and those nested generators may contain only List, Git, or Cluster children.
+- Generator-level `template` overrides are supported only for top-level generators,
+  while selectors apply at every level.
+- A rendered `templatePatch` must be one YAML or JSON mapping,
+  and Strategic Merge Patch directives are rejected.
+  The patch is applied after template rendering,
+  so patched metadata is available to `releaseLabels` queries,
+  while the pre-patch `spec.project` is always retained.
+- `strategy.type: RollingSync` becomes [helmfile `needs`][helmfile-releases-dag] step by step;
+  configurations that cannot be expressed that way are rejected with an explanatory error.
+  Unlike [Argo CD Progressive Syncs][argocd-progressive-syncs],
+  helmfile does not wait for Application health or reproduce manual gates and
+  partial concurrency,
+  and label selectors ignore `needs` unless `--include-transitive-needs` is set.
 
 ## Conversion config
 
@@ -648,6 +531,8 @@ For upstream behavior, see also
 [argocd-helm]: https://argo-cd.readthedocs.io/en/latest/user-guide/helm/
 [argocd-application-spec]:
   https://argo-cd.readthedocs.io/en/stable/user-guide/application-specification/
+[argocd-applicationset-generators]:
+  https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators/
 [argocd-go-template]:
   https://argo-cd.readthedocs.io/en/latest/operator-manual/applicationset/GoTemplate/
 [argocd-create-namespace]:
