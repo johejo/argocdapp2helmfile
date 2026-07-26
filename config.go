@@ -183,10 +183,32 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 		return nil, fmt.Errorf("config kind must be %q", configKind)
 	}
 
-	resolver := &sourceResolver{
-		entries: make(map[sourceKey]sourceConfigEntry, len(resource.Sources)),
+	resolver, err := parseConfigSources(resource.Sources)
+	if err != nil {
+		return nil, err
 	}
-	for i, entry := range resource.Sources {
+	destinations, err := parseConfigDestinations(resource.Destinations, resource.Clusters)
+	if err != nil {
+		return nil, err
+	}
+	projector, err := parseConfigReleaseLabels(resource.ReleaseLabels)
+	if err != nil {
+		return nil, err
+	}
+
+	return &conversionConfig{
+		sourceResolver:      resolver,
+		destinationResolver: destinations,
+		clusters:            resource.Clusters,
+		labelProjector:      projector,
+	}, nil
+}
+
+func parseConfigSources(entries []sourceConfigEntry) (*sourceResolver, error) {
+	resolver := &sourceResolver{
+		entries: make(map[sourceKey]sourceConfigEntry, len(entries)),
+	}
+	for i, entry := range entries {
 		field := fmt.Sprintf("config sources[%d]", i)
 		if strings.TrimSpace(entry.RepoURL) == "" {
 			return nil, fmt.Errorf("%s.repoURL is required", field)
@@ -203,14 +225,23 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 		}
 		resolver.entries[key] = entry
 	}
+	return resolver, nil
+}
 
-	destinationResolver := &destinationResolver{
+// parseConfigDestinations indexes destinations and clusters together, because a
+// cluster registers both of the keys a destination may select it by and the two
+// lists must not collide.
+func parseConfigDestinations(
+	entries []destinationConfigEntry,
+	clusters []clusterConfigEntry,
+) (*destinationResolver, error) {
+	resolver := &destinationResolver{
 		entries: make(
 			map[destinationKey]destinationConfigEntry,
-			len(resource.Destinations)+len(resource.Clusters)*2,
+			len(entries)+len(clusters)*2,
 		),
 	}
-	for i, entry := range resource.Destinations {
+	for i, entry := range entries {
 		field := fmt.Sprintf("config destinations[%d]", i)
 		hasName := strings.TrimSpace(entry.Name) != ""
 		hasServer := strings.TrimSpace(entry.Server) != ""
@@ -224,12 +255,12 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 		if hasServer {
 			key = destinationKey{kind: "server", value: entry.Server}
 		}
-		if _, exists := destinationResolver.entries[key]; exists {
+		if _, exists := resolver.entries[key]; exists {
 			return nil, fmt.Errorf("%s duplicates %s %q", field, key.kind, key.value)
 		}
-		destinationResolver.entries[key] = entry
+		resolver.entries[key] = entry
 	}
-	for i, cluster := range resource.Clusters {
+	for i, cluster := range clusters {
 		field := fmt.Sprintf("config clusters[%d]", i)
 		if strings.TrimSpace(cluster.Name) == "" {
 			return nil, fmt.Errorf("%s.name is required", field)
@@ -249,18 +280,21 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 			{kind: "name", value: cluster.Name},
 			{kind: "server", value: cluster.Server},
 		} {
-			if _, exists := destinationResolver.entries[key]; exists {
+			if _, exists := resolver.entries[key]; exists {
 				return nil, fmt.Errorf("%s duplicates %s %q", field, key.kind, key.value)
 			}
-			destinationResolver.entries[key] = entry
+			resolver.entries[key] = entry
 		}
 	}
+	return resolver, nil
+}
 
+func parseConfigReleaseLabels(entries []releaseLabelConfig) (*releaseLabelProjector, error) {
 	projector := &releaseLabelProjector{
-		rules: make([]releaseLabelRule, 0, len(resource.ReleaseLabels)),
+		rules: make([]releaseLabelRule, 0, len(entries)),
 	}
-	names := make(map[string]struct{}, len(resource.ReleaseLabels))
-	for i, entry := range resource.ReleaseLabels {
+	names := make(map[string]struct{}, len(entries))
+	for i, entry := range entries {
 		field := fmt.Sprintf("config releaseLabels[%d]", i)
 		if strings.TrimSpace(entry.Name) == "" {
 			return nil, fmt.Errorf("%s.name is required", field)
@@ -282,13 +316,7 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 		names[entry.Name] = struct{}{}
 		projector.rules = append(projector.rules, releaseLabelRule{name: entry.Name, code: code})
 	}
-
-	return &conversionConfig{
-		sourceResolver:      resolver,
-		destinationResolver: destinationResolver,
-		clusters:            resource.Clusters,
-		labelProjector:      projector,
-	}, nil
+	return projector, nil
 }
 
 func validateLocalRootDirectory(root string) error {
