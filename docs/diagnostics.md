@@ -2,8 +2,11 @@
 
 The converter audits synchronization settings that can change Argo CD behavior:
 `spec.revisionHistoryLimit`, `spec.syncPolicy`, and `spec.ignoreDifferences`.
-It does not audit source conversion, destination resolution, or general Application and
-ApplicationSet validation; failures in those areas are ordinary conversion errors.
+It also audits the Helm inputs that expand build environment variables, where the converter
+keeps text Argo CD erases.
+It does not otherwise audit source conversion, destination resolution, or general
+Application and ApplicationSet validation; failures in those areas are ordinary conversion
+errors.
 Metadata, project, `sourceHydrator`, and
 `argocd.argoproj.io/sync-options` resource annotations are outside this audit.
 
@@ -47,6 +50,9 @@ Metadata, project, `sourceHydrator`, and
 | `spec.ignoreDifferences` | not a sequence | `unconvertible` — must be a sequence |
 | `spec.ignoreDifferences` | nonempty | `unconvertible` — diff customization has no Helmfile equivalent |
 | `spec.ignoreDifferences` | empty or omitted | `supported` — requires no output setting |
+| `spec.source.helm.valueFiles` | contains a variable Argo CD erases | `approximate` — keeps text Argo CD's variable expansion replaces with an empty string |
+| `spec.source.helm.fileParameters` | contains a variable Argo CD erases | `approximate` — keeps text Argo CD's variable expansion replaces with an empty string |
+| `spec.source.helm.parameters` | contains a variable Argo CD erases | `approximate` — keeps text Argo CD's variable expansion replaces with an empty string |
 
 ## Sync option rules
 

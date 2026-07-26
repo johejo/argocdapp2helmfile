@@ -271,6 +271,31 @@ func expandBuildEnvironment(
 	})
 }
 
+// argoExpansion renders value the way Argo CD's Envsubst does, which stays exact for input
+// the converter's own tokenizer reads differently, such as the shell variables $1 and $@.
+func argoExpansion(value string, environment map[string]string) string {
+	return os.Expand(value, func(name string) string {
+		if name == "$" {
+			return "$"
+		}
+		return environment[name]
+	})
+}
+
+// divergentExpansion reports a value Argo CD and the converter render differently. A value
+// expansion rejects is skipped because it fails the conversion instead.
+func divergentExpansion(
+	value string,
+	environment map[string]string,
+) (argo string, converted string, differs bool) {
+	converted, _, err := expandBuildEnvironment(value, environment)
+	if err != nil {
+		return "", "", false
+	}
+	argo = argoExpansion(value, environment)
+	return argo, converted, argo != converted
+}
+
 // A statically expandable variable is always present in the environment, so a variable
 // that reaches this check is either dynamic or an unknown Argo CD variable.
 func isUnexpandableBuildEnvironmentVariable(name string) bool {

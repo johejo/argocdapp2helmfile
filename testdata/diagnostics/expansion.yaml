@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: api
+spec:
+  source:
+    repoURL: git@github.com:example/charts.git
+    path: charts/app
+    targetRevision: main
+    helm:
+      valueFiles:
+        - values/$REGION.yaml
+        - values/$$literal.yaml
+        - values/$ARGOCD_APP_NAME.yaml
+      fileParameters:
+        - name: config
+          path: files/$1/config.json
+        - name: escaped
+          path: files/$$1/config.json
+      parameters:
+        - name: rewriteTarget
+          value: /$1
+        - name: password
+          value: p$ssw0rd
+        - name: port
+          value: "8080"
+        - name: name
+          value: $ARGOCD_APP_NAME

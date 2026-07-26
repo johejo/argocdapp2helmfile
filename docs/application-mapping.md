@@ -101,8 +101,9 @@ The remaining variables are rejected wherever expansion applies.
 
 Expansion applies to `valueFiles` and `fileParameters` paths and to `parameters` values,
 matching where Argo CD calls `Envsubst`.
-Those inputs reject an unknown `ARGOCD_` variable and leave any other variable as written,
-whereas Argo CD replaces an unknown variable with an empty string.
+Those inputs reject an unknown `ARGOCD_` variable and leave any other variable as written;
+Argo CD instead replaces it with an empty string, so each value that renders differently is
+reported as an `approximate` diagnostic.
 Kustomize `commonLabels` and `commonAnnotations` values do replace every unresolved
 variable with an empty string, as Argo CD does.
 

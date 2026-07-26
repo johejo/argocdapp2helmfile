@@ -15,6 +15,11 @@ const syncOptionSetting = "spec.syncPolicy.syncOptions[index]"
 
 var syncOptionPathPattern = regexp.MustCompile(`^spec\.syncPolicy\.syncOptions\[\d+\]$`)
 
+// Helm inputs are audited per entry, so their paths carry an index.
+var helmInputPathPattern = regexp.MustCompile(
+	`^spec\.(source|sources\[\d+\])\.helm\.[A-Za-z]+\[\d+\](\.[a-z]+)?$`,
+)
+
 func TestConvertWithDiagnosticsClassifiesSyncSettings(t *testing.T) {
 	input := readTestdata(t, "diagnostics/cases.yaml")
 	result, err := convertWithDiagnostics([]byte(input), nil)
@@ -115,6 +120,46 @@ func TestApplicationSetDiagnosticsUseRenderedValuesAndGeneratorOrigins(t *testin
 	if !strings.Contains(string(result.output), "    createNamespace: true\n") {
 		t.Fatalf("CreateNamespace conversion was not preserved:\n%s", result.output)
 	}
+}
+
+func TestDiagnosticsReportExpansionDivergence(t *testing.T) {
+	result, err := convertWithDiagnostics(
+		[]byte(readTestdata(t, "diagnostics/expansion.yaml")),
+		expansionFixtureConfig(t),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var diagnostics []string
+	for _, diagnostic := range result.diagnostics {
+		diagnostics = append(diagnostics, diagnostic.String())
+	}
+	want := []string{
+		`document 1: Application "api": spec.source.helm.valueFiles[0]: approximate: ` +
+			`Argo CD reads "values/.yaml", but the converter keeps "values/$REGION.yaml"`,
+		`document 1: Application "api": spec.source.helm.fileParameters[0].path: approximate: ` +
+			`Argo CD reads "files//config.json", but the converter keeps "files/$1/config.json"`,
+		`document 1: Application "api": spec.source.helm.parameters[0].value: approximate: ` +
+			`Argo CD sets "/", but the converter keeps "/$1"`,
+		`document 1: Application "api": spec.source.helm.parameters[1].value: approximate: ` +
+			`Argo CD sets "p", but the converter keeps "p$ssw0rd"`,
+	}
+	if strings.Join(diagnostics, "\n") != strings.Join(want, "\n") {
+		t.Fatalf(
+			"diagnostics:\n%s\nwant:\n%s",
+			strings.Join(diagnostics, "\n"),
+			strings.Join(want, "\n"),
+		)
+	}
+}
+
+func expansionFixtureConfig(t *testing.T) *conversionConfig {
+	t.Helper()
+	return &conversionConfig{sourceResolver: testSourceResolver(t, testSource{
+		repoURL:        "git@github.com:example/charts.git",
+		targetRevision: "main",
+		root:           "/workspace/charts",
+	})}
 }
 
 func TestSyncOptionEvaluation(t *testing.T) {
@@ -289,8 +334,17 @@ func TestDiagnosticPathsMatchTheRuleCatalog(t *testing.T) {
 		syncOptionKeys[option.Key] = struct{}{}
 	}
 
-	for _, name := range []string{"diagnostics/cases.yaml", "diagnostics/applicationset.yaml"} {
-		result, err := convertWithDiagnostics([]byte(readTestdata(t, name)), nil)
+	fixtures := []struct {
+		name   string
+		config *conversionConfig
+	}{
+		{name: "diagnostics/cases.yaml"},
+		{name: "diagnostics/applicationset.yaml"},
+		{name: "diagnostics/expansion.yaml", config: expansionFixtureConfig(t)},
+	}
+	for _, fixture := range fixtures {
+		name := fixture.name
+		result, err := convertWithDiagnostics([]byte(readTestdata(t, name)), fixture.config)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -307,6 +361,21 @@ func TestDiagnosticPathsMatchTheRuleCatalog(t *testing.T) {
 						"rule %q reported path %q, want an indexed sync option path",
 						diagnostic.rule,
 						diagnostic.path,
+					)
+				}
+				continue
+			}
+			if helmSetting, isHelmInput := strings.CutPrefix(
+				rule.Setting,
+				"spec.source.helm.",
+			); isHelmInput {
+				if !helmInputPathPattern.MatchString(diagnostic.path) ||
+					!strings.Contains(diagnostic.path, ".helm."+helmSetting+"[") {
+					t.Errorf(
+						"rule %q reported path %q, want an indexed %q path",
+						diagnostic.rule,
+						diagnostic.path,
+						rule.Setting,
 					)
 				}
 				continue

@@ -105,6 +105,10 @@ const (
 	IgnoreDifferencesNotSequence RuleID = "ignore-differences-not-sequence"
 	IgnoreDifferencesValues      RuleID = "ignore-differences-values"
 	IgnoreDifferencesEmpty       RuleID = "ignore-differences-empty"
+
+	ValueFileExpansionDiffers     RuleID = "value-file-expansion-differs"
+	FileParameterExpansionDiffers RuleID = "file-parameter-expansion-differs"
+	ParameterExpansionDiffers     RuleID = "parameter-expansion-differs"
 )
 
 var rules = []Rule{
@@ -242,6 +246,18 @@ var rules = []Rule{
 		"diff customization has no Helmfile equivalent"},
 	{IgnoreDifferencesEmpty, "spec.ignoreDifferences", "empty or omitted", Supported, "",
 		"requires no output setting"},
+	{ValueFileExpansionDiffers, "spec.source.helm.valueFiles",
+		"contains a variable Argo CD erases", Approximate,
+		"Argo CD reads %q, but the converter keeps %q",
+		"keeps text Argo CD's variable expansion replaces with an empty string"},
+	{FileParameterExpansionDiffers, "spec.source.helm.fileParameters",
+		"contains a variable Argo CD erases", Approximate,
+		"Argo CD reads %q, but the converter keeps %q",
+		"keeps text Argo CD's variable expansion replaces with an empty string"},
+	{ParameterExpansionDiffers, "spec.source.helm.parameters",
+		"contains a variable Argo CD erases", Approximate,
+		"Argo CD sets %q, but the converter keeps %q",
+		"keeps text Argo CD's variable expansion replaces with an empty string"},
 }
 
 var syncOptions = []SyncOption{

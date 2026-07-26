@@ -36,6 +36,7 @@ func auditApplication(input applicationInput) []conversionDiagnostic {
 		name:  input.application.Metadata.Name,
 	}
 	audit.revisionHistoryLimit()
+	audit.helmVariables()
 
 	root, _ := input.data.(map[string]any)
 	spec, _ := root["spec"].(map[string]any)
@@ -79,6 +80,56 @@ func (audit *applicationAudit) revisionHistoryLimit() {
 			"spec.revisionHistoryLimit",
 			diagnosticrule.RevisionHistoryPositive,
 		)
+	}
+}
+
+// helmVariables audits the Helm inputs that expand build environment variables. Parse
+// errors are ignored because conversion reports them.
+func (audit *applicationAudit) helmVariables() {
+	sources, err := resolveSources(audit.input.application, 0)
+	if err != nil {
+		return
+	}
+	helm, err := parseHelmOptions(sources.chartSource.Helm, sources.field+".helm")
+	if err != nil {
+		return
+	}
+	field := sources.field + ".helm"
+	environment := applicationBuildEnvironment(audit.input.application, sources.chartSource)
+	for index, valueFile := range helm.valueFiles {
+		audit.expansion(
+			fmt.Sprintf("%s.valueFiles[%d]", field, index),
+			diagnosticrule.ValueFileExpansionDiffers,
+			valueFile,
+			environment,
+		)
+	}
+	for index, parameter := range helm.fileParameters {
+		audit.expansion(
+			fmt.Sprintf("%s.fileParameters[%d].path", field, index),
+			diagnosticrule.FileParameterExpansionDiffers,
+			parameter.Path,
+			environment,
+		)
+	}
+	for index, parameter := range helm.parameters {
+		audit.expansion(
+			fmt.Sprintf("%s.parameters[%d].value", field, index),
+			diagnosticrule.ParameterExpansionDiffers,
+			parameter.Value,
+			environment,
+		)
+	}
+}
+
+func (audit *applicationAudit) expansion(
+	path string,
+	ruleID diagnosticrule.RuleID,
+	value string,
+	environment map[string]string,
+) {
+	if argo, converted, differs := divergentExpansion(value, environment); differs {
+		audit.add(path, ruleID, argo, converted)
 	}
 }
 
