@@ -22,6 +22,7 @@ Paths beginning with `spec.source` also apply to the manifest source selected fr
 | Git `spec.source.repoURL` | Config source identity | Accepts HTTP(S), `git@host:path`, or `ssh://user@host/path`. |
 | Git `spec.source.path` | Chart or explicit Kustomization path below configured `localRoot` | — |
 | Git `spec.source.targetRevision` | Config source identity and provenance | Defaults to `HEAD`. |
+| spec.source.kustomize | Kustomization release `values` and `transformers` | Options are listed in the Kustomize option catalogs. |
 | spec.source.helm.valueFiles | Release `values` paths | — |
 | spec.source.helm.values | Parsed inline release `values` entry | — |
 | spec.source.helm.valuesObject | Inline release `values` entry | — |
@@ -71,6 +72,59 @@ a same-name `forceString` parameter is rejected because it belongs to
 `setString`.
 Because Helmfile's `helmDefaults.skipCRDs` is shared, all converted Helm releases
 must resolve to the same `skipCrds` value.
+
+## Kustomize options
+
+A non-null `spec.source.kustomize` mapping selects an explicit Kustomization and accepts
+only these options:
+
+| Argo CD Kustomize option | Helmfile output |
+| --- | --- |
+| `namePrefix` | Kustomization release `values.namePrefix` |
+| `nameSuffix` | Kustomization release `values.nameSuffix` |
+| `namespace` | Kustomization release `values.namespace` |
+| `images` | Kustomization release `values.images` |
+| `commonLabels` | Inline built-in `LabelTransformer` |
+| `labelWithoutSelector` | `LabelTransformer.fieldSpecs` selection |
+| `labelIncludeTemplates` | `LabelTransformer.fieldSpecs` selection |
+| `commonAnnotations` | Inline built-in `AnnotationsTransformer` |
+| `commonAnnotationsEnvsubst` | Conversion-time `commonAnnotations` value expansion |
+| `forceCommonLabels` | None; accepted for validation only |
+| `forceCommonAnnotations` | None; accepted for validation only |
+
+Images use Kustomize's `[old=]image[:tag|@digest]` syntax and retain input order.
+Transformers use the Kustomize v5.8.1 built-in field specs.
+By default, labels apply to resource metadata, workload templates, and selectors.
+With `labelWithoutSelector: true`, labels apply only to resource metadata unless
+`labelIncludeTemplates: true` also includes templates.
+`labelIncludeTemplates: true` requires `labelWithoutSelector: true`.
+
+`commonLabels` values always expand the Argo CD build environment.
+`commonAnnotations` values expand it only when `commonAnnotationsEnvsubst: true`.
+Supported variables are `ARGOCD_APP_NAME`, `ARGOCD_APP_NAMESPACE`,
+`ARGOCD_APP_PROJECT_NAME`, `ARGOCD_APP_SOURCE_PATH`, `ARGOCD_APP_SOURCE_REPO_URL`, and
+`ARGOCD_APP_SOURCE_TARGET_REVISION`.
+Revision and Kubernetes variables are rejected;
+unknown variables expand to an empty string.
+
+`forceCommonLabels` and `forceCommonAnnotations` affect Argo CD's source edits.
+Helmfile applies later transformers instead, so these options are accepted, validated as
+booleans, and produce no output.
+
+## Unsupported Kustomize options
+
+Setting any of these options is a conversion error.
+The rejection reason is reported in the error message.
+
+| Argo CD Kustomize option | Rejection reason |
+| --- | --- |
+| `replicas` | Helmfile applies transformers after the build, where renamed resources no longer match |
+| `patches` | Helmfile applies patches after namePrefix, nameSuffix, and images, reversing Argo CD's order |
+| `components` | Kustomize components have no Helmfile equivalent |
+| `ignoreMissingComponents` | the option only affects components, which have no Helmfile equivalent |
+| `version` | Helmfile selects the Kustomize binary globally, not per Application |
+| `kubeVersion` | Helmfile does not pass a Kubernetes version to Kustomize builds |
+| `apiVersions` | Helmfile does not pass API versions to Kustomize builds |
 
 ## Repository and Config resolution
 

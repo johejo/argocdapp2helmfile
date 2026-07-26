@@ -362,39 +362,11 @@ source:
     commonAnnotationsEnvsubst: true
 ```
 
-The supported options and their Helmfile representations are:
-
-| Argo CD Kustomize option | Helmfile representation |
-| --- | --- |
-| `namePrefix`, `nameSuffix`, `namespace`, `images` | Kustomization release `values` |
-| `commonLabels` | Inline built-in `LabelTransformer` |
-| `labelWithoutSelector`, `labelIncludeTemplates` | `LabelTransformer.fieldSpecs` selection |
-| `commonAnnotations` | Inline built-in `AnnotationsTransformer` |
-| `commonAnnotationsEnvsubst` | Conversion-time annotation value expansion |
-| `forceCommonLabels`, `forceCommonAnnotations` | Accepted; no generated output |
-
-Images use Kustomize's `[old=]image[:tag|@digest]` syntax and retain input order.
-Transformers use the Kustomize v5.8.1 built-in field specs.
-By default, labels apply to resource metadata, workload templates, and selectors.
-With `labelWithoutSelector: true`, labels apply only to resource metadata unless
-`labelIncludeTemplates: true` also includes templates.
-`labelIncludeTemplates: true` requires `labelWithoutSelector: true`.
-
-`commonLabels` values always expand the Argo CD build environment.
-`commonAnnotations` values expand it only when `commonAnnotationsEnvsubst: true`.
-Supported variables are `ARGOCD_APP_NAME`, `ARGOCD_APP_NAMESPACE`,
-`ARGOCD_APP_PROJECT_NAME`, `ARGOCD_APP_SOURCE_PATH`, `ARGOCD_APP_SOURCE_REPO_URL`, and
-`ARGOCD_APP_SOURCE_TARGET_REVISION`.
-Revision and Kubernetes variables are rejected;
-unknown variables expand to an empty string.
-
-`forceCommonLabels` and `forceCommonAnnotations` affect Argo CD's source edits.
-Helmfile applies later transformers instead, so these options are no-ops.
-
-`replicas`, `patches`, `components`, `ignoreMissingComponents`, `version`, `kubeVersion`,
-and `apiVersions` are unsupported.
-They require source edits or build controls that Helmfile's Kustomization integration
-does not expose.
+The supported and unsupported `kustomize` options, their Helmfile output, and the
+transformer semantics are listed in the
+[Application mapping reference](docs/application-mapping.md),
+also available with `--help-application-mapping`.
+Unsupported options are rejected with the reason they cannot convert.
 See [Argo CD's Kustomize options][argocd-kustomize-options] for the upstream semantics.
 
 `spec.destination.namespace` remains the Helm release namespace.

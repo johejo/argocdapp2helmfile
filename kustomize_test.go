@@ -2,10 +2,12 @@ package main
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/goccy/go-yaml"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
 )
 
 func TestConvertKustomizationGolden(t *testing.T) {
@@ -222,6 +224,15 @@ func TestConvertRejectsInvalidKustomizations(t *testing.T) {
 			input: strings.Replace(source, "kustomize: {}", "kustomize:\n      patches: []", 1),
 			want:  "spec.source.kustomize.patches is not supported",
 		},
+		"unknown option": {
+			input: strings.Replace(
+				source,
+				"kustomize: {}",
+				"kustomize:\n      nameprefix: edge-",
+				1,
+			),
+			want: "spec.source.kustomize.nameprefix is not supported",
+		},
 		"chart mixed": {
 			input: strings.Replace(source, "    path:", "    chart: app\n    path:", 1),
 			want:  "spec.source.chart and spec.source.kustomize cannot both be set",
@@ -263,6 +274,79 @@ func TestConvertRejectsInvalidKustomizations(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestConvertRejectsUnsupportedKustomizeOptions(t *testing.T) {
+	source := readTestdata(t, "kustomize/empty/application.yaml")
+	config, err := parseConfig([]byte(readTestdata(t, "kustomize/empty/config.yaml")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, option := range applicationmapping.KustomizeOptions() {
+		if option.ValueKind != applicationmapping.KustomizeUnsupported {
+			continue
+		}
+		t.Run(option.Name, func(t *testing.T) {
+			// Rejection happens at catalog lookup, before any value is read.
+			input := strings.Replace(
+				source,
+				"kustomize: {}",
+				"kustomize:\n      "+option.Name+": []",
+				1,
+			)
+			want := "spec.source.kustomize." + option.Name +
+				" is not supported: " + option.Reason
+			if _, err := convertWithConfig([]byte(input), config); err == nil ||
+				!strings.Contains(err.Error(), want) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestParseKustomizeOptionsAssignsEveryCatalogOption(t *testing.T) {
+	items := kustomizeMap{
+		{Key: "namePrefix", Value: "edge-"},
+		{Key: "nameSuffix", Value: "-prod"},
+		{Key: "namespace", Value: "manifests"},
+		{Key: "images", Value: []any{"example/app:v2"}},
+		{Key: "commonLabels", Value: yaml.MapSlice{{Key: "app", Value: "storefront"}}},
+		{Key: "labelWithoutSelector", Value: true},
+		{Key: "labelIncludeTemplates", Value: true},
+		{Key: "commonAnnotations", Value: yaml.MapSlice{{Key: "team", Value: "platform"}}},
+		{Key: "commonAnnotationsEnvsubst", Value: true},
+		{Key: "forceCommonLabels", Value: true},
+		{Key: "forceCommonAnnotations", Value: true},
+	}
+	want := kustomizeOptions{
+		namePrefix:                "edge-",
+		nameSuffix:                "-prod",
+		namespace:                 "manifests",
+		images:                    []kustomizeImage{{Name: "example/app", NewTag: "v2"}},
+		commonLabels:              yaml.MapSlice{{Key: "app", Value: "storefront"}},
+		labelWithoutSelector:      true,
+		labelIncludeTemplates:     true,
+		commonAnnotations:         yaml.MapSlice{{Key: "team", Value: "platform"}},
+		commonAnnotationsEnvsubst: true,
+	}
+
+	got, err := parseKustomizeOptions(items, "spec.source.kustomize")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseKustomizeOptions() = %#v, want %#v", got, want)
+	}
+	for _, option := range applicationmapping.KustomizeOptions() {
+		if option.ValueKind == applicationmapping.KustomizeUnsupported {
+			continue
+		}
+		if !slices.ContainsFunc(items, func(item yaml.MapItem) bool {
+			return item.Key == option.Name
+		}) {
+			t.Errorf("this test does not cover Kustomize option %q", option.Name)
+		}
 	}
 }
 

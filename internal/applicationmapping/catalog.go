@@ -15,6 +15,18 @@ const (
 	Ignored        HelmValueKind = "ignored"
 )
 
+// KustomizeUnsupported is a value kind so that one lookup decides both whether an
+// option is known and whether it converts.
+type KustomizeValueKind string
+
+const (
+	KustomizeString      KustomizeValueKind = "string"
+	KustomizeBoolean     KustomizeValueKind = "boolean"
+	KustomizeStringMap   KustomizeValueKind = "string-map"
+	KustomizeImages      KustomizeValueKind = "images"
+	KustomizeUnsupported KustomizeValueKind = "unsupported"
+)
+
 type Entry struct {
 	ID            ID
 	Input         string
@@ -24,6 +36,15 @@ type Entry struct {
 	HelmValueKind HelmValueKind
 	AllowEmpty    bool
 	References    []ID
+}
+
+// Output is Markdown for the reference, Reason is plain text for rejection errors,
+// and exactly one of them is set.
+type KustomizeOption struct {
+	Name      string
+	ValueKind KustomizeValueKind
+	Output    string
+	Reason    string
 }
 
 const (
@@ -41,6 +62,7 @@ const (
 	GitRepositoryURL        ID = "git-repository-url"
 	GitPath                 ID = "git-path"
 	GitTargetRevision       ID = "git-target-revision"
+	KustomizeOptionsEntry   ID = "kustomize-options"
 	HelmValueFiles          ID = "helm-value-files"
 	HelmValues              ID = "helm-values"
 	HelmValuesObject        ID = "helm-values-object"
@@ -132,6 +154,12 @@ var entries = []Entry{
 		References: []ID{GitRepositoryURL},
 	},
 	{
+		ID: KustomizeOptionsEntry, Input: "spec.source.kustomize",
+		Output:     "Kustomization release `values` and `transformers`",
+		Notes:      "Options are listed in the Kustomize option catalogs.",
+		References: []ID{SourceSelection, GitPath},
+	},
+	{
 		ID: HelmValueFiles, Input: "spec.source.helm.valueFiles",
 		Output: "Release `values` paths", HelmOption: "valueFiles",
 		HelmValueKind: StringSequence, AllowEmpty: true, References: []ID{ValuePrecedence},
@@ -221,8 +249,89 @@ var entries = []Entry{
 	},
 }
 
+var kustomizeOptions = []KustomizeOption{
+	{
+		Name: "namePrefix", ValueKind: KustomizeString,
+		Output: "Kustomization release `values.namePrefix`",
+	},
+	{
+		Name: "nameSuffix", ValueKind: KustomizeString,
+		Output: "Kustomization release `values.nameSuffix`",
+	},
+	{
+		Name: "namespace", ValueKind: KustomizeString,
+		Output: "Kustomization release `values.namespace`",
+	},
+	{
+		Name: "images", ValueKind: KustomizeImages,
+		Output: "Kustomization release `values.images`",
+	},
+	{
+		Name: "commonLabels", ValueKind: KustomizeStringMap,
+		Output: "Inline built-in `LabelTransformer`",
+	},
+	{
+		Name: "labelWithoutSelector", ValueKind: KustomizeBoolean,
+		Output: "`LabelTransformer.fieldSpecs` selection",
+	},
+	{
+		Name: "labelIncludeTemplates", ValueKind: KustomizeBoolean,
+		Output: "`LabelTransformer.fieldSpecs` selection",
+	},
+	{
+		Name: "commonAnnotations", ValueKind: KustomizeStringMap,
+		Output: "Inline built-in `AnnotationsTransformer`",
+	},
+	{
+		Name: "commonAnnotationsEnvsubst", ValueKind: KustomizeBoolean,
+		Output: "Conversion-time `commonAnnotations` value expansion",
+	},
+	{
+		Name: "forceCommonLabels", ValueKind: KustomizeBoolean,
+		Output: "None; accepted for validation only",
+	},
+	{
+		Name: "forceCommonAnnotations", ValueKind: KustomizeBoolean,
+		Output: "None; accepted for validation only",
+	},
+	{
+		Name: "replicas", ValueKind: KustomizeUnsupported,
+		Reason: "Helmfile applies transformers after the build, where renamed resources " +
+			"no longer match",
+	},
+	{
+		Name: "patches", ValueKind: KustomizeUnsupported,
+		Reason: "Helmfile applies patches after namePrefix, nameSuffix, and images, " +
+			"reversing Argo CD's order",
+	},
+	{
+		Name: "components", ValueKind: KustomizeUnsupported,
+		Reason: "Kustomize components have no Helmfile equivalent",
+	},
+	{
+		Name: "ignoreMissingComponents", ValueKind: KustomizeUnsupported,
+		Reason: "the option only affects components, which have no Helmfile equivalent",
+	},
+	{
+		Name: "version", ValueKind: KustomizeUnsupported,
+		Reason: "Helmfile selects the Kustomize binary globally, not per Application",
+	},
+	{
+		Name: "kubeVersion", ValueKind: KustomizeUnsupported,
+		Reason: "Helmfile does not pass a Kubernetes version to Kustomize builds",
+	},
+	{
+		Name: "apiVersions", ValueKind: KustomizeUnsupported,
+		Reason: "Helmfile does not pass API versions to Kustomize builds",
+	},
+}
+
 func Entries() []Entry {
 	return entries
+}
+
+func KustomizeOptions() []KustomizeOption {
+	return kustomizeOptions
 }
 
 var entriesByHelmOption = func() map[string]Entry {
@@ -238,4 +347,17 @@ var entriesByHelmOption = func() map[string]Entry {
 func LookupHelmOption(name string) (Entry, bool) {
 	entry, ok := entriesByHelmOption[name]
 	return entry, ok
+}
+
+var kustomizeOptionsByName = func() map[string]KustomizeOption {
+	result := make(map[string]KustomizeOption, len(kustomizeOptions))
+	for _, option := range kustomizeOptions {
+		result[option.Name] = option
+	}
+	return result
+}()
+
+func LookupKustomizeOption(name string) (KustomizeOption, bool) {
+	option, ok := kustomizeOptionsByName[name]
+	return option, ok
 }

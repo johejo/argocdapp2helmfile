@@ -8,6 +8,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
 )
 
 type kustomizeOptions struct {
@@ -38,7 +39,11 @@ func (mapping *kustomizeMap) UnmarshalYAML(node ast.Node) error {
 	}
 	for _, option := range root.Values {
 		key, ok := option.Key.(*ast.StringNode)
-		if !ok || key.Value != "commonLabels" && key.Value != "commonAnnotations" {
+		if !ok {
+			continue
+		}
+		mapped, known := applicationmapping.LookupKustomizeOption(key.Value)
+		if !known || mapped.ValueKind != applicationmapping.KustomizeStringMap {
 			continue
 		}
 		nested, ok := option.Value.(*ast.MappingNode)
@@ -73,59 +78,47 @@ type kustomizeImage struct {
 	Digest  string `yaml:"digest,omitempty"`
 }
 
-func kustomizeOptionSetter[T any](
-	read func(any, string) (T, error),
-	target *T,
-) func(any, string) error {
-	return func(value any, field string) error {
-		parsed, err := read(value, field)
-		if err != nil {
-			return err
-		}
-		*target = parsed
-		return nil
-	}
-}
-
 func parseKustomizeOptions(items kustomizeMap, field string) (kustomizeOptions, error) {
 	var result kustomizeOptions
-	// Accepted for validation only: helmfile has no equivalent setting.
-	var ignored bool
-	setters := map[string]func(any, string) error{
-		"namePrefix": kustomizeOptionSetter(
-			readOptionalStringYAMLOption, &result.namePrefix),
-		"nameSuffix": kustomizeOptionSetter(
-			readOptionalStringYAMLOption, &result.nameSuffix),
-		"namespace": kustomizeOptionSetter(
-			readOptionalStringYAMLOption, &result.namespace),
-		"images": kustomizeOptionSetter(
-			parseKustomizeImages, &result.images),
-		"commonLabels": kustomizeOptionSetter(
-			readOptionalStringMapYAMLOption, &result.commonLabels),
-		"labelWithoutSelector": kustomizeOptionSetter(
-			readOptionalBooleanYAMLOption, &result.labelWithoutSelector),
-		"labelIncludeTemplates": kustomizeOptionSetter(
-			readOptionalBooleanYAMLOption, &result.labelIncludeTemplates),
-		"commonAnnotations": kustomizeOptionSetter(
-			readOptionalStringMapYAMLOption, &result.commonAnnotations),
-		"commonAnnotationsEnvsubst": kustomizeOptionSetter(
-			readOptionalBooleanYAMLOption, &result.commonAnnotationsEnvsubst),
-		"forceCommonLabels": kustomizeOptionSetter(
-			readOptionalBooleanYAMLOption, &ignored),
-		"forceCommonAnnotations": kustomizeOptionSetter(
-			readOptionalBooleanYAMLOption, &ignored),
-	}
 	for _, item := range items {
 		key, ok := item.Key.(string)
 		if !ok {
 			return result, fmt.Errorf("%s contains a non-string option name", field)
 		}
-		set, supported := setters[key]
-		if !supported {
+		option, known := applicationmapping.LookupKustomizeOption(key)
+		if !known {
 			return result, fmt.Errorf("%s.%s is not supported", field, key)
 		}
-		if err := set(item.Value, field+"."+key); err != nil {
+		if option.ValueKind == applicationmapping.KustomizeUnsupported {
+			return result, fmt.Errorf("%s.%s is not supported: %s", field, key, option.Reason)
+		}
+		value, err := parseKustomizeOptionValue(option, item.Value, field+"."+key)
+		if err != nil {
 			return result, err
+		}
+		switch option.Name {
+		case "namePrefix":
+			result.namePrefix = value.(string)
+		case "nameSuffix":
+			result.nameSuffix = value.(string)
+		case "namespace":
+			result.namespace = value.(string)
+		case "images":
+			result.images = value.([]kustomizeImage)
+		case "commonLabels":
+			result.commonLabels = value.(yaml.MapSlice)
+		case "labelWithoutSelector":
+			result.labelWithoutSelector = value.(bool)
+		case "labelIncludeTemplates":
+			result.labelIncludeTemplates = value.(bool)
+		case "commonAnnotations":
+			result.commonAnnotations = value.(yaml.MapSlice)
+		case "commonAnnotationsEnvsubst":
+			result.commonAnnotationsEnvsubst = value.(bool)
+		case "forceCommonLabels", "forceCommonAnnotations":
+			// Validated only: helmfile has no equivalent setting.
+		default:
+			panic("unhandled Kustomize option: " + option.Name)
 		}
 	}
 	if result.labelIncludeTemplates && !result.labelWithoutSelector {
@@ -135,6 +128,25 @@ func parseKustomizeOptions(items kustomizeMap, field string) (kustomizeOptions, 
 		)
 	}
 	return result, nil
+}
+
+func parseKustomizeOptionValue(
+	option applicationmapping.KustomizeOption,
+	value any,
+	field string,
+) (any, error) {
+	switch option.ValueKind {
+	case applicationmapping.KustomizeString:
+		return readOptionalStringYAMLOption(value, field)
+	case applicationmapping.KustomizeBoolean:
+		return readOptionalBooleanYAMLOption(value, field)
+	case applicationmapping.KustomizeStringMap:
+		return readOptionalStringMapYAMLOption(value, field)
+	case applicationmapping.KustomizeImages:
+		return parseKustomizeImages(value, field)
+	default:
+		panic("unknown Kustomize option value kind: " + option.ValueKind)
+	}
 }
 
 func readOptionalStringMapYAMLOption(value any, field string) (yaml.MapSlice, error) {
