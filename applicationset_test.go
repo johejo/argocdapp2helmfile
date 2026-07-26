@@ -316,6 +316,28 @@ func TestConvertEmptyApplicationSet(t *testing.T) {
 	}
 }
 
+// parseApplicationSetGenerator panics on a catalog generator it cannot
+// dispatch, so the table and the catalog must agree in both directions.
+func TestGeneratorParsersMatchCatalog(t *testing.T) {
+	for _, generator := range applicationset.Generators() {
+		_, handled := generatorParsers[generator.Name]
+		want := generator.Reason == ""
+		if handled != want {
+			t.Errorf("generatorParsers[%q] exists=%v, want %v", generator.Name, handled, want)
+		}
+	}
+	for name := range generatorParsers {
+		generator, known := applicationset.LookupGenerator(name)
+		if !known {
+			t.Errorf("generatorParsers[%q] is missing from the catalog", name)
+			continue
+		}
+		if generator.Reason != "" {
+			t.Errorf("generatorParsers[%q] parses a rejected generator", name)
+		}
+	}
+}
+
 func TestConvertApplicationSetRejectsUnsupportedGenerators(t *testing.T) {
 	valid := readTestdata(t, "applicationset/minimal/application.yaml")
 	for _, generator := range applicationset.Generators() {

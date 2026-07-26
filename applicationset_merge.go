@@ -8,24 +8,18 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-func generateMergeParams(
-	items yaml.MapSlice,
-	field string,
-	config *conversionConfig,
-	renderer applicationSetRenderer,
-	parent combinationContext,
-) (generatorResult, error) {
+func generateMergeParams(request generatorRequest) (generatorResult, error) {
 	var result generatorResult
 	var mergeKeys []string
 	var children []any
-	for _, item := range items {
+	for _, item := range request.items {
 		key, ok := item.Key.(string)
 		if !ok {
-			return result, fmt.Errorf("%s contains a non-string field name", field)
+			return result, fmt.Errorf("%s contains a non-string field name", request.field)
 		}
 		switch key {
 		case "mergeKeys":
-			values, err := readStringSequenceYAMLOption(item.Value, field+".mergeKeys")
+			values, err := readStringSequenceYAMLOption(item.Value, request.field+".mergeKeys")
 			if err != nil {
 				return result, err
 			}
@@ -33,14 +27,14 @@ func generateMergeParams(
 				if strings.TrimSpace(value) == "" {
 					return result, fmt.Errorf(
 						"%s.mergeKeys[%d] must be a non-empty string",
-						field,
+						request.field,
 						i,
 					)
 				}
-				if renderer.GoTemplate() && strings.Contains(value, ".") {
+				if request.renderer.GoTemplate() && strings.Contains(value, ".") {
 					return result, fmt.Errorf(
 						"%s.mergeKeys[%d] must not be a nested key when goTemplate is enabled",
-						field,
+						request.field,
 						i,
 					)
 				}
@@ -50,28 +44,31 @@ func generateMergeParams(
 			var sequenceOK bool
 			children, sequenceOK = item.Value.([]any)
 			if !sequenceOK {
-				return result, fmt.Errorf("%s.generators must be a sequence", field)
+				return result, fmt.Errorf("%s.generators must be a sequence", request.field)
 			}
 		case "template":
-			value, err := readMappingYAMLOption(item.Value, field+".template")
+			value, err := readMappingYAMLOption(item.Value, request.field+".template")
 			if err != nil {
 				return result, err
 			}
 			result.template = value
 		default:
-			return result, fmt.Errorf("%s.%s is not supported", field, key)
+			return result, fmt.Errorf("%s.%s is not supported", request.field, key)
 		}
 	}
 	if len(mergeKeys) == 0 {
-		return result, fmt.Errorf("%s.mergeKeys must contain at least one key", field)
+		return result, fmt.Errorf("%s.mergeKeys must contain at least one key", request.field)
 	}
 	if len(children) < 2 {
-		return result, fmt.Errorf("%s.generators must contain at least two generators", field)
+		return result, fmt.Errorf(
+			"%s.generators must contain at least two generators",
+			request.field,
+		)
 	}
 
 	generatedChildren := make([][]generatedGeneratorParams, len(children))
 	for i, rawChild := range children {
-		childField := fmt.Sprintf("%s.generators[%d]", field, i)
+		childField := fmt.Sprintf("%s.generators[%d]", request.field, i)
 		child, ok := rawChild.(yaml.MapSlice)
 		if !ok {
 			return result, fmt.Errorf("%s must be a mapping", childField)
@@ -79,10 +76,10 @@ func generateMergeParams(
 		generated, err := parseApplicationSetGenerator(
 			child,
 			childField,
-			config,
-			renderer,
+			request.config,
+			request.renderer,
 			nil,
-			parent.child("merge"),
+			request.parent.child("merge"),
 		)
 		if err != nil {
 			return result, err

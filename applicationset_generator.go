@@ -11,12 +11,6 @@ import (
 	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
 )
 
-type listGenerator struct {
-	elements     []any
-	elementsYAML string
-	template     yaml.MapSlice
-}
-
 type generatedGeneratorParams struct {
 	params map[string]any
 	path   string
@@ -42,6 +36,36 @@ type combinationContext struct {
 
 func (parent combinationContext) child(name string) combinationContext {
 	return combinationContext{name: name, depth: parent.depth + 1}
+}
+
+// generatorRequest is everything a generator parser may need, so that one
+// dispatch table can key on the catalog name alone. Parsers that do not nest
+// children ignore parent, and merge re-derives its children's parameters
+// instead of reading parentParams.
+type generatorRequest struct {
+	items        yaml.MapSlice
+	field        string
+	config       *conversionConfig
+	renderer     applicationSetRenderer
+	parentParams map[string]any
+	parent       combinationContext
+}
+
+// generatorParsers holds one entry per convertible catalog generator. The
+// catalog decides whether a generator is accepted, so a name the catalog
+// accepts without an entry here is a programming error, not user input.
+// The combination parsers recurse back into parseApplicationSetGenerator, so
+// the table is filled in init to keep Go from seeing an initialization cycle.
+var generatorParsers map[string]func(generatorRequest) (generatorResult, error)
+
+func init() {
+	generatorParsers = map[string]func(generatorRequest) (generatorResult, error){
+		"list":     generateListParams,
+		"git":      generateGitParams,
+		"clusters": generateClusterParams,
+		"matrix":   generateMatrixParams,
+		"merge":    generateMergeParams,
+	}
 }
 
 func parseApplicationSetGenerator(
@@ -150,94 +174,22 @@ func parseApplicationSetGenerator(
 	if !ok {
 		return result, fmt.Errorf("%s must be a mapping", generatorField)
 	}
-	switch generatorName {
-	case "list":
-		list, err := parseListOptions(items, generatorField)
-		if err != nil {
-			return result, err
-		}
-		result.template = list.template
-		yamlElements, err := parseElementsYAML(
-			list.elementsYAML,
-			generatorField+".elementsYaml",
-		)
-		if err != nil {
-			return result, err
-		}
-		// elementsYaml always parses as goTemplate: its values are already typed.
-		groups := []struct {
-			option     string
-			elements   []any
-			goTemplate bool
-		}{
-			{"elements", list.elements, renderer.GoTemplate()},
-			{"elementsYaml", yamlElements, true},
-		}
-		for _, group := range groups {
-			for i, rawElement := range group.elements {
-				elementField := fmt.Sprintf("%s.%s[%d]", generatorField, group.option, i)
-				params, err := normalizeListElement(rawElement, group.goTemplate)
-				if err != nil {
-					return result, fmt.Errorf("%s: must be a mapping: %w", elementField, err)
-				}
-				result.params = append(result.params, generatedGeneratorParams{
-					params: params,
-					path:   elementField,
-				})
-			}
-		}
-	case "git":
-		generated, err := generateGitParams(
-			items,
-			generatorField,
-			config,
-			renderer,
-			parentParams,
-		)
-		if err != nil {
-			return result, err
-		}
-		result.params, result.template = generated.params, generated.template
-	case "clusters":
-		generated, err := generateClusterParams(
-			items,
-			generatorField,
-			config,
-			renderer,
-			parentParams,
-		)
-		if err != nil {
-			return result, err
-		}
-		result.params, result.template = generated.params, generated.template
-	case "matrix":
-		generated, err := generateMatrixParams(
-			items,
-			generatorField,
-			config,
-			renderer,
-			parentParams,
-			parent,
-		)
-		if err != nil {
-			return result, err
-		}
-		result.params, result.template = generated.params, generated.template
-	case "merge":
-		generated, err := generateMergeParams(
-			items,
-			generatorField,
-			config,
-			renderer,
-			parent,
-		)
-		if err != nil {
-			return result, err
-		}
-		result.params, result.template = generated.params, generated.template
-	default:
+	parse, handled := generatorParsers[generatorName]
+	if !handled {
 		panic("unhandled generator: " + generatorName)
 	}
+	generated, err := parse(generatorRequest{
+		items:        items,
+		field:        generatorField,
+		config:       config,
+		renderer:     renderer,
+		parentParams: parentParams,
+		parent:       parent,
+	})
+	if err != nil {
+		return result, err
+	}
+	result.params, result.template = generated.params, generated.template
 	if result.selector != nil {
 		filtered := make([]generatedGeneratorParams, 0, len(result.params))
 		for _, generatedParams := range result.params {
@@ -250,36 +202,6 @@ func parseApplicationSetGenerator(
 			}
 		}
 		result.params = filtered
-	}
-	return result, nil
-}
-
-func normalizeListElement(value any, goTemplate bool) (map[string]any, error) {
-	params, err := normalizeStringMap(value)
-	if err != nil || goTemplate {
-		return params, err
-	}
-	result := make(map[string]any, len(params))
-	for key, value := range params {
-		if key != "values" {
-			stringValue, ok := value.(string)
-			if !ok {
-				return nil, fmt.Errorf("field %q must be a string", key)
-			}
-			result[key] = stringValue
-			continue
-		}
-		values, ok := value.(map[string]any)
-		if !ok {
-			return nil, errors.New(`field "values" must be a mapping`)
-		}
-		for valueKey, value := range values {
-			stringValue, ok := value.(string)
-			if !ok {
-				return nil, fmt.Errorf("field %q must be a string", "values."+valueKey)
-			}
-			result["values."+valueKey] = stringValue
-		}
 	}
 	return result, nil
 }
@@ -324,63 +246,6 @@ type labelExpression struct {
 	key      string
 	operator string
 	values   []string
-}
-
-func parseListOptions(items yaml.MapSlice, field string) (listGenerator, error) {
-	var result listGenerator
-	for _, item := range items {
-		key, ok := item.Key.(string)
-		if !ok {
-			return result, fmt.Errorf("%s contains a non-string field name", field)
-		}
-		switch key {
-		case "elements":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			elements, ok := item.Value.([]any)
-			if !ok {
-				return result, fmt.Errorf("%s.elements must be a sequence", field)
-			}
-			result.elements = elements
-		case "elementsYaml":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			value, ok := item.Value.(string)
-			if !ok {
-				return result, fmt.Errorf("%s.elementsYaml must be a string", field)
-			}
-			result.elementsYAML = value
-		case "template":
-			if isIgnorableEmptyYAMLOption(item.Value) {
-				continue
-			}
-			value, err := readMappingYAMLOption(item.Value, field+".template")
-			if err != nil {
-				return result, err
-			}
-			result.template = value
-		default:
-			return result, fmt.Errorf("%s.%s is not supported", field, key)
-		}
-	}
-	return result, nil
-}
-
-func parseElementsYAML(input, field string) ([]any, error) {
-	if strings.TrimSpace(input) == "" {
-		return nil, nil
-	}
-	value, err := decodeSingleDocument([]byte(input), field)
-	if err != nil {
-		return nil, err
-	}
-	elements, ok := value.([]any)
-	if !ok {
-		return nil, fmt.Errorf("%s must contain a sequence", field)
-	}
-	return elements, nil
 }
 
 func normalizeStringMap(value any) (map[string]any, error) {

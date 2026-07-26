@@ -7,58 +7,54 @@ import (
 	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
 )
 
-func generateMatrixParams(
-	items yaml.MapSlice,
-	field string,
-	config *conversionConfig,
-	renderer applicationSetRenderer,
-	parentParams map[string]any,
-	parent combinationContext,
-) (generatorResult, error) {
+func generateMatrixParams(request generatorRequest) (generatorResult, error) {
 	var result generatorResult
 	var children []any
-	for _, item := range items {
+	for _, item := range request.items {
 		key, ok := item.Key.(string)
 		if !ok {
-			return result, fmt.Errorf("%s contains a non-string field name", field)
+			return result, fmt.Errorf("%s contains a non-string field name", request.field)
 		}
 		switch key {
 		case "generators":
 			var sequenceOK bool
 			children, sequenceOK = item.Value.([]any)
 			if !sequenceOK {
-				return result, fmt.Errorf("%s.generators must be a sequence", field)
+				return result, fmt.Errorf("%s.generators must be a sequence", request.field)
 			}
 		case "template":
-			value, err := readMappingYAMLOption(item.Value, field+".template")
+			value, err := readMappingYAMLOption(item.Value, request.field+".template")
 			if err != nil {
 				return result, err
 			}
 			result.template = value
 		default:
-			return result, fmt.Errorf("%s.%s is not supported", field, key)
+			return result, fmt.Errorf("%s.%s is not supported", request.field, key)
 		}
 	}
 	if len(children) != 2 {
-		return result, fmt.Errorf("%s.generators must contain exactly two generators", field)
+		return result, fmt.Errorf(
+			"%s.generators must contain exactly two generators",
+			request.field,
+		)
 	}
 	firstRaw, ok := children[0].(yaml.MapSlice)
 	if !ok {
-		return result, fmt.Errorf("%s.generators[0] must be a mapping", field)
+		return result, fmt.Errorf("%s.generators[0] must be a mapping", request.field)
 	}
 	secondRaw, ok := children[1].(yaml.MapSlice)
 	if !ok {
-		return result, fmt.Errorf("%s.generators[1] must be a mapping", field)
+		return result, fmt.Errorf("%s.generators[1] must be a mapping", request.field)
 	}
 
-	firstField := field + ".generators[0]"
+	firstField := request.field + ".generators[0]"
 	first, err := parseApplicationSetGenerator(
 		firstRaw,
 		firstField,
-		config,
-		renderer,
-		parentParams,
-		parent.child("matrix"),
+		request.config,
+		request.renderer,
+		request.parentParams,
+		request.parent.child("matrix"),
 	)
 	if err != nil {
 		return result, err
@@ -67,16 +63,16 @@ func generateMatrixParams(
 		return result, fmt.Errorf("%s generated no parameters", firstField)
 	}
 
-	secondField := field + ".generators[1]"
+	secondField := request.field + ".generators[1]"
 	for _, firstParams := range first.params {
-		context := mergeMatrixParams(parentParams, firstParams.params)
+		context := mergeMatrixParams(request.parentParams, firstParams.params)
 		second, err := parseApplicationSetGenerator(
 			secondRaw,
 			secondField,
-			config,
-			renderer,
+			request.config,
+			request.renderer,
 			context,
-			parent.child("matrix"),
+			request.parent.child("matrix"),
 		)
 		if err != nil {
 			return result, fmt.Errorf("%s -> %w", firstParams.path, err)

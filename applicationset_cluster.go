@@ -12,35 +12,29 @@ type clusterGeneratorOptions struct {
 	template yaml.MapSlice
 }
 
-func generateClusterParams(
-	items yaml.MapSlice,
-	field string,
-	config *conversionConfig,
-	renderer applicationSetRenderer,
-	parentParams map[string]any,
-) (generatorResult, error) {
+func generateClusterParams(request generatorRequest) (generatorResult, error) {
 	var result generatorResult
-	if config == nil {
-		return result, fmt.Errorf("%s requires --config", field)
+	if request.config == nil {
+		return result, fmt.Errorf("%s requires --config", request.field)
 	}
-	options, err := parseClusterGeneratorOptions(items, field)
+	options, err := parseClusterGeneratorOptions(request.items, request.field)
 	if err != nil {
 		return result, err
 	}
 	result.template = options.template
-	for _, cluster := range config.clusters {
+	for _, cluster := range request.config.clusters {
 		if options.selector != nil &&
 			!options.selector.matchesFlat(map[string]string(cluster.Labels)) {
 			continue
 		}
 
-		params := clusterGeneratorParams(cluster, renderer.GoTemplate())
-		origin := fmt.Sprintf("%s[%q]", field, cluster.Name)
+		params := clusterGeneratorParams(cluster, request.renderer.GoTemplate())
+		origin := fmt.Sprintf("%s[%q]", request.field, cluster.Name)
 		if err := renderGeneratorValues(
 			params,
-			parentParams,
+			request.parentParams,
 			options.values,
-			renderer,
+			request.renderer,
 		); err != nil {
 			return result, fmt.Errorf("%s: values: %w", origin, err)
 		}

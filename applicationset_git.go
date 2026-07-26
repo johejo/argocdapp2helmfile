@@ -41,23 +41,17 @@ type generatorValue struct {
 	value string
 }
 
-func generateGitParams(
-	items yaml.MapSlice,
-	field string,
-	config *conversionConfig,
-	renderer applicationSetRenderer,
-	parentParams map[string]any,
-) (generatorResult, error) {
+func generateGitParams(request generatorRequest) (generatorResult, error) {
 	var result generatorResult
-	options, err := parseGitGeneratorOptions(items, field)
+	options, err := parseGitGeneratorOptions(request.items, request.field)
 	if err != nil {
 		return result, err
 	}
 	root, err := resolveGitGeneratorRoot(
-		config.sources(),
+		request.config.sources(),
 		options.repoURL,
 		options.revision,
-		field,
+		request.field,
 	)
 	if err != nil {
 		return result, err
@@ -67,19 +61,19 @@ func generateGitParams(
 		result.params, err = generateGitDirectoryParams(
 			root,
 			options,
-			config,
-			renderer,
-			parentParams,
-			field,
+			request.config,
+			request.renderer,
+			request.parentParams,
+			request.field,
 		)
 	} else {
 		result.params, err = generateGitFileParams(
 			root,
 			options,
-			config,
-			renderer,
-			parentParams,
-			field,
+			request.config,
+			request.renderer,
+			request.parentParams,
+			request.field,
 		)
 	}
 	return result, err
