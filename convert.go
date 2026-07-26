@@ -142,6 +142,17 @@ type convertedApplication struct {
 	provenanceComments []string
 }
 
+// chartSourceSelection is the Application's manifest source after trimming and
+// validation, together with the repository kind that decides how it converts.
+type chartSourceSelection struct {
+	source          applicationSource
+	field           string
+	repositoryType  repositoryKind
+	isKustomization bool
+	refs            map[string]applicationSource
+	provenance      []string
+}
+
 func convertApplication(
 	app application,
 	documentNumber int,
@@ -150,38 +161,65 @@ func convertApplication(
 ) (convertedApplication, error) {
 	var converted convertedApplication
 
-	if app.APIVersion != "argoproj.io/v1alpha1" {
-		return converted, fmt.Errorf("apiVersion must be %q", "argoproj.io/v1alpha1")
-	}
-	if app.Kind != "Application" {
-		return converted, errors.New("kind must be \"Application\"")
-	}
-	if strings.TrimSpace(app.Metadata.Name) == "" {
-		return converted, errors.New("metadata.name is required")
-	}
-	if app.Spec.RevisionHistoryLimit != nil {
-		switch {
-		case *app.Spec.RevisionHistoryLimit == 0:
-			return converted, diagnosticrule.Error(diagnosticrule.RevisionHistoryZero)
-		case *app.Spec.RevisionHistoryLimit < 0:
-			return converted, diagnosticrule.Error(
-				diagnosticrule.RevisionHistoryNegative,
-				*app.Spec.RevisionHistoryLimit,
-			)
-		}
+	if err := validateApplicationEnvelope(app); err != nil {
+		return converted, err
 	}
 	kubeContext, err := destinationResolver.resolve(app.Spec.Destination, "spec.destination")
 	if err != nil {
 		return converted, err
 	}
-	sources, err := resolveSources(app, documentNumber)
+	selected, err := selectChartSource(app, documentNumber)
 	if err != nil {
 		return converted, err
 	}
+
+	baseRelease := release{
+		Name:            app.Metadata.Name,
+		Namespace:       app.Spec.Destination.Namespace,
+		KubeContext:     kubeContext,
+		HistoryMax:      valueOrZero(app.Spec.RevisionHistoryLimit),
+		CreateNamespace: slices.Contains(app.Spec.SyncPolicy.SyncOptions, "CreateNamespace=true"),
+	}
+
+	if selected.isKustomization {
+		return convertKustomizeApplication(app, baseRelease, selected, documentNumber, resolver)
+	}
+	return convertHelmApplication(app, baseRelease, selected, documentNumber, resolver)
+}
+
+func validateApplicationEnvelope(app application) error {
+	if app.APIVersion != "argoproj.io/v1alpha1" {
+		return fmt.Errorf("apiVersion must be %q", "argoproj.io/v1alpha1")
+	}
+	if app.Kind != "Application" {
+		return errors.New("kind must be \"Application\"")
+	}
+	if strings.TrimSpace(app.Metadata.Name) == "" {
+		return errors.New("metadata.name is required")
+	}
+	if app.Spec.RevisionHistoryLimit != nil {
+		switch {
+		case *app.Spec.RevisionHistoryLimit == 0:
+			return diagnosticrule.Error(diagnosticrule.RevisionHistoryZero)
+		case *app.Spec.RevisionHistoryLimit < 0:
+			return diagnosticrule.Error(
+				diagnosticrule.RevisionHistoryNegative,
+				*app.Spec.RevisionHistoryLimit,
+			)
+		}
+	}
+	return nil
+}
+
+func selectChartSource(app application, documentNumber int) (chartSourceSelection, error) {
+	var selected chartSourceSelection
+
+	sources, err := resolveSources(app, documentNumber)
+	if err != nil {
+		return selected, err
+	}
 	chartSource := sources.chartSource
 	chartSourceField := sources.field
-	refs := sources.refs
-	provenance := sources.comments
 	// Trim once here so the emitted values cannot keep whitespace the emptiness
 	// tests below ignore. A blank targetRevision keeps its value because it is
 	// rejected rather than defaulted the way an omitted one is.
@@ -202,7 +240,7 @@ func convertApplication(
 			{"plugin", chartSource.Plugin != nil},
 		} {
 			if conflict.set {
-				return converted, fmt.Errorf(
+				return selected, fmt.Errorf(
 					"%s.%s and %s.kustomize cannot both be set",
 					chartSourceField,
 					conflict.name,
@@ -211,19 +249,19 @@ func convertApplication(
 			}
 		}
 	} else if chartSource.Directory != nil || chartSource.Plugin != nil {
-		return converted, fmt.Errorf("%s contains a non-Helm source configuration", chartSourceField)
+		return selected, fmt.Errorf("%s contains a non-Helm source configuration", chartSourceField)
 	}
 	// An HTTP URL may address either a Helm repository or a Git remote, so the URL
 	// shape (urlKind) and how the manifests are obtained (repositoryType) are not
 	// the same thing. Branch on repositoryType only.
 	urlKind, err := classifyRepositoryURL(chartSource.RepoURL)
 	if err != nil {
-		return converted, err
+		return selected, err
 	}
 	hasChart := chartSource.Chart != ""
 	hasPath := chartSource.Path != ""
 	if hasChart && hasPath {
-		return converted, fmt.Errorf("%s.chart and %s.path cannot both be set", chartSourceField, chartSourceField)
+		return selected, fmt.Errorf("%s.chart and %s.path cannot both be set", chartSourceField, chartSourceField)
 	}
 	repositoryType := urlKind
 	if (hasPath || isKustomization) && urlKind == httpRepository {
@@ -232,74 +270,98 @@ func convertApplication(
 	if repositoryType == gitRepository {
 		chartSource.TargetRevision = normalizeGitTargetRevision(chartSource.TargetRevision)
 		if hasChart {
-			return converted, fmt.Errorf("%s.chart is not supported for a Git repository; use path", chartSourceField)
+			return selected, fmt.Errorf("%s.chart is not supported for a Git repository; use path", chartSourceField)
 		}
 		if !hasPath {
-			return converted, fmt.Errorf("%s.path is required for a Git repository", chartSourceField)
+			return selected, fmt.Errorf("%s.path is required for a Git repository", chartSourceField)
 		}
 		if err := validateGitChartPath(chartSource.Path); err != nil {
-			return converted, fmt.Errorf("%s.path %q: %w", chartSourceField, chartSource.Path, err)
+			return selected, fmt.Errorf("%s.path %q: %w", chartSourceField, chartSource.Path, err)
 		}
 	} else {
 		if hasPath {
-			return converted, fmt.Errorf("%s.path is only supported for a Git repository", chartSourceField)
+			return selected, fmt.Errorf("%s.path is only supported for a Git repository", chartSourceField)
 		}
 		if !hasChart {
-			return converted, fmt.Errorf("%s.chart is required", chartSourceField)
+			return selected, fmt.Errorf("%s.chart is required", chartSourceField)
 		}
 	}
 	if strings.TrimSpace(chartSource.TargetRevision) == "" {
-		return converted, fmt.Errorf("%s.targetRevision is required", chartSourceField)
+		return selected, fmt.Errorf("%s.targetRevision is required", chartSourceField)
 	}
 
-	baseRelease := release{
-		Name:            app.Metadata.Name,
-		Namespace:       app.Spec.Destination.Namespace,
-		KubeContext:     kubeContext,
-		HistoryMax:      valueOrZero(app.Spec.RevisionHistoryLimit),
-		CreateNamespace: slices.Contains(app.Spec.SyncPolicy.SyncOptions, "CreateNamespace=true"),
-	}
+	return chartSourceSelection{
+		source:          chartSource,
+		field:           chartSourceField,
+		repositoryType:  repositoryType,
+		isKustomization: isKustomization,
+		refs:            sources.refs,
+		provenance:      sources.comments,
+	}, nil
+}
 
-	if isKustomization {
-		if repositoryType != gitRepository {
-			return converted, fmt.Errorf("%s.kustomize requires a Git repository", chartSourceField)
-		}
-		options, err := parseKustomizeOptions(
-			chartSource.Kustomize,
-			chartSourceField+".kustomize",
-		)
-		if err != nil {
-			return converted, err
-		}
-		transformers, err := options.transformers(
-			applicationBuildEnvironment(app, chartSource),
-			chartSourceField+".kustomize",
-		)
-		if err != nil {
-			return converted, err
-		}
-		mapping, err := resolver.resolve(chartSource, chartSourceField)
-		if err != nil {
-			return converted, err
-		}
-		values := options.values()
-		var releaseValues []any
-		if len(values) != 0 {
-			releaseValues = []any{values}
-		}
-		kustomizeRelease := baseRelease
-		kustomizeRelease.Chart = templatePath(mapping.join(chartSource.Path))
-		kustomizeRelease.Values = releaseValues
-		kustomizeRelease.Transformers = transformers
-		return convertedApplication{
-			provenanceComments: append(
-				[]string{gitSourceProvenance("kustomization", documentNumber, chartSource)},
-				provenance...,
-			),
-			release: kustomizeRelease,
-		}, nil
-	}
+func convertKustomizeApplication(
+	app application,
+	baseRelease release,
+	selected chartSourceSelection,
+	documentNumber int,
+	resolver *sourceResolver,
+) (convertedApplication, error) {
+	var converted convertedApplication
 
+	chartSource := selected.source
+	chartSourceField := selected.field
+	if selected.repositoryType != gitRepository {
+		return converted, fmt.Errorf("%s.kustomize requires a Git repository", chartSourceField)
+	}
+	options, err := parseKustomizeOptions(
+		chartSource.Kustomize,
+		chartSourceField+".kustomize",
+	)
+	if err != nil {
+		return converted, err
+	}
+	transformers, err := options.transformers(
+		applicationBuildEnvironment(app, chartSource),
+		chartSourceField+".kustomize",
+	)
+	if err != nil {
+		return converted, err
+	}
+	mapping, err := resolver.resolve(chartSource, chartSourceField)
+	if err != nil {
+		return converted, err
+	}
+	values := options.values()
+	var releaseValues []any
+	if len(values) != 0 {
+		releaseValues = []any{values}
+	}
+	kustomizeRelease := baseRelease
+	kustomizeRelease.Chart = templatePath(mapping.join(chartSource.Path))
+	kustomizeRelease.Values = releaseValues
+	kustomizeRelease.Transformers = transformers
+	return convertedApplication{
+		provenanceComments: append(
+			[]string{gitSourceProvenance("kustomization", documentNumber, chartSource)},
+			selected.provenance...,
+		),
+		release: kustomizeRelease,
+	}, nil
+}
+
+func convertHelmApplication(
+	app application,
+	baseRelease release,
+	selected chartSourceSelection,
+	documentNumber int,
+	resolver *sourceResolver,
+) (convertedApplication, error) {
+	var converted convertedApplication
+
+	chartSource := selected.source
+	chartSourceField := selected.field
+	repositoryType := selected.repositoryType
 	helm, err := parseHelmOptions(chartSource.Helm, chartSourceField+".helm")
 	if err != nil {
 		return converted, err
@@ -344,7 +406,7 @@ func convertApplication(
 		chartMapping: chartMapping,
 		chartRoot:    chartRoot,
 		environment:  applicationBuildEnvironment(app, chartSource),
-		refs:         refs,
+		refs:         selected.refs,
 		resolver:     resolver,
 	}
 	values, err := resolveValueFiles(helm.valueFiles, sourceContext, helm.ignoreMissingValues)
@@ -393,7 +455,7 @@ func convertApplication(
 	converted = convertedApplication{
 		chart:              chartSource.Chart,
 		skipCRDs:           &helm.skipCRDs,
-		provenanceComments: provenance,
+		provenanceComments: selected.provenance,
 		release:            helmRelease,
 	}
 	if repositoryType == gitRepository {
