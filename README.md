@@ -401,8 +401,8 @@ The variables, their expanded values, and the rejection reasons are listed in th
 also available with `--help-application-mapping`.
 
 File parameters are passed as files without converter-side glob expansion.
-Build-environment variables are rejected,
-and `ignoreMissingValueFiles` does not apply to them.
+Build-environment variables follow the same expansion rules as value-file paths,
+and `ignoreMissingValueFiles` does not apply to file parameters.
 
 ### Release labels
 
