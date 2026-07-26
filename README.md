@@ -171,16 +171,9 @@ Parameter names, selector operators, pattern matching, and merge precedence foll
 [Argo CD generator documentation][argocd-applicationset-generators].
 The converter adds these requirements:
 
-- Go templates require a leading dot, such as `{{ .name }}`,
-  and provide Sprig functions except `env`, `expandenv`, and `getHostByName`,
-  plus `normalize`, `slugify`, `toYaml`, `fromYaml`, and `fromYamlArray`.
-  Supported `goTemplateOptions` are `missingkey=default`, `missingkey=invalid`,
-  `missingkey=zero`, and `missingkey=error`.
-- Legacy expressions use flat keys without a leading dot, such as `{{name}}`.
-  Nested parameters are flattened into dot-separated keys,
-  scalar values are converted to strings,
-  undefined or non-string parameters are left unchanged,
-  and `goTemplateOptions` are ignored.
+- Supported `goTemplateOptions` are `missingkey=default`, `missingkey=invalid`,
+  `missingkey=zero`, and `missingkey=error`; any other option is rejected.
+  Legacy expressions ignore `goTemplateOptions`.
 - The Git generator never fetches:
   its `repoURL` and `revision` must exactly match a Config `sources` entry,
   whose `localRoot` must resolve from the converter's current working directory to an
