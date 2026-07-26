@@ -29,7 +29,7 @@ metadata:
   annotations:
     app.example.com/source-path: kustomize
 spec:
-  replicas: 1
+  replicas: 4
   selector:
     matchLabels:
       app: backend

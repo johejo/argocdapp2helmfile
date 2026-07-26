@@ -10,6 +10,7 @@ type kustomizeTransformer struct {
 	APIVersion  string               `yaml:"apiVersion"`
 	Kind        string               `yaml:"kind"`
 	Metadata    kustomizeObjectMeta  `yaml:"metadata"`
+	Replica     *kustomizeReplica    `yaml:"replica,omitempty"`
 	Labels      yaml.MapSlice        `yaml:"labels,omitempty"`
 	Annotations yaml.MapSlice        `yaml:"annotations,omitempty"`
 	FieldSpecs  []kustomizeFieldSpec `yaml:"fieldSpecs"`
@@ -32,6 +33,20 @@ func (options kustomizeOptions) transformers(
 	field string,
 ) ([]any, error) {
 	var result []any
+	for i, replica := range options.replicas {
+		// Argo CD applies replicas in the same Kustomization, where the transformer
+		// still matches the pre-rename name. Helmfile renames in an earlier build,
+		// so the transformer must target the renamed resource.
+		renamed := replica
+		renamed.Name = options.namePrefix + replica.Name + options.nameSuffix
+		result = append(result, kustomizeTransformer{
+			APIVersion: "builtin",
+			Kind:       "ReplicaCountTransformer",
+			Metadata:   kustomizeObjectMeta{Name: fmt.Sprintf("argocd-replicas-%d", i)},
+			Replica:    &renamed,
+			FieldSpecs: replicaCountFieldSpecs,
+		})
+	}
 	if len(options.commonLabels) != 0 {
 		labels, err := expandKustomizeStringMap(
 			options.commonLabels,
@@ -129,6 +144,13 @@ func isDynamicArgoCDBuildEnvironmentVariable(name string) bool {
 	default:
 		return false
 	}
+}
+
+var replicaCountFieldSpecs = []kustomizeFieldSpec{
+	{Path: "spec/replicas", Create: true, Kind: "Deployment"},
+	{Path: "spec/replicas", Create: true, Kind: "ReplicationController"},
+	{Path: "spec/replicas", Create: true, Kind: "ReplicaSet"},
+	{Path: "spec/replicas", Create: true, Kind: "StatefulSet"},
 }
 
 var resourceMetadataLabelFieldSpecs = []kustomizeFieldSpec{

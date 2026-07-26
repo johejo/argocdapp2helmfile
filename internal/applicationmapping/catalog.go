@@ -24,6 +24,7 @@ const (
 	KustomizeBoolean     KustomizeValueKind = "boolean"
 	KustomizeStringMap   KustomizeValueKind = "string-map"
 	KustomizeImages      KustomizeValueKind = "images"
+	KustomizeReplicas    KustomizeValueKind = "replicas"
 	KustomizeUnsupported KustomizeValueKind = "unsupported"
 )
 
@@ -267,6 +268,10 @@ var kustomizeOptions = []KustomizeOption{
 		Output: "Kustomization release `values.images`",
 	},
 	{
+		Name: "replicas", ValueKind: KustomizeReplicas,
+		Output: "Inline built-in `ReplicaCountTransformer`",
+	},
+	{
 		Name: "commonLabels", ValueKind: KustomizeStringMap,
 		Output: "Inline built-in `LabelTransformer`",
 	},
@@ -293,11 +298,6 @@ var kustomizeOptions = []KustomizeOption{
 	{
 		Name: "forceCommonAnnotations", ValueKind: KustomizeBoolean,
 		Output: "None; accepted for validation only",
-	},
-	{
-		Name: "replicas", ValueKind: KustomizeUnsupported,
-		Reason: "Helmfile applies transformers after the build, where renamed resources " +
-			"no longer match",
 	},
 	{
 		Name: "patches", ValueKind: KustomizeUnsupported,

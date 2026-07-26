@@ -14,6 +14,7 @@ func TestConvertKustomizationGolden(t *testing.T) {
 	for _, directory := range []string{
 		"kustomize/empty",
 		"kustomize/options",
+		"kustomize/replicas",
 		"kustomize/metadata",
 		"kustomize/multi-source",
 		"applicationset/kustomize",
@@ -277,6 +278,131 @@ func TestConvertRejectsInvalidKustomizations(t *testing.T) {
 	}
 }
 
+func TestParseKustomizeReplicas(t *testing.T) {
+	tests := map[string]struct {
+		input any
+		want  []kustomizeReplica
+	}{
+		"integer count": {
+			input: []any{yaml.MapSlice{{Key: "name", Value: "api"}, {Key: "count", Value: 3}}},
+			want:  []kustomizeReplica{{Name: "api", Count: 3}},
+		},
+		"numeric string count": {
+			input: []any{yaml.MapSlice{{Key: "name", Value: "api"}, {Key: "count", Value: "3"}}},
+			want:  []kustomizeReplica{{Name: "api", Count: 3}},
+		},
+		"zero count": {
+			input: []any{yaml.MapSlice{{Key: "name", Value: "api"}, {Key: "count", Value: 0}}},
+			want:  []kustomizeReplica{{Name: "api", Count: 0}},
+		},
+		"input order retained": {
+			input: []any{
+				yaml.MapSlice{{Key: "name", Value: "web"}, {Key: "count", Value: 2}},
+				yaml.MapSlice{{Key: "count", Value: 5}, {Key: "name", Value: "api"}},
+			},
+			want: []kustomizeReplica{{Name: "web", Count: 2}, {Name: "api", Count: 5}},
+		},
+		"empty sequence": {input: []any{}, want: nil},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := parseKustomizeReplicas(test.input, "spec.source.kustomize.replicas")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("parseKustomizeReplicas() = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestParseKustomizeReplicasRejectsInvalidEntries(t *testing.T) {
+	tests := map[string]struct {
+		input any
+		want  string
+	}{
+		"not a sequence": {
+			input: yaml.MapSlice{{Key: "name", Value: "api"}},
+			want:  "spec.source.kustomize.replicas must be a sequence",
+		},
+		"element not a mapping": {
+			input: []any{"api=3"},
+			want:  "spec.source.kustomize.replicas[0] must be a mapping",
+		},
+		"unknown field": {
+			input: []any{yaml.MapSlice{
+				{Key: "name", Value: "api"},
+				{Key: "count", Value: 3},
+				{Key: "namespace", Value: "web"},
+			}},
+			want: "spec.source.kustomize.replicas[0].namespace is not supported",
+		},
+		"missing name": {
+			input: []any{yaml.MapSlice{{Key: "count", Value: 3}}},
+			want:  "spec.source.kustomize.replicas[0].name is required",
+		},
+		"missing count": {
+			input: []any{yaml.MapSlice{{Key: "name", Value: "api"}}},
+			want:  "spec.source.kustomize.replicas[0].count is required",
+		},
+		"name not a string": {
+			input: []any{yaml.MapSlice{{Key: "name", Value: 1}, {Key: "count", Value: 3}}},
+			want:  "spec.source.kustomize.replicas[0].name must be a string",
+		},
+		"count not an integer": {
+			input: []any{yaml.MapSlice{{Key: "name", Value: "api"}, {Key: "count", Value: "two"}}},
+			want:  `spec.source.kustomize.replicas[0].count must be an integer: "two"`,
+		},
+		"count is a mapping": {
+			input: []any{yaml.MapSlice{
+				{Key: "name", Value: "api"},
+				{Key: "count", Value: yaml.MapSlice{}},
+			}},
+			want: "spec.source.kustomize.replicas[0].count must be an integer",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := parseKustomizeReplicas(test.input, "spec.source.kustomize.replicas")
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestKustomizeReplicaTransformerTargetsRenamedResource(t *testing.T) {
+	options := kustomizeOptions{
+		namePrefix: "edge-",
+		nameSuffix: "-prod",
+		replicas:   []kustomizeReplica{{Name: "api", Count: 3}, {Name: "web", Count: 1}},
+	}
+	transformers, err := options.transformers(nil, "spec.source.kustomize")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []any{
+		kustomizeTransformer{
+			APIVersion: "builtin",
+			Kind:       "ReplicaCountTransformer",
+			Metadata:   kustomizeObjectMeta{Name: "argocd-replicas-0"},
+			Replica:    &kustomizeReplica{Name: "edge-api-prod", Count: 3},
+			FieldSpecs: replicaCountFieldSpecs,
+		},
+		kustomizeTransformer{
+			APIVersion: "builtin",
+			Kind:       "ReplicaCountTransformer",
+			Metadata:   kustomizeObjectMeta{Name: "argocd-replicas-1"},
+			Replica:    &kustomizeReplica{Name: "edge-web-prod", Count: 1},
+			FieldSpecs: replicaCountFieldSpecs,
+		},
+	}
+	if !reflect.DeepEqual(transformers, want) {
+		t.Fatalf("transformers() = %#v, want %#v", transformers, want)
+	}
+}
+
 func TestConvertRejectsUnsupportedKustomizeOptions(t *testing.T) {
 	source := readTestdata(t, "kustomize/empty/application.yaml")
 	config, err := parseConfig([]byte(readTestdata(t, "kustomize/empty/config.yaml")))
@@ -311,6 +437,9 @@ func TestParseKustomizeOptionsAssignsEveryCatalogOption(t *testing.T) {
 		{Key: "nameSuffix", Value: "-prod"},
 		{Key: "namespace", Value: "manifests"},
 		{Key: "images", Value: []any{"example/app:v2"}},
+		{Key: "replicas", Value: []any{
+			yaml.MapSlice{{Key: "name", Value: "api"}, {Key: "count", Value: 3}},
+		}},
 		{Key: "commonLabels", Value: yaml.MapSlice{{Key: "app", Value: "storefront"}}},
 		{Key: "labelWithoutSelector", Value: true},
 		{Key: "labelIncludeTemplates", Value: true},
@@ -324,6 +453,7 @@ func TestParseKustomizeOptionsAssignsEveryCatalogOption(t *testing.T) {
 		nameSuffix:                "-prod",
 		namespace:                 "manifests",
 		images:                    []kustomizeImage{{Name: "example/app", NewTag: "v2"}},
+		replicas:                  []kustomizeReplica{{Name: "api", Count: 3}},
 		commonLabels:              yaml.MapSlice{{Key: "app", Value: "storefront"}},
 		labelWithoutSelector:      true,
 		labelIncludeTemplates:     true,

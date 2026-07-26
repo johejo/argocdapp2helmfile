@@ -1,0 +1,6 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+sources:
+  - repoURL: ssh://git@git.example.com/platform/manifests.git
+    targetRevision: 0123456789abcdef
+    localRoot: '{{ requiredEnv "MANIFESTS_ROOT" }}'

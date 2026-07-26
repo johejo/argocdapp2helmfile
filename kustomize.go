@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -16,6 +17,7 @@ type kustomizeOptions struct {
 	nameSuffix                string
 	namespace                 string
 	images                    []kustomizeImage
+	replicas                  []kustomizeReplica
 	commonLabels              yaml.MapSlice
 	labelWithoutSelector      bool
 	labelIncludeTemplates     bool
@@ -78,6 +80,12 @@ type kustomizeImage struct {
 	Digest  string `yaml:"digest,omitempty"`
 }
 
+// kustomizeReplica mirrors Kustomize's builtin ReplicaCountTransformer replica field.
+type kustomizeReplica struct {
+	Name  string `yaml:"name"`
+	Count int64  `yaml:"count"`
+}
+
 func parseKustomizeOptions(items kustomizeMap, field string) (kustomizeOptions, error) {
 	var result kustomizeOptions
 	for _, item := range items {
@@ -105,6 +113,8 @@ func parseKustomizeOptions(items kustomizeMap, field string) (kustomizeOptions, 
 			result.namespace = value.(string)
 		case "images":
 			result.images = value.([]kustomizeImage)
+		case "replicas":
+			result.replicas = value.([]kustomizeReplica)
 		case "commonLabels":
 			result.commonLabels = value.(yaml.MapSlice)
 		case "labelWithoutSelector":
@@ -144,6 +154,8 @@ func parseKustomizeOptionValue(
 		return readOptionalStringMapYAMLOption(value, field)
 	case applicationmapping.KustomizeImages:
 		return parseKustomizeImages(value, field)
+	case applicationmapping.KustomizeReplicas:
+		return parseKustomizeReplicas(value, field)
 	default:
 		panic("unknown Kustomize option value kind: " + option.ValueKind)
 	}
@@ -289,6 +301,80 @@ func splitKustomizeImageReplacement(value string) (string, string, string, error
 		return "", "", "", fmt.Errorf("image name: %w", err)
 	}
 	return name, tag, "", nil
+}
+
+func parseKustomizeReplicas(value any, field string) ([]kustomizeReplica, error) {
+	if isNilOrEmptyCollection(value) {
+		return nil, nil
+	}
+	sequence, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must be a sequence", field)
+	}
+	replicas := make([]kustomizeReplica, 0, len(sequence))
+	for i, raw := range sequence {
+		replica, err := parseKustomizeReplica(raw, fmt.Sprintf("%s[%d]", field, i))
+		if err != nil {
+			return nil, err
+		}
+		replicas = append(replicas, replica)
+	}
+	return replicas, nil
+}
+
+func parseKustomizeReplica(value any, field string) (kustomizeReplica, error) {
+	mapping, ok := value.(yaml.MapSlice)
+	if !ok {
+		return kustomizeReplica{}, fmt.Errorf("%s must be a mapping", field)
+	}
+	var replica kustomizeReplica
+	var hasCount bool
+	for _, item := range mapping {
+		key, ok := item.Key.(string)
+		if !ok {
+			return kustomizeReplica{}, fmt.Errorf("%s contains a non-string field name", field)
+		}
+		switch key {
+		case "name":
+			name, ok := item.Value.(string)
+			if !ok {
+				return kustomizeReplica{}, fmt.Errorf("%s.name must be a string", field)
+			}
+			replica.Name = name
+		case "count":
+			count, err := readKustomizeReplicaCount(item.Value, field+".count")
+			if err != nil {
+				return kustomizeReplica{}, err
+			}
+			replica.Count = count
+			hasCount = true
+		default:
+			return kustomizeReplica{}, fmt.Errorf("%s.%s is not supported", field, key)
+		}
+	}
+	if replica.Name == "" {
+		return kustomizeReplica{}, fmt.Errorf("%s.name is required", field)
+	}
+	if !hasCount {
+		return kustomizeReplica{}, fmt.Errorf("%s.count is required", field)
+	}
+	return replica, nil
+}
+
+// Argo CD's count is an IntOrString, so a numeric string is valid.
+func readKustomizeReplicaCount(value any, field string) (int64, error) {
+	if text, ok := value.(string); ok {
+		count, err := strconv.ParseInt(text, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("%s must be an integer: %q", field, text)
+		}
+		return count, nil
+	}
+	count, ok := integerValue(value)
+	if !ok {
+		return 0, fmt.Errorf("%s must be an integer", field)
+	}
+	return count, nil
 }
 
 func validateKustomizeImageName(value string) error {

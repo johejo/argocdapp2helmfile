@@ -84,6 +84,7 @@ only these options:
 | `nameSuffix` | Kustomization release `values.nameSuffix` |
 | `namespace` | Kustomization release `values.namespace` |
 | `images` | Kustomization release `values.images` |
+| `replicas` | Inline built-in `ReplicaCountTransformer` |
 | `commonLabels` | Inline built-in `LabelTransformer` |
 | `labelWithoutSelector` | `LabelTransformer.fieldSpecs` selection |
 | `labelIncludeTemplates` | `LabelTransformer.fieldSpecs` selection |
@@ -98,6 +99,12 @@ By default, labels apply to resource metadata, workload templates, and selectors
 With `labelWithoutSelector: true`, labels apply only to resource metadata unless
 `labelIncludeTemplates: true` also includes templates.
 `labelIncludeTemplates: true` requires `labelWithoutSelector: true`.
+
+`replicas` becomes one `ReplicaCountTransformer` per entry, in input order, and a `count`
+may be an integer or a numeric string.
+Helmfile renames resources in an earlier build than the one that applies transformers, so
+each replica target name is emitted with `namePrefix` and `nameSuffix` already applied.
+Kustomize fails the build when a replica target matches no resource.
 
 `commonLabels` values always expand the Argo CD build environment.
 `commonAnnotations` values expand it only when `commonAnnotationsEnvsubst: true`.
@@ -118,7 +125,6 @@ The rejection reason is reported in the error message.
 
 | Argo CD Kustomize option | Rejection reason |
 | --- | --- |
-| `replicas` | Helmfile applies transformers after the build, where renamed resources no longer match |
 | `patches` | Helmfile applies patches after namePrefix, nameSuffix, and images, reversing Argo CD's order |
 | `components` | Kustomize components have no Helmfile equivalent |
 | `ignoreMissingComponents` | the option only affects components, which have no Helmfile equivalent |

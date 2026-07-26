@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: api
+spec:
+  destination:
+    namespace: workloads
+  source:
+    repoURL: ssh://git@git.example.com/platform/manifests.git
+    targetRevision: 0123456789abcdef
+    path: services/api
+    kustomize:
+      namePrefix: edge-
+      nameSuffix: -prod
+      replicas:
+        - name: api
+          count: 3
+        - name: worker
+          count: "0"

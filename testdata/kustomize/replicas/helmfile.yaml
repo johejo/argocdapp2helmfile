@@ -1,0 +1,51 @@
+# document 1 kustomization source: repoURL "ssh://git@git.example.com/platform/manifests.git", path "services/api", targetRevision "0123456789abcdef"
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: api
+    namespace: workloads
+    chart: '{{ requiredEnv "MANIFESTS_ROOT" }}/services/api'
+    values:
+      - namePrefix: edge-
+        nameSuffix: -prod
+    transformers:
+      - apiVersion: builtin
+        kind: ReplicaCountTransformer
+        metadata:
+          name: argocd-replicas-0
+        replica:
+          name: edge-api-prod
+          count: 3
+        fieldSpecs:
+          - path: spec/replicas
+            create: true
+            kind: Deployment
+          - path: spec/replicas
+            create: true
+            kind: ReplicationController
+          - path: spec/replicas
+            create: true
+            kind: ReplicaSet
+          - path: spec/replicas
+            create: true
+            kind: StatefulSet
+      - apiVersion: builtin
+        kind: ReplicaCountTransformer
+        metadata:
+          name: argocd-replicas-1
+        replica:
+          name: edge-worker-prod
+          count: 0
+        fieldSpecs:
+          - path: spec/replicas
+            create: true
+            kind: Deployment
+          - path: spec/replicas
+            create: true
+            kind: ReplicationController
+          - path: spec/replicas
+            create: true
+            kind: ReplicaSet
+          - path: spec/replicas
+            create: true
+            kind: StatefulSet

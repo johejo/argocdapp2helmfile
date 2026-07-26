@@ -62,6 +62,12 @@ With `labelWithoutSelector: true`, labels apply only to resource metadata unless
 `labelIncludeTemplates: true` also includes templates.
 `labelIncludeTemplates: true` requires `labelWithoutSelector: true`.
 
+`replicas` becomes one `ReplicaCountTransformer` per entry, in input order, and a `count`
+may be an integer or a numeric string.
+Helmfile renames resources in an earlier build than the one that applies transformers, so
+each replica target name is emitted with `namePrefix` and `nameSuffix` already applied.
+Kustomize fails the build when a replica target matches no resource.
+
 `commonLabels` values always expand the Argo CD build environment.
 `commonAnnotations` values expand it only when `commonAnnotationsEnvsubst: true`.
 Supported variables are `ARGOCD_APP_NAME`, `ARGOCD_APP_NAMESPACE`,

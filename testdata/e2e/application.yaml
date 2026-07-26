@@ -34,3 +34,6 @@ spec:
       commonAnnotationsEnvsubst: true
       images:
         - example.invalid/backend=registry.invalid/team/backend:v2.3.4
+      replicas:
+        - name: backend
+          count: 4

@@ -87,6 +87,7 @@ func TestKustomizeCatalogIsValid(t *testing.T) {
 		KustomizeBoolean,
 		KustomizeStringMap,
 		KustomizeImages,
+		KustomizeReplicas,
 		KustomizeUnsupported,
 	}
 	names := make(map[string]bool)
