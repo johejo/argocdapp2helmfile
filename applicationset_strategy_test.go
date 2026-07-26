@@ -193,11 +193,7 @@ func TestConvertApplicationSetRollingSyncErrors(t *testing.T) {
 			if err == nil {
 				t.Fatal("conversion unexpectedly succeeded")
 			}
-			for _, want := range test.wants {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("error %q does not contain %q", err, want)
-				}
-			}
+			assertErrorContains(t, err, test.wants...)
 		})
 	}
 }

@@ -113,9 +113,7 @@ func TestConvertApplicationSetDestinationErrorReportsOrigin(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := convertWithConfig([]byte(input), test.config)
 			prefix := "document 1: spec.generators[0].list.elements[0]: "
-			if err == nil || !strings.Contains(err.Error(), prefix+test.want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, prefix+test.want)
 		})
 	}
 }
@@ -295,9 +293,7 @@ func TestConvertApplicationSetDuplicateReleaseReportsOrigins(t *testing.T) {
 	appSet := readTestdata(t, "applicationset/minimal/application.yaml")
 	_, err := convert([]byte(direct + "---\n" + appSet))
 	want := `document 2: spec.generators[0].list.elements[0]: release name "app" duplicates document 1`
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, want)
 }
 
 func TestConvertApplicationSetPassCredentialsConflictReportsOrigins(t *testing.T) {
@@ -306,9 +302,7 @@ func TestConvertApplicationSetPassCredentialsConflictReportsOrigins(t *testing.T
 	want := "document 1: spec.generators[0].list.elements[1]: " +
 		"spec.source.helm.passCredentials conflicts with " +
 		"document 1: spec.generators[0].list.elements[0]"
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, want)
 }
 
 func TestConvertEmptyApplicationSet(t *testing.T) {
@@ -338,9 +332,7 @@ func TestConvertApplicationSetRejectsUnsupportedGenerators(t *testing.T) {
 			_, err := convert([]byte(input))
 			want := "spec.generators[0]." + generator.Name +
 				" generator is not supported: " + generator.Reason
-			if err == nil || !strings.Contains(err.Error(), want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, want)
 		})
 	}
 }
@@ -389,9 +381,7 @@ func TestConvertApplicationSetErrors(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, err := convert([]byte(test.input))
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, test.want)
 		})
 	}
 }
@@ -414,9 +404,7 @@ func TestConvertLegacyApplicationSetErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			input := readTestdata(t, "applicationset/legacy-errors/"+test.fixture)
 			_, err := convert([]byte(input))
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, test.want)
 			if !strings.Contains(
 				err.Error(),
 				"document 1: spec.generators[0].list.elements[0]",
@@ -706,9 +694,7 @@ func TestConvertApplicationSetTemplatePatchErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			input := applicationSetWithTemplatePatch(test.patch, "          - name: app\n")
 			_, err := convert([]byte(input))
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, test.want)
 			if !strings.Contains(err.Error(), "document 1: spec.generators[0].list.elements[0]") {
 				t.Fatalf("error does not identify the element: %v", err)
 			}
@@ -724,9 +710,7 @@ func TestConvertApplicationSetTemplatePatchMustBeString(t *testing.T) {
 		1,
 	)
 	_, err := convert([]byte(input))
-	if err == nil || !strings.Contains(err.Error(), "templatePatch") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, "templatePatch")
 }
 
 func applicationSetWithTemplatePatch(patch, elements string) string {

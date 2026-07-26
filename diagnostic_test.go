@@ -276,12 +276,12 @@ func TestSyncOptionEvaluation(t *testing.T) {
 				return
 			}
 			got := audit.diagnostics[0]
-			if string(got.category) != test.wantCategory ||
+			if string(got.category()) != test.wantCategory ||
 				got.path != test.wantPath ||
 				!strings.Contains(got.message, test.wantMessage) {
 				t.Errorf(
 					"diagnostic = category %q, path %q, message %q",
-					got.category,
+					got.category(),
 					got.path,
 					got.message,
 				)

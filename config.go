@@ -84,8 +84,22 @@ type sourceKey struct {
 	targetRevision string
 }
 
+// mappedSource is a configured source's local root, which is either a real
+// directory or a helmfile template expression. Use join for output and
+// directory for anything that touches the filesystem.
 type mappedSource struct {
 	localRoot string
+}
+
+func (source mappedSource) join(relative string) string {
+	return joinSourcePath(source.localRoot, relative)
+}
+
+func (source mappedSource) directory() (string, error) {
+	if err := validateLocalRootDirectory(source.localRoot); err != nil {
+		return "", err
+	}
+	return source.localRoot, nil
 }
 
 type sourceResolver struct {

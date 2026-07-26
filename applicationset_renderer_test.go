@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/goccy/go-yaml"
@@ -66,9 +65,7 @@ func TestLegacyTemplateRendererRejectsInvalidDelimiters(t *testing.T) {
 	for _, input := range []string{"{{key", "key}}", "{{outer {{inner}}"} {
 		t.Run(input, func(t *testing.T) {
 			_, err := renderer.Render(input, map[string]any{"key": "value"})
-			if err == nil || !strings.Contains(err.Error(), "parse template") {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, "parse template")
 		})
 	}
 }
@@ -90,7 +87,5 @@ func TestRenderLegacyTemplateMappingKeys(t *testing.T) {
 		{Key: "{{ first }}", Value: "first"},
 		{Key: "{{ second }}", Value: "second"},
 	}, map[string]any{"first": "duplicate", "second": "duplicate"}, renderer)
-	if err == nil || !strings.Contains(err.Error(), `duplicate mapping key "duplicate"`) {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, `duplicate mapping key "duplicate"`)
 }

@@ -56,14 +56,11 @@ func (mapping *kustomizeMap) UnmarshalYAML(node ast.Node) error {
 			if item.Key.Type() == ast.StringType {
 				continue
 			}
-			for i := range ordered {
-				if ordered[i].Key != key.Value {
-					continue
-				}
-				orderedNested, ok := ordered[i].Value.(yaml.MapSlice)
-				if ok && len(orderedNested) != 0 {
-					orderedNested[0].Key = nonStringYAMLKey{}
-					ordered[i].Value = orderedNested
+			if i := mapSliceIndex(ordered, key.Value); i >= 0 {
+				// The nested slice shares its backing array, so this marks the
+				// decoded value in place.
+				if nested, ok := ordered[i].Value.(yaml.MapSlice); ok && len(nested) != 0 {
+					nested[0].Key = nonStringYAMLKey{}
 				}
 			}
 			break
@@ -228,8 +225,8 @@ func parseKustomizeImage(value string) (kustomizeImage, error) {
 	if value == "" {
 		return kustomizeImage{}, errors.New("must not be empty")
 	}
-	if strings.IndexFunc(value, unicode.IsSpace) >= 0 ||
-		strings.IndexFunc(value, unicode.IsControl) >= 0 {
+	if strings.ContainsFunc(value, unicode.IsSpace) ||
+		strings.ContainsFunc(value, unicode.IsControl) {
 		return kustomizeImage{}, errors.New("whitespace and control characters are not supported")
 	}
 	if strings.Count(value, "=") > 1 {

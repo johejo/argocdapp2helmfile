@@ -288,7 +288,7 @@ func convertApplication(
 			releaseValues = []any{values}
 		}
 		kustomizeRelease := baseRelease
-		kustomizeRelease.Chart = templatePath(joinSourcePath(mapping.localRoot, chartSource.Path))
+		kustomizeRelease.Chart = templatePath(mapping.join(chartSource.Path))
 		kustomizeRelease.Values = releaseValues
 		kustomizeRelease.Transformers = transformers
 		return convertedApplication{
@@ -397,7 +397,7 @@ func convertApplication(
 		release:            helmRelease,
 	}
 	if repositoryType == gitRepository {
-		converted.release.Chart = templatePath(joinSourcePath(chartMapping.localRoot, chartRoot))
+		converted.release.Chart = templatePath(chartMapping.join(chartRoot))
 		converted.provenanceComments = append(
 			[]string{gitSourceProvenance("chart", documentNumber, chartSource)},
 			converted.provenanceComments...,

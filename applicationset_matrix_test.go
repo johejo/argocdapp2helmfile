@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -119,9 +118,7 @@ func TestApplicationSetMatrixErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			input := readTestdata(t, "applicationset/matrix-errors/"+test.fixture)
 			_, err := convert([]byte(input))
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, test.want)
 		})
 	}
 }
@@ -132,9 +129,7 @@ func TestConvertApplicationSetNestedMatrixErrorReportsEveryOrigin(t *testing.T) 
 	want := "spec.generators[0].matrix.generators[0].list.elements[0] × " +
 		"spec.generators[0].matrix.generators[1].matrix.generators[0].list.elements[0] × " +
 		"spec.generators[0].matrix.generators[1].matrix.generators[1].list.elements[0]"
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, want)
 }
 
 func TestConvertApplicationSetMatrixErrorReportsBothOrigins(t *testing.T) {
@@ -142,9 +137,7 @@ func TestConvertApplicationSetMatrixErrorReportsBothOrigins(t *testing.T) {
 	_, err := convert([]byte(input))
 	want := "spec.generators[0].matrix.generators[0].list.elements[0] × " +
 		"spec.generators[0].matrix.generators[1].list.elements[1]"
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, want)
 }
 
 func TestConvertApplicationSetMatrixGitValuesRejectsRenderedDuplicateKey(t *testing.T) {
@@ -158,9 +151,7 @@ func TestConvertApplicationSetMatrixGitValuesRejectsRenderedDuplicateKey(t *test
 	want := "spec.generators[0].matrix.generators[0].list.elements[0] -> " +
 		`spec.generators[0].matrix.generators[1].git.files["clusters/dev.yaml"]` +
 		`: values: templating produced duplicate mapping key "collision"`
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, want)
 }
 
 func TestMergeMatrixParamsFirstGeneratorWinsRecursively(t *testing.T) {

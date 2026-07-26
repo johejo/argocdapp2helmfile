@@ -1,5 +1,7 @@
 package applicationmapping
 
+import "github.com/johejo/argocdapp2helmfile/internal/catalog"
+
 type ID string
 
 type HelmValueKind string
@@ -418,26 +420,20 @@ func LookupHelmOption(name string) (Entry, bool) {
 	return entry, ok
 }
 
-var kustomizeOptionsByName = func() map[string]KustomizeOption {
-	result := make(map[string]KustomizeOption, len(kustomizeOptions))
-	for _, option := range kustomizeOptions {
-		result[option.Name] = option
-	}
-	return result
-}()
+var kustomizeOptionsByName = catalog.IndexBy(
+	kustomizeOptions,
+	func(option KustomizeOption) string { return option.Name },
+)
 
 func LookupKustomizeOption(name string) (KustomizeOption, bool) {
 	option, ok := kustomizeOptionsByName[name]
 	return option, ok
 }
 
-var buildEnvironmentVariablesByName = func() map[string]BuildEnvironmentVariable {
-	result := make(map[string]BuildEnvironmentVariable, len(buildEnvironmentVariables))
-	for _, variable := range buildEnvironmentVariables {
-		result[variable.Name] = variable
-	}
-	return result
-}()
+var buildEnvironmentVariablesByName = catalog.IndexBy(
+	buildEnvironmentVariables,
+	func(variable BuildEnvironmentVariable) string { return variable.Name },
+)
 
 func LookupBuildEnvironmentVariable(name string) (BuildEnvironmentVariable, bool) {
 	variable, ok := buildEnvironmentVariablesByName[name]

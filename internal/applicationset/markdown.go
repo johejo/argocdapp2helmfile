@@ -1,9 +1,10 @@
 package applicationset
 
 import (
-	"bytes"
 	_ "embed"
 	"text/template"
+
+	"github.com/johejo/argocdapp2helmfile/internal/catalog"
 )
 
 //go:embed markdown.gotmpl
@@ -21,17 +22,9 @@ type markdownData struct {
 
 func Markdown() []byte {
 	data := markdownData{GoTemplateOptions: goTemplateOptions}
-	for _, generator := range generators {
-		if generator.Reason != "" {
-			data.UnsupportedGenerators = append(data.UnsupportedGenerators, generator)
-			continue
-		}
-		data.Generators = append(data.Generators, generator)
-	}
-
-	var output bytes.Buffer
-	if err := markdownTemplate.Execute(&output, data); err != nil {
-		panic(err)
-	}
-	return output.Bytes()
+	data.UnsupportedGenerators, data.Generators = catalog.Partition(
+		generators,
+		func(generator Generator) bool { return generator.Reason != "" },
+	)
+	return catalog.Render(markdownTemplate, data)
 }

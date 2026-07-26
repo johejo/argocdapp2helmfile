@@ -160,9 +160,7 @@ func TestConvertDestinationFailsClosed(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := convertWithConfig([]byte(test.input), test.config)
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, test.want)
 		})
 	}
 }
@@ -404,9 +402,7 @@ func TestConvertRejectsDuplicateReleaseNamesAcrossNamespaces(t *testing.T) {
 	second := strings.Replace(minimalApplication(""), "spec:\n", "spec:\n  destination:\n    namespace: two\n", 1)
 
 	_, err := convert([]byte(first + "---\n" + second))
-	if err == nil || !strings.Contains(err.Error(), `document 2: release name "app" duplicates document 1`) {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, `document 2: release name "app" duplicates document 1`)
 }
 
 func TestConvertAggregatesSkipCRDs(t *testing.T) {
@@ -441,9 +437,7 @@ func TestConvertAggregatesSkipCRDs(t *testing.T) {
 		first := minimalApplication("    helm:\n      skipCrds: true\n")
 		second := strings.Replace(minimalApplication(""), "name: app", "name: second", 1)
 		_, err := convert([]byte(first + "---\n" + second))
-		if err == nil || !strings.Contains(err.Error(), "document 2: spec.source.helm.skipCrds conflicts with document 1") {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		assertErrorContains(t, err, "document 2: spec.source.helm.skipCrds conflicts with document 1")
 	})
 }
 

@@ -3,6 +3,8 @@
 // reference, so the two cannot disagree.
 package applicationset
 
+import "github.com/johejo/argocdapp2helmfile/internal/catalog"
+
 // Generator describes one Argo CD generator, so that one lookup decides whether
 // a generator is known, whether it converts, and how the parser treats its
 // children.
@@ -105,26 +107,19 @@ func GoTemplateOptions() []GoTemplateOption {
 	return goTemplateOptions
 }
 
-var generatorsByName = func() map[string]Generator {
-	result := make(map[string]Generator, len(generators))
-	for _, generator := range generators {
-		result[generator.Name] = generator
-	}
-	return result
-}()
+var generatorsByName = catalog.IndexBy(generators, func(generator Generator) string {
+	return generator.Name
+})
 
 func LookupGenerator(name string) (Generator, bool) {
 	generator, ok := generatorsByName[name]
 	return generator, ok
 }
 
-var goTemplateOptionsByName = func() map[string]GoTemplateOption {
-	result := make(map[string]GoTemplateOption, len(goTemplateOptions))
-	for _, option := range goTemplateOptions {
-		result[option.Name] = option
-	}
-	return result
-}()
+var goTemplateOptionsByName = catalog.IndexBy(
+	goTemplateOptions,
+	func(option GoTemplateOption) string { return option.Name },
+)
 
 func LookupGoTemplateOption(name string) (GoTemplateOption, bool) {
 	option, ok := goTemplateOptionsByName[name]

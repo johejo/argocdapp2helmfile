@@ -3,6 +3,8 @@ package diagnostic
 import (
 	"fmt"
 	"slices"
+
+	"github.com/johejo/argocdapp2helmfile/internal/catalog"
 )
 
 type RuleID string
@@ -290,13 +292,7 @@ var syncOptions = []SyncOption{
 	{"Delete", []SyncOptionValue{{"true", DeleteTrue}, {"false", DeleteFalse}, {"confirm", DeleteConfirm}}},
 }
 
-var rulesByID = func() map[RuleID]Rule {
-	result := make(map[RuleID]Rule, len(rules))
-	for _, rule := range rules {
-		result[rule.ID] = rule
-	}
-	return result
-}()
+var rulesByID = catalog.IndexBy(rules, func(rule Rule) RuleID { return rule.ID })
 
 func Rules() []Rule {
 	return slices.Clone(rules)
@@ -338,17 +334,21 @@ func Error(id RuleID, args ...any) error {
 	return fmt.Errorf(rule.Message, args...)
 }
 
+var syncOptionsByKey = catalog.IndexBy(syncOptions, func(option SyncOption) string {
+	return option.Key
+})
+
+// LookupSyncOption reports the rule, then whether the key and the value are
+// known, so callers can tell an unknown key from an unknown value.
 func LookupSyncOption(key, value string) (RuleID, bool, bool) {
-	for _, option := range syncOptions {
-		if option.Key != key {
-			continue
-		}
-		for _, candidate := range option.Values {
-			if candidate.Value == value {
-				return candidate.Rule, true, true
-			}
-		}
-		return "", true, false
+	option, knownKey := syncOptionsByKey[key]
+	if !knownKey {
+		return "", false, false
 	}
-	return "", false, false
+	for _, candidate := range option.Values {
+		if candidate.Value == value {
+			return candidate.Rule, true, true
+		}
+	}
+	return "", true, false
 }

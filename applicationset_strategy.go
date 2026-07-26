@@ -110,28 +110,20 @@ func parseRollingSyncStep(items yaml.MapSlice, field string) (rollingSyncStep, e
 		}
 		switch key {
 		case "matchExpressions":
-			rawExpressions, ok := item.Value.([]any)
-			if !ok {
-				return result, fmt.Errorf("%s.matchExpressions must be a sequence", field)
+			expressions, err := parseLabelExpressions(item.Value, field)
+			if err != nil {
+				return result, err
 			}
-			for i, rawExpression := range rawExpressions {
-				expressionField := fmt.Sprintf("%s.matchExpressions[%d]", field, i)
-				expressionItems, ok := rawExpression.(yaml.MapSlice)
-				if !ok {
-					return result, fmt.Errorf("%s must be a mapping", expressionField)
-				}
-				expression, err := parseLabelExpression(expressionItems, expressionField)
-				if err != nil {
-					return result, err
-				}
+			for i, expression := range expressions {
 				if expression.operator != "In" && expression.operator != "NotIn" {
 					return result, fmt.Errorf(
-						"%s.operator must be In or NotIn",
-						expressionField,
+						"%s.matchExpressions[%d].operator must be In or NotIn",
+						field,
+						i,
 					)
 				}
-				result.expressions = append(result.expressions, expression)
 			}
+			result.expressions = append(result.expressions, expressions...)
 		case "maxUpdate":
 			value, ok := item.Value.(string)
 			if !ok || value != "100%" {

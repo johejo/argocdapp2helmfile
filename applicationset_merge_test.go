@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -78,9 +77,7 @@ func TestApplicationSetMergeErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			input := readTestdata(t, "applicationset/merge-errors/"+test.fixture)
 			_, err := convert([]byte(input))
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, test.want)
 		})
 	}
 }
@@ -92,9 +89,7 @@ func TestApplicationSetNestedCombinationRenderErrorReportsEveryOrigin(t *testing
 		"spec.generators[0].merge.generators[0].matrix.generators[1].list.elements[0] ← " +
 		"spec.generators[0].merge.generators[1].merge.generators[0].list.elements[0] ← " +
 		"spec.generators[0].merge.generators[1].merge.generators[1].list.elements[0]"
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, want)
 }
 
 func TestApplicationSetMergeDuplicateReportsBothOrigins(t *testing.T) {
@@ -104,9 +99,7 @@ func TestApplicationSetMergeDuplicateReportsBothOrigins(t *testing.T) {
 		"spec.generators[0].merge.generators[1].list.elements[0]",
 		"spec.generators[0].merge.generators[1].list.elements[1]",
 	} {
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		assertErrorContains(t, err, want)
 	}
 }
 
@@ -116,9 +109,7 @@ func TestApplicationSetMergeRenderErrorReportsEveryAppliedOrigin(t *testing.T) {
 	want := "spec.generators[0].merge.generators[0].list.elements[0] ← " +
 		"spec.generators[0].merge.generators[1].list.elements[0] ← " +
 		"spec.generators[0].merge.generators[2].list.elements[0]"
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, want)
 }
 
 func TestMergeParamsLaterGeneratorWinsRecursively(t *testing.T) {

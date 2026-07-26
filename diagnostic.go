@@ -15,8 +15,11 @@ type conversionDiagnostic struct {
 	application string
 	path        string
 	rule        diagnosticrule.RuleID
-	category    diagnosticrule.Disposition
 	message     string
+}
+
+func (diagnostic conversionDiagnostic) category() diagnosticrule.Disposition {
+	return diagnosticrule.MustLookup(diagnostic.rule).Disposition
 }
 
 func (diagnostic conversionDiagnostic) String() string {
@@ -25,7 +28,7 @@ func (diagnostic conversionDiagnostic) String() string {
 		diagnostic.origin,
 		diagnostic.application,
 		diagnostic.path,
-		diagnostic.category,
+		diagnostic.category(),
 		diagnostic.message,
 	)
 }
@@ -62,13 +65,11 @@ func (audit *applicationAudit) add(
 	ruleID diagnosticrule.RuleID,
 	args ...any,
 ) {
-	rule := diagnosticrule.MustLookup(ruleID)
 	audit.diagnostics = append(audit.diagnostics, conversionDiagnostic{
 		origin:      audit.input.origin,
 		application: audit.name,
 		path:        path,
 		rule:        ruleID,
-		category:    rule.Disposition,
 		message:     diagnosticrule.Message(ruleID, args...),
 	})
 }
@@ -299,20 +300,11 @@ func (audit *applicationAudit) syncOptions(syncPolicy map[string]any) {
 			)
 			continue
 		}
-		key, optionValue, found := strings.Cut(value, "=")
-		if !found || key == "" {
-			occurrences = append(occurrences, syncOptionOccurrence{
-				index: index,
-				text:  value,
-			})
-			continue
+		occurrence := syncOptionOccurrence{index: index, text: value}
+		if key, optionValue, found := strings.Cut(value, "="); found && key != "" {
+			occurrence.key, occurrence.value = key, optionValue
 		}
-		occurrences = append(occurrences, syncOptionOccurrence{
-			index: index,
-			text:  value,
-			key:   key,
-			value: optionValue,
-		})
+		occurrences = append(occurrences, occurrence)
 	}
 
 	conflicting := make(map[string]bool)

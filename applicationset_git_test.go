@@ -123,9 +123,7 @@ func TestApplicationSetGitGeneratorErrors(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, err := convertWithResolver([]byte(test.input), test.resolver)
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, test.want)
 		})
 	}
 }

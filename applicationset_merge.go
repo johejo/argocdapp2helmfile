@@ -53,9 +53,9 @@ func generateMergeParams(
 				return result, fmt.Errorf("%s.generators must be a sequence", field)
 			}
 		case "template":
-			value, ok := item.Value.(yaml.MapSlice)
-			if !ok {
-				return result, fmt.Errorf("%s.template must be a mapping", field)
+			value, err := readMappingYAMLOption(item.Value, field+".template")
+			if err != nil {
+				return result, err
 			}
 			result.template = value
 		default:

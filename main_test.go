@@ -10,6 +10,7 @@ import (
 	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
 	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
 	"github.com/johejo/argocdapp2helmfile/internal/diagnostic"
+	"github.com/johejo/argocdapp2helmfile/internal/reference"
 )
 
 func TestRunErrorsAreAtomic(t *testing.T) {
@@ -197,12 +198,16 @@ var referenceFlags = []struct {
 }
 
 func TestReferenceFlagsCoverEveryReference(t *testing.T) {
-	if len(referenceFlags) != len(references) {
-		t.Fatalf("%d reference flags cover %d references", len(referenceFlags), len(references))
+	if len(referenceFlags) != len(reference.Documents) {
+		t.Fatalf(
+			"%d reference flags cover %d references",
+			len(referenceFlags),
+			len(reference.Documents),
+		)
 	}
-	for i, item := range references {
-		if referenceFlags[i].flag != item.flag || referenceFlags[i].name != item.name {
-			t.Errorf("reference %q is not covered by %#v", item.flag, referenceFlags[i])
+	for i, document := range reference.Documents {
+		if referenceFlags[i].flag != document.Flag || referenceFlags[i].name != document.Name {
+			t.Errorf("reference %q is not covered by %#v", document.Flag, referenceFlags[i])
 		}
 	}
 }

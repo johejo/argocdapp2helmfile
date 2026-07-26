@@ -41,17 +41,13 @@ func TestClusterGeneratorOmitsEmptyMetadata(t *testing.T) {
 
 func TestClusterGeneratorRequiresConfigAndRejectsFlatList(t *testing.T) {
 	input := readTestdata(t, "applicationset/cluster-errors/application.yaml")
-	if _, err := convert([]byte(input)); err == nil ||
-		!strings.Contains(err.Error(), "spec.generators[0].clusters requires --config") {
-		t.Fatalf("unexpected missing-config error: %v", err)
-	}
+	_, err := convert([]byte(input))
+	assertErrorContains(t, err, "spec.generators[0].clusters requires --config")
 
 	config := testConfig(t, "clusters: []\n")
 	flatList := readTestdata(t, "applicationset/cluster-errors/flat-list.yaml")
-	if _, err := convertWithConfig([]byte(flatList), config); err == nil ||
-		!strings.Contains(err.Error(), "flatList: true is not supported") {
-		t.Fatalf("unexpected flatList error: %v", err)
-	}
+	_, err = convertWithConfig([]byte(flatList), config)
+	assertErrorContains(t, err, "flatList: true is not supported")
 }
 
 func TestClusterGeneratorAllowsEmptySnapshot(t *testing.T) {
@@ -71,16 +67,12 @@ func TestClusterGeneratorReportsEntryOriginAndUnknownFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	render := readTestdata(t, "applicationset/cluster-errors/render.yaml")
-	if _, err := convertWithConfig([]byte(render), config); err == nil ||
-		!strings.Contains(err.Error(), `spec.generators[0].clusters["Prod_US"]`) {
-		t.Fatalf("unexpected render error: %v", err)
-	}
+	_, err = convertWithConfig([]byte(render), config)
+	assertErrorContains(t, err, `spec.generators[0].clusters["Prod_US"]`)
 
 	unknown := readTestdata(t, "applicationset/cluster-errors/unknown-field.yaml")
-	if _, err := convertWithConfig([]byte(unknown), config); err == nil ||
-		!strings.Contains(err.Error(), "clusters.secretType is not supported") {
-		t.Fatalf("unexpected unknown-field error: %v", err)
-	}
+	_, err = convertWithConfig([]byte(unknown), config)
+	assertErrorContains(t, err, "clusters.secretType is not supported")
 }
 
 func TestReadmeClusterSnapshotExampleDoesNotProjectCredentials(t *testing.T) {

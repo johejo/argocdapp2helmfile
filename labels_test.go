@@ -181,7 +181,5 @@ func TestConvertApplicationSetLabelFailureReportsElementOrigin(t *testing.T) {
 	input := readTestdata(t, "applicationset/minimal/application.yaml")
 	_, err := convertWithConfig([]byte(input), config)
 	want := "document 1: spec.generators[0].list.elements[0]: release label"
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, want)
 }

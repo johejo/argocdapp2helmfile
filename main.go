@@ -9,14 +9,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
-	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
-	"github.com/johejo/argocdapp2helmfile/internal/diagnostic"
+	"github.com/johejo/argocdapp2helmfile/internal/reference"
 )
 
-//go:generate go run ./internal/cmd/gendiagnostics
-//go:generate go run ./internal/cmd/genapplicationmapping
-//go:generate go run ./internal/cmd/genapplicationset
+//go:generate go run ./internal/cmd/gendocs
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -25,37 +21,7 @@ func main() {
 type commandOptions struct {
 	strict     bool
 	configPath string
-	reference  *reference
-}
-
-// reference is one generated document a --help flag prints instead of
-// converting. usage reads in help output, name inside an error message.
-type reference struct {
-	flag   string
-	usage  string
-	name   string
-	render func() []byte
-}
-
-var references = []reference{
-	{
-		flag:   "help-diagnostics",
-		usage:  "print the diagnostics reference",
-		name:   "diagnostics",
-		render: diagnostic.Markdown,
-	},
-	{
-		flag:   "help-application-mapping",
-		usage:  "print the Application mapping reference",
-		name:   "application mapping",
-		render: applicationmapping.Markdown,
-	},
-	{
-		flag:   "help-applicationset",
-		usage:  "print the ApplicationSet reference",
-		name:   "ApplicationSet",
-		render: applicationset.Markdown,
-	},
+	reference  *reference.Document
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -72,10 +38,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if options.reference != nil {
-		if _, err := stdout.Write(options.reference.render()); err != nil {
+		if _, err := stdout.Write(options.reference.Render()); err != nil {
 			writeDiagnostic(
 				stderr,
-				fmt.Errorf("write %s reference: %w", options.reference.name, err),
+				fmt.Errorf("write %s reference: %w", options.reference.Name, err),
 			)
 			return 1
 		}
@@ -135,14 +101,14 @@ func parseArgs(args []string) (commandOptions, string, error) {
 	flags.SetOutput(&output)
 	flags.BoolVar(&options.strict, "strict", false, "reject lossy conversions")
 	flags.StringVar(&options.configPath, "config", "", "read conversion configuration from `path`")
-	selected := make([]bool, len(references))
-	for i, item := range references {
-		flags.BoolVar(&selected[i], item.flag, false, item.usage)
+	selected := make([]bool, len(reference.Documents))
+	for i, document := range reference.Documents {
+		flags.BoolVar(&selected[i], document.Flag, false, document.Usage)
 	}
 	flags.Usage = func() {
 		fmt.Fprintln(&output, "Usage: argocdapp2helmfile [--strict] [--config PATH]")
-		for _, item := range references {
-			fmt.Fprintf(&output, "       argocdapp2helmfile --%s\n", item.flag)
+		for _, document := range reference.Documents {
+			fmt.Fprintf(&output, "       argocdapp2helmfile --%s\n", document.Flag)
 		}
 		fmt.Fprintln(&output)
 		fmt.Fprintln(&output, "Options:")
@@ -161,12 +127,12 @@ func parseArgs(args []string) (commandOptions, string, error) {
 		if options.reference != nil {
 			return commandOptions{}, "", errors.New("only one reference can be printed at a time")
 		}
-		options.reference = &references[i]
+		options.reference = &reference.Documents[i]
 	}
 	if options.reference != nil && (options.strict || options.configPath != "") {
 		return commandOptions{}, "", fmt.Errorf(
 			"--%s cannot be combined with --strict or --config",
-			options.reference.flag,
+			options.reference.Flag,
 		)
 	}
 	return options, "", nil

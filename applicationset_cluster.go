@@ -64,9 +64,9 @@ func parseClusterGeneratorOptions(
 		}
 		switch key {
 		case "selector":
-			value, ok := item.Value.(yaml.MapSlice)
-			if !ok {
-				return result, fmt.Errorf("%s.selector must be a mapping", field)
+			value, err := readMappingYAMLOption(item.Value, field+".selector")
+			if err != nil {
+				return result, err
 			}
 			selector, err := parseLabelSelector(value, field+".selector")
 			if err != nil {
@@ -80,9 +80,9 @@ func parseClusterGeneratorOptions(
 			}
 			result.values = values
 		case "template":
-			value, ok := item.Value.(yaml.MapSlice)
-			if !ok {
-				return result, fmt.Errorf("%s.template must be a mapping", field)
+			value, err := readMappingYAMLOption(item.Value, field+".template")
+			if err != nil {
+				return result, err
 			}
 			result.template = value
 		case "flatList":

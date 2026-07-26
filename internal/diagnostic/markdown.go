@@ -1,10 +1,11 @@
 package diagnostic
 
 import (
-	"bytes"
 	_ "embed"
 	"slices"
 	"text/template"
+
+	"github.com/johejo/argocdapp2helmfile/internal/catalog"
 )
 
 //go:embed markdown.gotmpl
@@ -29,12 +30,7 @@ func Markdown() []byte {
 			data.SettingRules = append(data.SettingRules, rule)
 		}
 	}
-
-	var output bytes.Buffer
-	if err := markdownTemplate.Execute(&output, data); err != nil {
-		panic(err)
-	}
-	return output.Bytes()
+	return catalog.Render(markdownTemplate, data)
 }
 
 func isSyncOptionRule(rule Rule) bool {

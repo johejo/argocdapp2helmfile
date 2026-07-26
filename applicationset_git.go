@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -131,9 +132,9 @@ func parseGitGeneratorOptions(items yaml.MapSlice, field string) (gitGeneratorOp
 			}
 			result.values = values
 		case "template":
-			value, ok := item.Value.(yaml.MapSlice)
-			if !ok {
-				return result, fmt.Errorf("%s.template must be a mapping", field)
+			value, err := readMappingYAMLOption(item.Value, field+".template")
+			if err != nil {
+				return result, err
 			}
 			result.template = value
 		case "requeueAfterSeconds":
@@ -233,10 +234,11 @@ func resolveGitGeneratorRoot(
 	if err != nil {
 		return "", err
 	}
-	if err := validateLocalRootDirectory(mapping.localRoot); err != nil {
+	root, err := mapping.directory()
+	if err != nil {
 		return "", fmt.Errorf("%s %w", field, err)
 	}
-	return mapping.localRoot, nil
+	return root, nil
 }
 
 func generateGitDirectoryParams(
@@ -270,11 +272,7 @@ func generateGitDirectoryParams(
 	for _, relative := range matches {
 		params := make(map[string]any)
 		pathObject := gitDirectoryPathObject(relative)
-		if renderer.GoTemplate() {
-			setGitPathParams(params, options.pathParamPrefix, pathObject)
-		} else {
-			setLegacyGitPathParams(params, options.pathParamPrefix, pathObject)
-		}
+		setGitPathParams(params, options.pathParamPrefix, pathObject, renderer.GoTemplate())
 		if err := renderGeneratorValues(params, parentParams, options.values, renderer); err != nil {
 			return nil, fmt.Errorf("%s.directories[%q]: values: %w", field, relative, err)
 		}
@@ -398,11 +396,7 @@ func generateGitFileParams(
 		for _, fileParam := range fileParams {
 			params := fileParam.params
 			pathObject := gitFilePathObject(relative)
-			if renderer.GoTemplate() {
-				setGitPathParams(params, options.pathParamPrefix, pathObject)
-			} else {
-				setLegacyGitPathParams(params, options.pathParamPrefix, pathObject)
-			}
+			setGitPathParams(params, options.pathParamPrefix, pathObject, renderer.GoTemplate())
 			origin := fmt.Sprintf("%s.files[%q]", field, relative)
 			if fileParam.index != nil {
 				origin += fmt.Sprintf("[%d]", *fileParam.index)
@@ -445,10 +439,10 @@ func decodeGitParameterFile(
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
-	if strings.TrimSpace(string(data)) == "" {
+	if len(bytes.TrimSpace(data)) == 0 {
 		return []decodedGitFileParams{{params: map[string]any{}}}, nil
 	}
-	decoder := yaml.NewDecoder(strings.NewReader(string(data)), yaml.UseOrderedMap())
+	decoder := yaml.NewDecoder(bytes.NewReader(data), yaml.UseOrderedMap())
 	var raw any
 	if err := decoder.Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decode file: %w", err)
@@ -510,7 +504,16 @@ func gitFilePathObject(relative string) map[string]any {
 	return result
 }
 
-func setGitPathParams(params map[string]any, prefix string, pathObject map[string]any) {
+func setGitPathParams(
+	params map[string]any,
+	prefix string,
+	pathObject map[string]any,
+	goTemplate bool,
+) {
+	if !goTemplate {
+		setLegacyGitPathParams(params, prefix, pathObject)
+		return
+	}
 	if prefix == "" {
 		params["path"] = pathObject
 		return
@@ -557,6 +560,9 @@ func renderGeneratorValues(
 	values []generatorValue,
 	renderer applicationSetRenderer,
 ) error {
+	if len(values) == 0 {
+		return nil
+	}
 	rendered := make(map[string]any, len(values))
 	context := mergeMatrixParams(parentParams, params)
 	for _, item := range values {

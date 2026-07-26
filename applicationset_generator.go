@@ -75,9 +75,9 @@ func parseApplicationSetGenerator(
 				}
 				selectorValue = rendered
 			}
-			items, ok := selectorValue.(yaml.MapSlice)
-			if !ok {
-				return result, fmt.Errorf("%s.selector must be a mapping", field)
+			items, err := readMappingYAMLOption(selectorValue, field+".selector")
+			if err != nil {
+				return result, err
 			}
 			selector, err := parseLabelSelector(items, field+".selector")
 			if err != nil {
@@ -103,19 +103,18 @@ func parseApplicationSetGenerator(
 		}
 		generatorName, generatorValue, kind = key, item.Value, candidate
 	}
-	if parent.depth > 0 && !kind.Combination {
-		if err := rejectCombinationChildTemplate(raw, field, parent.name); err != nil {
+	if parent.depth > 0 {
+		if kind.Combination {
+			if generatorHasTemplate(generatorValue) {
+				return result, fmt.Errorf(
+					"%s.%s.template is not supported in a nested %s generator",
+					field,
+					generatorName,
+					generatorName,
+				)
+			}
+		} else if err := rejectCombinationChildTemplate(raw, field, parent.name); err != nil {
 			return result, err
-		}
-	}
-	if parent.depth > 0 && kind.Combination {
-		if generatorHasTemplate(generatorValue) {
-			return result, fmt.Errorf(
-				"%s.%s.template is not supported in a nested %s generator",
-				field,
-				generatorName,
-				generatorName,
-			)
 		}
 	}
 	if !kind.DeferredRender && len(parentParams) != 0 {
@@ -165,20 +164,19 @@ func parseApplicationSetGenerator(
 		if err != nil {
 			return result, err
 		}
+		// elementsYaml always parses as goTemplate: its values are already typed.
 		groups := []struct {
-			option    string
-			elements  []any
-			normalize func(any) (map[string]any, error)
+			option     string
+			elements   []any
+			goTemplate bool
 		}{
-			{"elements", list.elements, func(element any) (map[string]any, error) {
-				return normalizeListElement(element, renderer.GoTemplate())
-			}},
-			{"elementsYaml", yamlElements, normalizeStringMap},
+			{"elements", list.elements, renderer.GoTemplate()},
+			{"elementsYaml", yamlElements, true},
 		}
 		for _, group := range groups {
 			for i, rawElement := range group.elements {
 				elementField := fmt.Sprintf("%s.%s[%d]", generatorField, group.option, i)
-				params, err := group.normalize(rawElement)
+				params, err := normalizeListElement(rawElement, group.goTemplate)
 				if err != nil {
 					return result, fmt.Errorf("%s: must be a mapping: %w", elementField, err)
 				}
@@ -292,19 +290,13 @@ func rejectCombinationChildTemplate(raw yaml.MapSlice, field, parent string) err
 		if !ok || key == "selector" {
 			continue
 		}
-		options, ok := item.Value.(yaml.MapSlice)
-		if !ok {
-			continue
-		}
-		for _, option := range options {
-			if option.Key == "template" {
-				return fmt.Errorf(
-					"%s.%s.template is not supported in a %s generator",
-					field,
-					key,
-					parent,
-				)
-			}
+		if generatorHasTemplate(item.Value) {
+			return fmt.Errorf(
+				"%s.%s.template is not supported in a %s generator",
+				field,
+				key,
+				parent,
+			)
 		}
 	}
 	return nil
@@ -364,9 +356,9 @@ func parseListOptions(items yaml.MapSlice, field string) (listGenerator, error) 
 			if isIgnorableEmptyYAMLOption(item.Value) {
 				continue
 			}
-			value, ok := item.Value.(yaml.MapSlice)
-			if !ok {
-				return result, fmt.Errorf("%s.template must be a mapping", field)
+			value, err := readMappingYAMLOption(item.Value, field+".template")
+			if err != nil {
+				return result, err
 			}
 			result.template = value
 		default:
@@ -420,27 +412,35 @@ func parseLabelSelector(items yaml.MapSlice, field string) (labelSelector, error
 				result.matchLabels[label.key] = label.value
 			}
 		case "matchExpressions":
-			expressions, ok := item.Value.([]any)
-			if !ok {
-				return result, fmt.Errorf("%s.matchExpressions must be a sequence", field)
+			expressions, err := parseLabelExpressions(item.Value, field)
+			if err != nil {
+				return result, err
 			}
-			for i, rawExpression := range expressions {
-				expressionItems, ok := rawExpression.(yaml.MapSlice)
-				if !ok {
-					return result, fmt.Errorf("%s.matchExpressions[%d] must be a mapping", field, i)
-				}
-				expression, err := parseLabelExpression(
-					expressionItems,
-					fmt.Sprintf("%s.matchExpressions[%d]", field, i),
-				)
-				if err != nil {
-					return result, err
-				}
-				result.matchExpressions = append(result.matchExpressions, expression)
-			}
+			result.matchExpressions = append(result.matchExpressions, expressions...)
 		default:
 			return result, fmt.Errorf("%s.%s is not supported", field, key)
 		}
+	}
+	return result, nil
+}
+
+func parseLabelExpressions(value any, field string) ([]labelExpression, error) {
+	rawExpressions, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("%s.matchExpressions must be a sequence", field)
+	}
+	result := make([]labelExpression, 0, len(rawExpressions))
+	for i, rawExpression := range rawExpressions {
+		expressionField := fmt.Sprintf("%s.matchExpressions[%d]", field, i)
+		items, ok := rawExpression.(yaml.MapSlice)
+		if !ok {
+			return nil, fmt.Errorf("%s must be a mapping", expressionField)
+		}
+		expression, err := parseLabelExpression(items, expressionField)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, expression)
 	}
 	return result, nil
 }

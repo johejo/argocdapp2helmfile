@@ -18,8 +18,8 @@ func validateGitChartSource(
 	source applicationSource,
 	field string,
 ) error {
-	root, ok := inspectableSourceRoot(mapping.localRoot)
-	if !ok {
+	root, err := canonicalLocalRoot(mapping.localRoot)
+	if err != nil {
 		return nil
 	}
 	sourcePath, ok := inspectablePathWithinRoot(
@@ -51,14 +51,6 @@ func validateGitChartSource(
 		}
 	}
 	return nil
-}
-
-func inspectableSourceRoot(root string) (string, bool) {
-	canonical, err := canonicalLocalRoot(root)
-	if err != nil {
-		return "", false
-	}
-	return canonical, true
 }
 
 func inspectableRegularFile(root, candidate string) (bool, bool) {

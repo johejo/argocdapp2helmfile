@@ -222,9 +222,8 @@ func TestJoinSourcePath(t *testing.T) {
 
 func TestConvertRequiresMappedGitSource(t *testing.T) {
 	input := gitApplication("https://github.com/example/charts.git", "chart", "main", "")
-	if output, err := convert([]byte(input)); err == nil || !strings.Contains(err.Error(), "requires --config") {
-		t.Fatalf("unexpected result: %s, %v", output, err)
-	}
+	_, err := convert([]byte(input))
+	assertErrorContains(t, err, "requires --config")
 }
 
 func TestRunWithConfigDoesNotResolveLocalRoot(t *testing.T) {
@@ -269,9 +268,7 @@ func TestRelativeLocalRootResolvesSymlinkedWorkingDirectory(t *testing.T) {
 			[]byte(readTestdata(t, "kustomize/detection/application.yaml")),
 			config,
 		)
-		if err == nil || !strings.Contains(err.Error(), "appears to be a Kustomization") {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		assertErrorContains(t, err, "appears to be a Kustomization")
 	})
 
 	t.Run("value file glob", func(t *testing.T) {

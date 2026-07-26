@@ -20,21 +20,7 @@ func TestConvertKustomizationGolden(t *testing.T) {
 		"applicationset/kustomize",
 	} {
 		t.Run(directory, func(t *testing.T) {
-			config, err := parseConfig([]byte(readTestdata(t, directory+"/config.yaml")))
-			if err != nil {
-				t.Fatal(err)
-			}
-			output, err := convertWithConfig(
-				[]byte(readTestdata(t, directory+"/application.yaml")),
-				config,
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := readTestdata(t, directory+"/helmfile.yaml")
-			if string(output) != want {
-				t.Fatalf("unexpected output:\n%s\nwant:\n%s", output, want)
-			}
+			assertConvertFixture(t, directory, true)
 		})
 	}
 }
@@ -56,9 +42,7 @@ func TestConvertRejectsInvalidKustomizeMetadataOptions(t *testing.T) {
 		t.Run(fixture, func(t *testing.T) {
 			input := readTestdata(t, "kustomize/errors/"+fixture)
 			_, err := convertWithConfig([]byte(input), config)
-			if err == nil || !strings.Contains(err.Error(), want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, want)
 		})
 	}
 }
@@ -115,9 +99,7 @@ func TestExpandKustomizeBuildEnvironment(t *testing.T) {
 	for _, variable := range dynamicBuildEnvironmentVariables() {
 		t.Run(variable, func(t *testing.T) {
 			_, err := expandKustomizeBuildEnvironment("$"+variable, environment)
-			if err == nil || !strings.Contains(err.Error(), variable) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, variable)
 		})
 	}
 }
@@ -265,9 +247,7 @@ func TestConvertRejectsInvalidKustomizations(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, err := convertWithConfig([]byte(test.input), config)
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, test.want)
 		})
 	}
 }
@@ -359,9 +339,7 @@ func TestParseKustomizeReplicasRejectsInvalidEntries(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, err := parseKustomizeReplicas(test.input, "spec.source.kustomize.replicas")
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			assertErrorContains(t, err, test.want)
 		})
 	}
 }
@@ -417,10 +395,8 @@ func TestConvertRejectsUnsupportedKustomizeOptions(t *testing.T) {
 			)
 			want := "spec.source.kustomize." + option.Name +
 				" is not supported: " + option.Reason
-			if _, err := convertWithConfig([]byte(input), config); err == nil ||
-				!strings.Contains(err.Error(), want) {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			_, err := convertWithConfig([]byte(input), config)
+			assertErrorContains(t, err, want)
 		})
 	}
 }
@@ -477,9 +453,7 @@ func TestParseKustomizeOptionsAssignsEveryCatalogOption(t *testing.T) {
 func TestConvertKustomizationRequiresConfig(t *testing.T) {
 	input := readTestdata(t, "kustomize/empty/application.yaml")
 	_, err := convert([]byte(input))
-	if err == nil || !strings.Contains(err.Error(), "spec.source requires --config") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	assertErrorContains(t, err, "spec.source requires --config")
 
 	_, err = convertWithConfig([]byte(input), testConfig(t, "sources: []\n"))
 	if err == nil || !strings.Contains(

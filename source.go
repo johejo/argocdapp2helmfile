@@ -144,7 +144,7 @@ func validatePathCharacters(value string) error {
 	if strings.Contains(value, `\`) {
 		return errors.New("backslashes are not supported")
 	}
-	if strings.IndexFunc(value, unicode.IsControl) >= 0 {
+	if strings.ContainsFunc(value, unicode.IsControl) {
 		return errors.New("control characters are not supported")
 	}
 	return nil
@@ -195,7 +195,7 @@ func classifyRepositoryURL(raw string) (repositoryKind, error) {
 		return gitRepository, nil
 	}
 
-	if raw == "" || strings.IndexFunc(raw, unicode.IsSpace) >= 0 || strings.Contains(raw, "://") {
+	if raw == "" || strings.ContainsFunc(raw, unicode.IsSpace) || strings.Contains(raw, "://") {
 		return 0, invalidRepositoryURLError()
 	}
 	parsed, err = url.Parse("//" + raw)
@@ -206,8 +206,8 @@ func classifyRepositoryURL(raw string) (repositoryKind, error) {
 }
 
 func isSCPStyleGitURL(raw string) bool {
-	if strings.Contains(raw, "://") || strings.IndexFunc(raw, unicode.IsSpace) >= 0 ||
-		strings.IndexFunc(raw, unicode.IsControl) >= 0 ||
+	if strings.Contains(raw, "://") || strings.ContainsFunc(raw, unicode.IsSpace) ||
+		strings.ContainsFunc(raw, unicode.IsControl) ||
 		strings.ContainsAny(raw, "?#") {
 		return false
 	}

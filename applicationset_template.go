@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -131,7 +132,7 @@ func renderValueTree(
 				keys[renderedKey] = struct{}{}
 				key = renderedKey
 				if skip != nil {
-					nextPath = appendPath(path, stringKey)
+					nextPath = slices.Concat(path, []string{stringKey})
 				}
 			}
 			renderedValue, err := renderValueTree(item.Value, params, renderer, nextPath, skip)
@@ -154,10 +155,4 @@ func renderValueTree(
 	default:
 		return value, nil
 	}
-}
-
-func appendPath(path []string, element string) []string {
-	result := make([]string, len(path), len(path)+1)
-	copy(result, path)
-	return append(result, element)
 }

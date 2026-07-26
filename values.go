@@ -80,7 +80,7 @@ func resolveValueFiles(
 			)
 		}
 		for _, match := range matches {
-			output := joinSourcePath(entry.mapping.localRoot, match)
+			output := entry.mapping.join(match)
 			if _, exists := explicit[output]; exists {
 				continue
 			}
@@ -115,7 +115,7 @@ func resolveValuePath(
 	return resolvedValueFile{
 		mapping:            mapping,
 		repositoryRelative: repositoryRelative,
-		output:             joinSourcePath(mapping.localRoot, repositoryRelative),
+		output:             mapping.join(repositoryRelative),
 		glob:               isGlob,
 	}, nil
 }
@@ -134,7 +134,7 @@ func resolveSourcePath(raw string, context valueFileContext, option string) (str
 	if err != nil {
 		return "", err
 	}
-	return joinSourcePath(mapping.localRoot, repositoryRelative), nil
+	return mapping.join(repositoryRelative), nil
 }
 
 func resolveSourceLocation(

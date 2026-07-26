@@ -103,21 +103,10 @@ func parseHelmOptionValue(
 	if entry.HelmValueKind == applicationmapping.Ignored {
 		return omittedHelmOption{}, nil
 	}
+	// Every option maps to a distinct helmOptions field, so omitting one is
+	// indistinguishable from assigning its zero value.
 	if entry.AllowEmpty && isIgnorableEmptyYAMLOption(value) {
-		switch entry.HelmValueKind {
-		case applicationmapping.String:
-			return "", nil
-		case applicationmapping.Boolean:
-			return false, nil
-		case applicationmapping.StringSequence:
-			return []string(nil), nil
-		case applicationmapping.InlineValues, applicationmapping.RawValues:
-			return nil, nil
-		case applicationmapping.Parameters:
-			return omittedHelmOption{}, nil
-		case applicationmapping.FileParameters:
-			return omittedHelmOption{}, nil
-		}
+		return omittedHelmOption{}, nil
 	}
 	switch entry.HelmValueKind {
 	case applicationmapping.String:
@@ -156,6 +145,14 @@ func readOptionalStringYAMLOption(value any, field string) (string, error) {
 		return "", fmt.Errorf("%s must be a string", field)
 	}
 	return text, nil
+}
+
+func readMappingYAMLOption(value any, field string) (yaml.MapSlice, error) {
+	mapping, ok := value.(yaml.MapSlice)
+	if !ok {
+		return nil, fmt.Errorf("%s must be a mapping", field)
+	}
+	return mapping, nil
 }
 
 func readOptionalBooleanYAMLOption(value any, field string) (bool, error) {
@@ -328,8 +325,15 @@ func parseFileParameters(value any, field string) ([]helmFileParameter, error) {
 }
 
 func isNilOrEmptyCollection(value any) bool {
-	if value == nil {
+	switch typed := value.(type) {
+	case nil:
 		return true
+	case yaml.MapSlice:
+		return len(typed) == 0
+	case []any:
+		return len(typed) == 0
+	case map[string]any:
+		return len(typed) == 0
 	}
 	v := reflect.ValueOf(value)
 	switch v.Kind() {
