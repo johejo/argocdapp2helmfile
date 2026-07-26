@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/goccy/go-yaml"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
 )
 
 func generateMatrixParams(
@@ -129,5 +130,6 @@ func isGeneratorValuesPath(path []string) bool {
 	if len(path) < 2 || path[len(path)-1] != "values" {
 		return false
 	}
-	return applicationSetGeneratorKinds[path[len(path)-2]].valuesMap
+	generator, known := applicationset.LookupGenerator(path[len(path)-2])
+	return known && generator.ValuesMap
 }

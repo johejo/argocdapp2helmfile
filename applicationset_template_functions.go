@@ -10,6 +10,7 @@ import (
 	"github.com/Masterminds/sprig/v3"
 	"github.com/goccy/go-yaml"
 	"github.com/gosimple/slug"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
 )
 
 func newGoTemplateRenderer(options []string) (applicationSetRenderer, error) {
@@ -28,9 +29,7 @@ func newGoTemplateRenderer(options []string) (applicationSetRenderer, error) {
 		if strings.TrimSpace(option) == "" {
 			return nil, errors.New("spec.goTemplateOptions must not contain an empty option")
 		}
-		switch option {
-		case "missingkey=default", "missingkey=invalid", "missingkey=zero", "missingkey=error":
-		default:
+		if _, known := applicationset.LookupGoTemplateOption(option); !known {
 			return nil, fmt.Errorf("spec.goTemplateOptions contains unsupported option %q", option)
 		}
 		result = result.Option(option)

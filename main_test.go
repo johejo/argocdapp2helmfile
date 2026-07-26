@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
 	"github.com/johejo/argocdapp2helmfile/internal/diagnostic"
 )
 
@@ -118,7 +119,10 @@ func TestParseArgs(t *testing.T) {
 		{"--config", "a", "--help-diagnostics"},
 		{"--help-application-mapping", "--strict"},
 		{"--config", "a", "--help-application-mapping"},
+		{"--help-applicationset", "--strict"},
+		{"--config", "a", "--help-applicationset"},
 		{"--help-diagnostics", "--help-application-mapping"},
+		{"--help-application-mapping", "--help-applicationset"},
 		{"unknown"},
 		{"--unknown"},
 	} {
@@ -140,6 +144,7 @@ func TestRunHelp(t *testing.T) {
 				"Usage: argocdapp2helmfile",
 				"-config path",
 				"-help-application-mapping",
+				"-help-applicationset",
 				"-help-diagnostics",
 				"-strict",
 			} {
@@ -180,112 +185,89 @@ func TestRunRejectsPositionalArguments(t *testing.T) {
 	}
 }
 
-func TestRunHelpDiagnosticsDoesNotReadInput(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := run(
-		[]string{"--help-diagnostics"},
-		errorReader{},
-		&stdout,
-		&stderr,
-	)
-	if code != 0 {
-		t.Fatalf("exit code = %d, want 0: %s", code, stderr.String())
-	}
-	if !bytes.Equal(stdout.Bytes(), diagnostic.Markdown()) {
-		t.Fatal("--help-diagnostics output differs from the renderer")
-	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr was not empty: %q", stderr.String())
-	}
+// referenceFlags pins every --help flag to the document it prints.
+var referenceFlags = []struct {
+	flag     string
+	name     string
+	document func() []byte
+}{
+	{"help-diagnostics", "diagnostics", diagnostic.Markdown},
+	{"help-application-mapping", "application mapping", applicationmapping.Markdown},
+	{"help-applicationset", "ApplicationSet", applicationset.Markdown},
 }
 
-func TestRunHelpDiagnosticsRejectsOtherArguments(t *testing.T) {
-	for _, args := range [][]string{
-		{"--help-diagnostics", "--strict"},
-		{"--strict", "--help-diagnostics"},
-		{"--help-diagnostics", "--config", "config.yaml"},
-		{"--help-diagnostics", "application.yaml"},
-	} {
-		var stdout, stderr bytes.Buffer
-		if code := run(args, strings.NewReader("invalid: ["), &stdout, &stderr); code != 1 {
-			t.Errorf("run(%q) exit code = %d, want 1", args, code)
-		}
-		if stdout.Len() != 0 {
-			t.Errorf("run(%q) wrote stdout: %q", args, stdout.String())
+func TestReferenceFlagsCoverEveryReference(t *testing.T) {
+	if len(referenceFlags) != len(references) {
+		t.Fatalf("%d reference flags cover %d references", len(referenceFlags), len(references))
+	}
+	for i, item := range references {
+		if referenceFlags[i].flag != item.flag || referenceFlags[i].name != item.name {
+			t.Errorf("reference %q is not covered by %#v", item.flag, referenceFlags[i])
 		}
 	}
 }
 
-func TestRunHelpDiagnosticsReportsWriteFailure(t *testing.T) {
-	var stderr bytes.Buffer
-	code := run(
-		[]string{"--help-diagnostics"},
-		strings.NewReader("invalid: ["),
-		errorWriter{},
-		&stderr,
-	)
-	if code != 1 {
-		t.Fatalf("exit code = %d, want 1", code)
-	}
-	if got := stderr.String(); !strings.Contains(got, "write diagnostics reference: write failed") ||
-		strings.Count(got, "\n") != 1 {
-		t.Fatalf("unexpected stderr: %q", got)
-	}
-}
-
-func TestRunHelpApplicationMappingDoesNotReadInput(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := run(
-		[]string{"--help-application-mapping"},
-		errorReader{},
-		&stdout,
-		&stderr,
-	)
-	if code != 0 {
-		t.Fatalf("exit code = %d, want 0: %s", code, stderr.String())
-	}
-	if !bytes.Equal(stdout.Bytes(), applicationmapping.Markdown()) {
-		t.Fatal("--help-application-mapping output differs from the renderer")
-	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr was not empty: %q", stderr.String())
+func TestRunReferenceDoesNotReadInput(t *testing.T) {
+	for _, test := range referenceFlags {
+		t.Run(test.flag, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"--" + test.flag}, errorReader{}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("exit code = %d, want 0: %s", code, stderr.String())
+			}
+			if !bytes.Equal(stdout.Bytes(), test.document()) {
+				t.Fatalf("--%s output differs from the renderer", test.flag)
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("stderr was not empty: %q", stderr.String())
+			}
+		})
 	}
 }
 
-func TestRunHelpApplicationMappingRejectsOtherArguments(t *testing.T) {
-	for _, args := range [][]string{
-		{"--help-application-mapping", "--strict"},
-		{"--strict", "--help-application-mapping"},
-		{"--help-application-mapping", "--config", "config.yaml"},
-		{"--help-application-mapping", "--help-diagnostics"},
-		{"--help-application-mapping", "application.yaml"},
-	} {
-		var stdout, stderr bytes.Buffer
-		if code := run(args, strings.NewReader("invalid: ["), &stdout, &stderr); code != 1 {
-			t.Errorf("run(%q) exit code = %d, want 1", args, code)
-		}
-		if stdout.Len() != 0 {
-			t.Errorf("run(%q) wrote stdout: %q", args, stdout.String())
-		}
+func TestRunReferenceRejectsOtherArguments(t *testing.T) {
+	for i, test := range referenceFlags {
+		t.Run(test.flag, func(t *testing.T) {
+			flag := "--" + test.flag
+			other := "--" + referenceFlags[(i+1)%len(referenceFlags)].flag
+			for _, args := range [][]string{
+				{flag, "--strict"},
+				{"--strict", flag},
+				{flag, "--config", "config.yaml"},
+				{flag, other},
+				{flag, "application.yaml"},
+			} {
+				var stdout, stderr bytes.Buffer
+				if code := run(args, strings.NewReader("invalid: ["), &stdout, &stderr); code != 1 {
+					t.Errorf("run(%q) exit code = %d, want 1", args, code)
+				}
+				if stdout.Len() != 0 {
+					t.Errorf("run(%q) wrote stdout: %q", args, stdout.String())
+				}
+			}
+		})
 	}
 }
 
-func TestRunHelpApplicationMappingReportsWriteFailure(t *testing.T) {
-	var stderr bytes.Buffer
-	code := run(
-		[]string{"--help-application-mapping"},
-		strings.NewReader("invalid: ["),
-		errorWriter{},
-		&stderr,
-	)
-	if code != 1 {
-		t.Fatalf("exit code = %d, want 1", code)
-	}
-	if got := stderr.String(); !strings.Contains(
-		got,
-		"write application mapping reference: write failed",
-	) || strings.Count(got, "\n") != 1 {
-		t.Fatalf("unexpected stderr: %q", got)
+func TestRunReferenceReportsWriteFailure(t *testing.T) {
+	for _, test := range referenceFlags {
+		t.Run(test.flag, func(t *testing.T) {
+			var stderr bytes.Buffer
+			code := run(
+				[]string{"--" + test.flag},
+				strings.NewReader("invalid: ["),
+				errorWriter{},
+				&stderr,
+			)
+			if code != 1 {
+				t.Fatalf("exit code = %d, want 1", code)
+			}
+			want := "write " + test.name + " reference: write failed"
+			if got := stderr.String(); !strings.Contains(got, want) ||
+				strings.Count(got, "\n") != 1 {
+				t.Fatalf("unexpected stderr: %q", got)
+			}
+		})
 	}
 }
 

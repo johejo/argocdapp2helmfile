@@ -10,21 +10,52 @@ import (
 	"strings"
 
 	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
 	"github.com/johejo/argocdapp2helmfile/internal/diagnostic"
 )
 
 //go:generate go run ./internal/cmd/gendiagnostics
 //go:generate go run ./internal/cmd/genapplicationmapping
+//go:generate go run ./internal/cmd/genapplicationset
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 type commandOptions struct {
-	strict          bool
-	configPath      string
-	helpDiagnostics bool
-	helpMapping     bool
+	strict     bool
+	configPath string
+	reference  *reference
+}
+
+// reference is one generated document a --help flag prints instead of
+// converting. usage reads in help output, name inside an error message.
+type reference struct {
+	flag   string
+	usage  string
+	name   string
+	render func() []byte
+}
+
+var references = []reference{
+	{
+		flag:   "help-diagnostics",
+		usage:  "print the diagnostics reference",
+		name:   "diagnostics",
+		render: diagnostic.Markdown,
+	},
+	{
+		flag:   "help-application-mapping",
+		usage:  "print the Application mapping reference",
+		name:   "application mapping",
+		render: applicationmapping.Markdown,
+	},
+	{
+		flag:   "help-applicationset",
+		usage:  "print the ApplicationSet reference",
+		name:   "ApplicationSet",
+		render: applicationset.Markdown,
+	},
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -40,16 +71,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		writeDiagnostic(stderr, err)
 		return 1
 	}
-	if options.helpDiagnostics {
-		if _, err := stdout.Write(diagnostic.Markdown()); err != nil {
-			writeDiagnostic(stderr, fmt.Errorf("write diagnostics reference: %w", err))
-			return 1
-		}
-		return 0
-	}
-	if options.helpMapping {
-		if _, err := stdout.Write(applicationmapping.Markdown()); err != nil {
-			writeDiagnostic(stderr, fmt.Errorf("write application mapping reference: %w", err))
+	if options.reference != nil {
+		if _, err := stdout.Write(options.reference.render()); err != nil {
+			writeDiagnostic(
+				stderr,
+				fmt.Errorf("write %s reference: %w", options.reference.name, err),
+			)
 			return 1
 		}
 		return 0
@@ -108,22 +135,15 @@ func parseArgs(args []string) (commandOptions, string, error) {
 	flags.SetOutput(&output)
 	flags.BoolVar(&options.strict, "strict", false, "reject lossy conversions")
 	flags.StringVar(&options.configPath, "config", "", "read conversion configuration from `path`")
-	flags.BoolVar(
-		&options.helpDiagnostics,
-		"help-diagnostics",
-		false,
-		"print the diagnostics reference",
-	)
-	flags.BoolVar(
-		&options.helpMapping,
-		"help-application-mapping",
-		false,
-		"print the Application mapping reference",
-	)
+	selected := make([]bool, len(references))
+	for i, item := range references {
+		flags.BoolVar(&selected[i], item.flag, false, item.usage)
+	}
 	flags.Usage = func() {
 		fmt.Fprintln(&output, "Usage: argocdapp2helmfile [--strict] [--config PATH]")
-		fmt.Fprintln(&output, "       argocdapp2helmfile --help-diagnostics")
-		fmt.Fprintln(&output, "       argocdapp2helmfile --help-application-mapping")
+		for _, item := range references {
+			fmt.Fprintf(&output, "       argocdapp2helmfile --%s\n", item.flag)
+		}
 		fmt.Fprintln(&output)
 		fmt.Fprintln(&output, "Options:")
 		flags.PrintDefaults()
@@ -134,16 +154,19 @@ func parseArgs(args []string) (commandOptions, string, error) {
 	if flags.NArg() != 0 {
 		return commandOptions{}, "", fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
-	if options.helpDiagnostics && (options.strict || options.configPath != "") {
-		return commandOptions{}, "", errors.New(
-			"--help-diagnostics cannot be combined with --strict or --config",
-		)
+	for i, chosen := range selected {
+		if !chosen {
+			continue
+		}
+		if options.reference != nil {
+			return commandOptions{}, "", errors.New("only one reference can be printed at a time")
+		}
+		options.reference = &references[i]
 	}
-	if options.helpMapping &&
-		(options.strict || options.configPath != "" || options.helpDiagnostics) {
-		return commandOptions{}, "", errors.New(
-			"--help-application-mapping cannot be combined with " +
-				"--strict, --config, or --help-diagnostics",
+	if options.reference != nil && (options.strict || options.configPath != "") {
+		return commandOptions{}, "", fmt.Errorf(
+			"--%s cannot be combined with --strict or --config",
+			options.reference.flag,
 		)
 	}
 	return options, "", nil

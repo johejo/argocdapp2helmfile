@@ -167,37 +167,14 @@ spec:
         targetRevision: '{{ .version }}'
 ```
 
-Parameter names, selector operators, pattern matching, and merge precedence follow the
-[Argo CD generator documentation][argocd-applicationset-generators].
-The converter adds these requirements:
-
-- Supported `goTemplateOptions` are `missingkey=default`, `missingkey=invalid`,
-  `missingkey=zero`, and `missingkey=error`; any other option is rejected.
-  Legacy expressions ignore `goTemplateOptions`.
-- The Git generator never fetches:
-  its `repoURL` and `revision` must exactly match a Config `sources` entry,
-  whose `localRoot` must resolve from the converter's current working directory to an
-  existing non-symlink directory without helmfile template expressions.
-- The Cluster generator expands the Config `clusters` snapshot in declaration order and
-  therefore requires `--config`;
-  an omitted or empty inventory generates no Applications.
-  `flatList: true` is not supported.
-- Matrix requires exactly two children and Merge accepts two or more.
-  Either may contain one Matrix or Merge child one level deep,
-  and those nested generators may contain only List, Git, or Cluster children.
-- Generator-level `template` overrides are supported only for top-level generators,
-  while selectors apply at every level.
-- A rendered `templatePatch` must be one YAML or JSON mapping,
-  and Strategic Merge Patch directives are rejected.
-  The patch is applied after template rendering,
-  so patched metadata is available to `releaseLabels` queries,
-  while the pre-patch `spec.project` is always retained.
-- `strategy.type: RollingSync` becomes [helmfile `needs`][helmfile-releases-dag] step by step;
-  configurations that cannot be expressed that way are rejected with an explanatory error.
-  Unlike [Argo CD Progressive Syncs][argocd-progressive-syncs],
-  helmfile does not wait for Application health or reproduce manual gates and
-  partial concurrency,
-  and label selectors ignore `needs` unless `--include-transitive-needs` is set.
+The accepted generators and their fields, the unsupported generators, the supported
+`goTemplateOptions`, and the nesting, `templatePatch`, and
+`RollingSync` requirements are listed in the generated
+[ApplicationSet reference](docs/applicationset.md),
+also available with `--help-applicationset`.
+Unsupported generators are rejected with the reason they cannot convert.
+See the [Argo CD generator documentation][argocd-applicationset-generators] for the upstream
+parameter names, selector operators, pattern matching, and merge precedence.
 
 ## Conversion config
 
@@ -506,12 +483,9 @@ For upstream behavior, see also
   https://argo-cd.readthedocs.io/en/stable/user-guide/kustomize/#setting-the-manifests-namespace
 [argocd-kustomize-options]:
   https://argo-cd.readthedocs.io/en/stable/user-guide/kustomize/
-[argocd-progressive-syncs]:
-  https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Progressive-Syncs/
 [helmfile-configuration]: https://helmfile.readthedocs.io/en/latest/configuration/
 [helmfile-kustomizations]:
   https://helmfile.readthedocs.io/en/latest/advanced-features/#deploy-kustomizations-with-helmfile
-[helmfile-releases-dag]: https://helmfile.readthedocs.io/en/latest/releases/
 
 ## License
 

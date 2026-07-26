@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
 )
 
 type listGenerator struct {
@@ -32,16 +33,6 @@ type applicationSetGenerator struct {
 	selector *labelSelector
 }
 
-type applicationSetGeneratorKind struct {
-	// combination generators nest child generators of their own.
-	combination bool
-	// valuesMap generators render their own values: mapping.
-	valuesMap bool
-	// deferredRender generators interpolate parent parameters per child
-	// instead of once before parsing.
-	deferredRender bool
-}
-
 // combinationContext names the matrix or merge generator a generator is nested
 // inside. The zero value is the top level.
 type combinationContext struct {
@@ -51,14 +42,6 @@ type combinationContext struct {
 
 func (parent combinationContext) child(name string) combinationContext {
 	return combinationContext{name: name, depth: parent.depth + 1}
-}
-
-var applicationSetGeneratorKinds = map[string]applicationSetGeneratorKind{
-	"list":     {},
-	"git":      {valuesMap: true},
-	"clusters": {valuesMap: true},
-	"matrix":   {combination: true, deferredRender: true},
-	"merge":    {combination: true},
 }
 
 func parseApplicationSetGenerator(
@@ -72,6 +55,7 @@ func parseApplicationSetGenerator(
 	var result applicationSetGenerator
 	var generatorName string
 	var generatorValue any
+	var kind applicationset.Generator
 	for _, item := range raw {
 		key, ok := item.Key.(string)
 		if !ok {
@@ -102,21 +86,29 @@ func parseApplicationSetGenerator(
 			result.selector = &selector
 			continue
 		}
-		if _, supported := applicationSetGeneratorKinds[key]; !supported {
+		candidate, known := applicationset.LookupGenerator(key)
+		if !known {
 			return result, fmt.Errorf("%s.%s generator is not supported", field, key)
+		}
+		if candidate.Reason != "" {
+			return result, fmt.Errorf(
+				"%s.%s generator is not supported: %s",
+				field,
+				key,
+				candidate.Reason,
+			)
 		}
 		if generatorName != "" {
 			return result, fmt.Errorf("%s must contain exactly one generator", field)
 		}
-		generatorName, generatorValue = key, item.Value
+		generatorName, generatorValue, kind = key, item.Value, candidate
 	}
-	kind := applicationSetGeneratorKinds[generatorName]
-	if parent.depth > 0 && !kind.combination {
+	if parent.depth > 0 && !kind.Combination {
 		if err := rejectCombinationChildTemplate(raw, field, parent.name); err != nil {
 			return result, err
 		}
 	}
-	if parent.depth > 0 && kind.combination {
+	if parent.depth > 0 && kind.Combination {
 		if generatorHasTemplate(generatorValue) {
 			return result, fmt.Errorf(
 				"%s.%s.template is not supported in a nested %s generator",
@@ -126,7 +118,7 @@ func parseApplicationSetGenerator(
 			)
 		}
 	}
-	if !kind.deferredRender && len(parentParams) != 0 {
+	if !kind.DeferredRender && len(parentParams) != 0 {
 		rendered, err := renderGeneratorValue(raw, parentParams, renderer, nil)
 		if err != nil {
 			return result, fmt.Errorf("%s: render generator: %w", field, err)
@@ -144,7 +136,7 @@ func parseApplicationSetGenerator(
 			}
 		}
 	}
-	if kind.combination && parent.depth >= 2 {
+	if kind.Combination && parent.depth >= 2 {
 		return result, fmt.Errorf(
 			"%s.%s exceeds the supported nesting depth",
 			field,
@@ -245,6 +237,8 @@ func parseApplicationSetGenerator(
 			return result, err
 		}
 		result.params, result.template = generated.params, generated.template
+	default:
+		panic("unhandled generator: " + generatorName)
 	}
 	if result.selector != nil {
 		filtered := make([]generatedGeneratorParams, 0, len(result.params))

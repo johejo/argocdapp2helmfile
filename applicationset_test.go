@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/goccy/go-yaml"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
 )
 
 func TestConvertApplicationSetList(t *testing.T) {
@@ -321,15 +322,47 @@ func TestConvertEmptyApplicationSet(t *testing.T) {
 	}
 }
 
+func TestConvertApplicationSetRejectsUnsupportedGenerators(t *testing.T) {
+	valid := readTestdata(t, "applicationset/minimal/application.yaml")
+	for _, generator := range applicationset.Generators() {
+		if generator.Reason == "" {
+			continue
+		}
+		t.Run(generator.Name, func(t *testing.T) {
+			input := strings.Replace(
+				valid,
+				"    - list:\n",
+				"    - "+generator.Name+": {}\n      list:\n",
+				1,
+			)
+			_, err := convert([]byte(input))
+			want := "spec.generators[0]." + generator.Name +
+				" generator is not supported: " + generator.Reason
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestGoTemplateOptionsInCatalogAreAccepted(t *testing.T) {
+	// text/template panics on an option it does not define.
+	for _, option := range applicationset.GoTemplateOptions() {
+		if _, err := newApplicationSetRenderer(true, []string{option.Name}); err != nil {
+			t.Errorf("newApplicationSetRenderer(%q) = %v", option.Name, err)
+		}
+	}
+}
+
 func TestConvertApplicationSetErrors(t *testing.T) {
 	valid := readTestdata(t, "applicationset/minimal/application.yaml")
 	tests := map[string]struct {
 		input string
 		want  string
 	}{
-		"unsupported generator": {
-			input: strings.Replace(valid, "    - list:\n", "    - pullRequest: {}\n      list:\n", 1),
-			want:  "spec.generators[0].pullRequest generator is not supported",
+		"unknown generator": {
+			input: strings.Replace(valid, "    - list:\n", "    - lists: {}\n      list:\n", 1),
+			want:  "spec.generators[0].lists generator is not supported",
 		},
 		"invalid option": {
 			input: strings.Replace(valid, "  generators:\n", "  goTemplateOptions: [missingkey=wat]\n  generators:\n", 1),
