@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
 )
 
 type valueFileContext struct {
@@ -120,7 +121,16 @@ func resolveValuePath(
 }
 
 func resolveSourcePath(raw string, context valueFileContext, option string) (string, error) {
-	mapping, repositoryRelative, err := resolveSourceLocation(raw, context, option, true)
+	expanded, leadingDollarLiteral, err := expandBuildEnvironment(raw, context.environment)
+	if err != nil {
+		return "", err
+	}
+	mapping, repositoryRelative, err := resolveSourceLocation(
+		expanded,
+		context,
+		option,
+		!leadingDollarLiteral,
+	)
 	if err != nil {
 		return "", err
 	}
@@ -138,12 +148,6 @@ func resolveSourceLocation(
 	}
 	if strings.Contains(raw, "://") {
 		return mappedSource{}, "", fmt.Errorf("remote URLs in %s are not supported", option)
-	}
-	if option != "valueFiles" && strings.Contains(raw, "$ARGOCD_") {
-		return mappedSource{}, "", fmt.Errorf(
-			"Argo CD build environment variables in %s are not supported",
-			option,
-		)
 	}
 
 	var mapping mappedSource
@@ -254,9 +258,7 @@ func expandBuildEnvironment(
 	environment map[string]string,
 ) (expanded string, leadingDollarLiteral bool, err error) {
 	return expandEnvironmentVariables(value, environment, func(name string, braced bool) (string, error) {
-		if strings.HasPrefix(name, "ARGOCD_") ||
-			name == "KUBE_VERSION" ||
-			name == "KUBE_API_VERSIONS" {
+		if isUnexpandableBuildEnvironmentVariable(name) {
 			return "", fmt.Errorf(
 				"build environment variable %s cannot be determined statically",
 				name,
@@ -267,6 +269,16 @@ func expandBuildEnvironment(
 		}
 		return "$" + name, nil
 	})
+}
+
+// A statically expandable variable is always present in the environment, so a variable
+// that reaches this check is either dynamic or an unknown Argo CD variable.
+func isUnexpandableBuildEnvironmentVariable(name string) bool {
+	if strings.HasPrefix(name, "ARGOCD_") {
+		return true
+	}
+	_, known := applicationmapping.LookupBuildEnvironmentVariable(name)
+	return known
 }
 
 func expandEnvironmentVariables(

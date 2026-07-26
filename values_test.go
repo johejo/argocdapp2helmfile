@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
 )
 
 const globRepositoryURL = "git@example.com:charts.git"
@@ -280,15 +282,34 @@ func TestConvertBuildEnvironmentAfterApplicationSetGeneration(t *testing.T) {
 	}
 }
 
+func TestApplicationBuildEnvironmentMatchesCatalog(t *testing.T) {
+	environment := applicationBuildEnvironment(application{}, applicationSource{})
+	for _, variable := range applicationmapping.BuildEnvironmentVariables() {
+		_, expanded := environment[variable.Name]
+		want := variable.Kind == applicationmapping.BuildEnvironmentStatic
+		if expanded != want {
+			t.Errorf("%s is expanded=%v, want %v", variable.Name, expanded, want)
+		}
+	}
+	for name := range environment {
+		if _, known := applicationmapping.LookupBuildEnvironmentVariable(name); !known {
+			t.Errorf("expanded variable %q is missing from the catalog", name)
+		}
+	}
+}
+
+func dynamicBuildEnvironmentVariables() []string {
+	var names []string
+	for _, variable := range applicationmapping.BuildEnvironmentVariables() {
+		if variable.Kind == applicationmapping.BuildEnvironmentDynamic {
+			names = append(names, variable.Name)
+		}
+	}
+	return names
+}
+
 func TestConvertRejectsDynamicBuildEnvironment(t *testing.T) {
-	for _, variable := range []string{
-		"ARGOCD_APP_REVISION",
-		"ARGOCD_APP_REVISION_SHORT",
-		"ARGOCD_APP_REVISION_SHORT_8",
-		"KUBE_VERSION",
-		"KUBE_API_VERSIONS",
-		"ARGOCD_UNKNOWN",
-	} {
+	for _, variable := range append(dynamicBuildEnvironmentVariables(), "ARGOCD_UNKNOWN") {
 		t.Run(variable, func(t *testing.T) {
 			input := applicationWithValueFiles(t, "        - env/$"+variable+".yaml\n")
 			output, err := convertWithResolver([]byte(input), globFixtureResolver(t))

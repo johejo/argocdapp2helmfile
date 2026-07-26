@@ -140,6 +140,44 @@ func TestKustomizeOptionLookupCoversCatalog(t *testing.T) {
 	}
 }
 
+func TestBuildEnvironmentCatalogIsValid(t *testing.T) {
+	validKinds := []BuildEnvironmentKind{BuildEnvironmentStatic, BuildEnvironmentDynamic}
+	names := make(map[string]bool)
+
+	for index, variable := range BuildEnvironmentVariables() {
+		if variable.Name == "" || names[variable.Name] ||
+			strings.ContainsFunc(variable.Name, unicode.IsSpace) {
+			t.Errorf("variable %d has an empty, duplicate, or spaced name %q",
+				index, variable.Name)
+		}
+		names[variable.Name] = true
+		if !slices.Contains(validKinds, variable.Kind) {
+			t.Errorf("variable %q has invalid kind %q", variable.Name, variable.Kind)
+		}
+		if variable.Kind == BuildEnvironmentDynamic {
+			if variable.Reason == "" || variable.Source != "" {
+				t.Errorf("dynamic variable %q must describe only a reason", variable.Name)
+			}
+			continue
+		}
+		if variable.Source == "" || variable.Reason != "" {
+			t.Errorf("static variable %q must describe only a source", variable.Name)
+		}
+	}
+}
+
+func TestBuildEnvironmentVariableLookupCoversCatalog(t *testing.T) {
+	for _, variable := range BuildEnvironmentVariables() {
+		got, ok := LookupBuildEnvironmentVariable(variable.Name)
+		if !ok || got != variable {
+			t.Errorf("LookupBuildEnvironmentVariable(%q) = %#v, %v", variable.Name, got, ok)
+		}
+	}
+	if _, ok := LookupBuildEnvironmentVariable("ARGOCD_UNKNOWN"); ok {
+		t.Fatal("unknown build environment variable was found")
+	}
+}
+
 func TestMarkdownIsDeterministicAndComplete(t *testing.T) {
 	first := Markdown()
 	second := Markdown()
@@ -160,6 +198,17 @@ func TestMarkdownIsDeterministicAndComplete(t *testing.T) {
 		if !bytes.Contains(first, []byte(option.Name)) ||
 			!bytes.Contains(first, []byte(description)) {
 			t.Errorf("Markdown output does not contain Kustomize option %q", option.Name)
+		}
+	}
+	for _, variable := range BuildEnvironmentVariables() {
+		description := variable.Source
+		if variable.Kind == BuildEnvironmentDynamic {
+			description = variable.Reason
+		}
+		if !bytes.Contains(first, []byte(variable.Name)) ||
+			!bytes.Contains(first, []byte(description)) {
+			t.Errorf("Markdown output does not contain build environment variable %q",
+				variable.Name)
 		}
 	}
 }

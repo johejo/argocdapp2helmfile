@@ -73,6 +73,39 @@ a same-name `forceString` parameter is rejected because it belongs to
 Because Helmfile's `helmDefaults.skipCRDs` is shared, all converted Helm releases
 must resolve to the same `skipCrds` value.
 
+## Build environment variables
+
+Argo CD build environment variables are expanded in both `$VAR` and `${VAR}` forms, and
+`$$` emits a literal `$`.
+Source variables describe the selected manifest source, including where they appear in the
+path of a `$ref` value file.
+
+| Build environment variable | Expanded value |
+| --- | --- |
+| `ARGOCD_APP_NAME` | `metadata.name` |
+| `ARGOCD_APP_NAMESPACE` | `metadata.namespace` |
+| `ARGOCD_APP_PROJECT_NAME` | `spec.project`, or `default` when it is omitted |
+| `ARGOCD_APP_SOURCE_PATH` | Manifest source `path` |
+| `ARGOCD_APP_SOURCE_REPO_URL` | Manifest source `repoURL` |
+| `ARGOCD_APP_SOURCE_TARGET_REVISION` | Manifest source `targetRevision` |
+
+The remaining variables are rejected wherever expansion applies.
+
+| Build environment variable | Rejection reason |
+| --- | --- |
+| `ARGOCD_APP_REVISION` | the revision is resolved when Argo CD syncs, not when the Application is written |
+| `ARGOCD_APP_REVISION_SHORT` | the revision is resolved when Argo CD syncs, not when the Application is written |
+| `ARGOCD_APP_REVISION_SHORT_8` | the revision is resolved when Argo CD syncs, not when the Application is written |
+| `KUBE_VERSION` | the value comes from the destination cluster, which the converter does not query |
+| `KUBE_API_VERSIONS` | the value comes from the destination cluster, which the converter does not query |
+
+Expansion applies to `valueFiles` and `fileParameters` paths and to `parameters` values,
+matching where Argo CD calls `Envsubst`.
+Those inputs reject an unknown `ARGOCD_` variable and leave any other variable as written,
+whereas Argo CD replaces an unknown variable with an empty string.
+Kustomize `commonLabels` and `commonAnnotations` values do replace every unresolved
+variable with an empty string, as Argo CD does.
+
 ## Kustomize options
 
 A non-null `spec.source.kustomize` mapping selects an explicit Kustomization and accepts
@@ -108,11 +141,6 @@ Kustomize fails the build when a replica target matches no resource.
 
 `commonLabels` values always expand the Argo CD build environment.
 `commonAnnotations` values expand it only when `commonAnnotationsEnvsubst: true`.
-Supported variables are `ARGOCD_APP_NAME`, `ARGOCD_APP_NAMESPACE`,
-`ARGOCD_APP_PROJECT_NAME`, `ARGOCD_APP_SOURCE_PATH`, `ARGOCD_APP_SOURCE_REPO_URL`, and
-`ARGOCD_APP_SOURCE_TARGET_REVISION`.
-Revision and Kubernetes variables are rejected;
-unknown variables expand to an empty string.
 
 `forceCommonLabels` and `forceCommonAnnotations` affect Argo CD's source edits.
 Helmfile applies later transformers instead, so these options are accepted, validated as

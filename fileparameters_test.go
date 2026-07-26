@@ -108,12 +108,13 @@ func TestConvertRejectsUnsafeFileParameterPaths(t *testing.T) {
 		repoURL: repoURL, targetRevision: "main", root: "/workspace/charts",
 	})
 	tests := map[string]string{
-		"outside repository": "../../outside",
-		"undefined ref":      "$missing/file",
-		"URL":                "https://example.com/file",
-		"backslash":          `files\config`,
-		"control":            "files/\tconfig",
-		"build environment":  "$ARGOCD_APP_NAME/config",
+		"outside repository":        "../../outside",
+		"undefined ref":             "$missing/file",
+		"URL":                       "https://example.com/file",
+		"backslash":                 `files\config`,
+		"control":                   "files/\tconfig",
+		"dynamic build environment": "env/$ARGOCD_APP_REVISION/config",
+		"unknown build environment": "env/$ARGOCD_UNKNOWN/config",
 	}
 	for name, parameterPath := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -123,6 +124,27 @@ func TestConvertRejectsUnsafeFileParameterPaths(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConvertExpandsFileParameterBuildEnvironment(t *testing.T) {
+	resolver := testSourceResolver(t, testSource{
+		repoURL:        "git@github.com:example/charts.git",
+		targetRevision: "main",
+		root:           "/workspace/charts",
+	})
+	input := readTestdata(t, "file-parameters/environment/application.yaml")
+	output, err := convertWithResolver([]byte(input), resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOrdered(t, string(output), []string{
+		"charts/app/env/static-app.json",
+		"charts/app/env/argocd.json",
+		"charts/app/env/production.json",
+		"charts/app/env/main-static-app.json",
+		"charts/app/env/$ARGOCD_APP_REVISION.json",
+		"charts/app/$literal.json",
+	})
 }
 
 func TestConvertRejectsForceStringFileParameterConflict(t *testing.T) {

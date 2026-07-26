@@ -394,15 +394,11 @@ output retains the matched logical path.
 A pattern matching no files is an error unless `ignoreMissingValueFiles: true`,
 which omits the entry and sets `missingFileHandler: Warn`.
 
-The following statically known Argo CD build-environment variables are expanded
-in value-file paths in both `$VAR` and `${VAR}` forms:
-`ARGOCD_APP_NAME`, `ARGOCD_APP_NAMESPACE`, `ARGOCD_APP_PROJECT_NAME`,
-`ARGOCD_APP_SOURCE_PATH`, `ARGOCD_APP_SOURCE_REPO_URL`, and
-`ARGOCD_APP_SOURCE_TARGET_REVISION`.
-An omitted project expands as `default`, and `$$` emits a literal `$`.
-Source variables describe the Helm chart source, including for `$ref` value files.
-`ARGOCD_APP_REVISION*`, `KUBE_VERSION`, `KUBE_API_VERSIONS`,
-and unknown `ARGOCD_` variables are rejected.
+Statically known Argo CD build-environment variables are expanded in value-file
+paths, and the remaining ones are rejected.
+The variables, their expanded values, and the rejection reasons are listed in the
+[Application mapping reference](docs/application-mapping.md),
+also available with `--help-application-mapping`.
 
 File parameters are passed as files without converter-side glob expansion.
 Build-environment variables are rejected,

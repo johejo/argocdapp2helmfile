@@ -673,6 +673,37 @@ func TestConvertParameters(t *testing.T) {
 	}
 }
 
+func TestConvertExpandsParameterBuildEnvironment(t *testing.T) {
+	input := readTestdata(t, "helm-options/parameter-environment/application.yaml")
+	output, err := convert([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOrdered(t, string(output), []string{
+		"name: name\n        value: static-app",
+		"name: namespace\n        value: argocd-suffix",
+		"name: escaped\n        value: $ARGOCD_APP_REVISION",
+		"name: unknown\n        value: $NOT_A_BUILD_VARIABLE",
+		"setString:",
+		"name: project\n        value: production",
+	})
+}
+
+func TestConvertRejectsDynamicParameterBuildEnvironment(t *testing.T) {
+	for _, variable := range append(dynamicBuildEnvironmentVariables(), "ARGOCD_UNKNOWN") {
+		t.Run(variable, func(t *testing.T) {
+			input := minimalApplication(
+				"    helm:\n      parameters:\n        - name: revision\n          value: ${" +
+					variable + "}\n",
+			)
+			output, err := convert([]byte(input))
+			if err == nil || !strings.Contains(err.Error(), variable) {
+				t.Fatalf("unexpected result: %v\n%s", err, output)
+			}
+		})
+	}
+}
+
 func TestConvertPreservesEmptyParameterValue(t *testing.T) {
 	input := minimalApplication(`    helm:
       parameters:

@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: static-app
+  namespace: argocd
+spec:
+  project: production
+  source:
+    repoURL: git@github.com:example/charts.git
+    path: charts/app
+    targetRevision: main
+    helm:
+      fileParameters:
+        - name: name
+          path: env/$ARGOCD_APP_NAME.json
+        - name: namespace
+          path: env/${ARGOCD_APP_NAMESPACE}.json
+        - name: project
+          path: env/$ARGOCD_APP_PROJECT_NAME.json
+        - name: source
+          path: env/${ARGOCD_APP_SOURCE_TARGET_REVISION}-$ARGOCD_APP_NAME.json
+        - name: escaped
+          path: env/$$ARGOCD_APP_REVISION.json
+        - name: literal
+          path: $$literal.json

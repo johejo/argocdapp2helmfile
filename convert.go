@@ -340,13 +340,14 @@ func convertApplication(
 		chartMapping = &mapping
 		chartRoot = chartSource.Path
 	}
-	values, err := resolveValueFiles(helm.valueFiles, valueFileContext{
+	sourceContext := valueFileContext{
 		chartMapping: chartMapping,
 		chartRoot:    chartRoot,
 		environment:  applicationBuildEnvironment(app, chartSource),
 		refs:         refs,
 		resolver:     resolver,
-	}, helm.ignoreMissingValues)
+	}
+	values, err := resolveValueFiles(helm.valueFiles, sourceContext, helm.ignoreMissingValues)
 	if err != nil {
 		return converted, fmt.Errorf("%s.helm.%w", chartSourceField, err)
 	}
@@ -358,8 +359,13 @@ func convertApplication(
 	}
 	set := make([]setParameter, 0, len(helm.parameters)+len(helm.fileParameters))
 	setString := make([]setParameter, 0, len(helm.parameters))
-	for _, parameter := range helm.parameters {
-		value := parameter.Value
+	for i, parameter := range helm.parameters {
+		value, _, err := expandBuildEnvironment(parameter.Value, sourceContext.environment)
+		if err != nil {
+			return converted, fmt.Errorf(
+				"%s.helm.parameters[%d].value: %w", chartSourceField, i, err,
+			)
+		}
 		outputParameter := setParameter{Name: parameter.Name, Value: &value}
 		if parameter.ForceString {
 			setString = append(setString, outputParameter)
@@ -368,12 +374,7 @@ func convertApplication(
 		}
 	}
 	for i, parameter := range helm.fileParameters {
-		resolved, err := resolveSourcePath(parameter.Path, valueFileContext{
-			chartMapping: chartMapping,
-			chartRoot:    chartRoot,
-			refs:         refs,
-			resolver:     resolver,
-		}, "fileParameters")
+		resolved, err := resolveSourcePath(parameter.Path, sourceContext, "fileParameters")
 		if err != nil {
 			return converted, fmt.Errorf("%s.helm.fileParameters[%d].path: %w", chartSourceField, i, err)
 		}

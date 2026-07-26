@@ -28,6 +28,15 @@ const (
 	KustomizeUnsupported KustomizeValueKind = "unsupported"
 )
 
+// BuildEnvironmentKind is a value kind so that one lookup decides both whether a
+// build environment variable is known and whether it can be expanded.
+type BuildEnvironmentKind string
+
+const (
+	BuildEnvironmentStatic  BuildEnvironmentKind = "static"
+	BuildEnvironmentDynamic BuildEnvironmentKind = "dynamic"
+)
+
 type Entry struct {
 	ID            ID
 	Input         string
@@ -46,6 +55,15 @@ type KustomizeOption struct {
 	ValueKind KustomizeValueKind
 	Output    string
 	Reason    string
+}
+
+// Source describes where a static value comes from, Reason describes why a dynamic
+// variable cannot be expanded, and exactly one of them is set.
+type BuildEnvironmentVariable struct {
+	Name   string
+	Kind   BuildEnvironmentKind
+	Source string
+	Reason string
 }
 
 const (
@@ -326,8 +344,59 @@ var kustomizeOptions = []KustomizeOption{
 	},
 }
 
+var buildEnvironmentVariables = []BuildEnvironmentVariable{
+	{
+		Name: "ARGOCD_APP_NAME", Kind: BuildEnvironmentStatic,
+		Source: "`metadata.name`",
+	},
+	{
+		Name: "ARGOCD_APP_NAMESPACE", Kind: BuildEnvironmentStatic,
+		Source: "`metadata.namespace`",
+	},
+	{
+		Name: "ARGOCD_APP_PROJECT_NAME", Kind: BuildEnvironmentStatic,
+		Source: "`spec.project`, or `default` when it is omitted",
+	},
+	{
+		Name: "ARGOCD_APP_SOURCE_PATH", Kind: BuildEnvironmentStatic,
+		Source: "Manifest source `path`",
+	},
+	{
+		Name: "ARGOCD_APP_SOURCE_REPO_URL", Kind: BuildEnvironmentStatic,
+		Source: "Manifest source `repoURL`",
+	},
+	{
+		Name: "ARGOCD_APP_SOURCE_TARGET_REVISION", Kind: BuildEnvironmentStatic,
+		Source: "Manifest source `targetRevision`",
+	},
+	{
+		Name: "ARGOCD_APP_REVISION", Kind: BuildEnvironmentDynamic,
+		Reason: "the revision is resolved when Argo CD syncs, not when the Application is written",
+	},
+	{
+		Name: "ARGOCD_APP_REVISION_SHORT", Kind: BuildEnvironmentDynamic,
+		Reason: "the revision is resolved when Argo CD syncs, not when the Application is written",
+	},
+	{
+		Name: "ARGOCD_APP_REVISION_SHORT_8", Kind: BuildEnvironmentDynamic,
+		Reason: "the revision is resolved when Argo CD syncs, not when the Application is written",
+	},
+	{
+		Name: "KUBE_VERSION", Kind: BuildEnvironmentDynamic,
+		Reason: "the value comes from the destination cluster, which the converter does not query",
+	},
+	{
+		Name: "KUBE_API_VERSIONS", Kind: BuildEnvironmentDynamic,
+		Reason: "the value comes from the destination cluster, which the converter does not query",
+	},
+}
+
 func Entries() []Entry {
 	return entries
+}
+
+func BuildEnvironmentVariables() []BuildEnvironmentVariable {
+	return buildEnvironmentVariables
 }
 
 func KustomizeOptions() []KustomizeOption {
@@ -360,4 +429,17 @@ var kustomizeOptionsByName = func() map[string]KustomizeOption {
 func LookupKustomizeOption(name string) (KustomizeOption, bool) {
 	option, ok := kustomizeOptionsByName[name]
 	return option, ok
+}
+
+var buildEnvironmentVariablesByName = func() map[string]BuildEnvironmentVariable {
+	result := make(map[string]BuildEnvironmentVariable, len(buildEnvironmentVariables))
+	for _, variable := range buildEnvironmentVariables {
+		result[variable.Name] = variable
+	}
+	return result
+}()
+
+func LookupBuildEnvironmentVariable(name string) (BuildEnvironmentVariable, bool) {
+	variable, ok := buildEnvironmentVariablesByName[name]
+	return variable, ok
 }

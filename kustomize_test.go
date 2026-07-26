@@ -112,13 +112,7 @@ func TestExpandKustomizeBuildEnvironment(t *testing.T) {
 		t.Fatalf("unexpected expansion: %q", got)
 	}
 
-	for _, variable := range []string{
-		"ARGOCD_APP_REVISION",
-		"ARGOCD_APP_REVISION_SHORT",
-		"ARGOCD_APP_REVISION_SHORT_8",
-		"KUBE_VERSION",
-		"KUBE_API_VERSIONS",
-	} {
+	for _, variable := range dynamicBuildEnvironmentVariables() {
 		t.Run(variable, func(t *testing.T) {
 			_, err := expandKustomizeBuildEnvironment("$"+variable, environment)
 			if err == nil || !strings.Contains(err.Error(), variable) {

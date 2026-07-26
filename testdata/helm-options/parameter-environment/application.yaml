@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: static-app
+  namespace: argocd
+spec:
+  project: production
+  source:
+    repoURL: https://example.com/charts
+    chart: chart
+    targetRevision: 1.2.3
+    helm:
+      parameters:
+        - name: name
+          value: $ARGOCD_APP_NAME
+        - name: namespace
+          value: ${ARGOCD_APP_NAMESPACE}-suffix
+        - name: escaped
+          value: $$ARGOCD_APP_REVISION
+        - name: unknown
+          value: $NOT_A_BUILD_VARIABLE
+        - name: project
+          value: $ARGOCD_APP_PROJECT_NAME
+          forceString: true

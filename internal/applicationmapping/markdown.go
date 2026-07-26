@@ -19,6 +19,8 @@ type markdownData struct {
 	Entries                     []Entry
 	KustomizeOptions            []KustomizeOption
 	UnsupportedKustomizeOptions []KustomizeOption
+	StaticBuildEnvironment      []BuildEnvironmentVariable
+	DynamicBuildEnvironment     []BuildEnvironmentVariable
 }
 
 func Markdown() []byte {
@@ -29,6 +31,13 @@ func Markdown() []byte {
 			continue
 		}
 		data.KustomizeOptions = append(data.KustomizeOptions, option)
+	}
+	for _, variable := range buildEnvironmentVariables {
+		if variable.Kind == BuildEnvironmentDynamic {
+			data.DynamicBuildEnvironment = append(data.DynamicBuildEnvironment, variable)
+			continue
+		}
+		data.StaticBuildEnvironment = append(data.StaticBuildEnvironment, variable)
 	}
 
 	var output bytes.Buffer

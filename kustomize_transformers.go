@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/goccy/go-yaml"
+	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
 )
 
 type kustomizeTransformer struct {
@@ -134,16 +135,8 @@ func expandKustomizeBuildEnvironment(
 }
 
 func isDynamicArgoCDBuildEnvironmentVariable(name string) bool {
-	switch name {
-	case "ARGOCD_APP_REVISION",
-		"ARGOCD_APP_REVISION_SHORT",
-		"ARGOCD_APP_REVISION_SHORT_8",
-		"KUBE_VERSION",
-		"KUBE_API_VERSIONS":
-		return true
-	default:
-		return false
-	}
+	variable, known := applicationmapping.LookupBuildEnvironmentVariable(name)
+	return known && variable.Kind == applicationmapping.BuildEnvironmentDynamic
 }
 
 var replicaCountFieldSpecs = []kustomizeFieldSpec{
