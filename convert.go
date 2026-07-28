@@ -184,7 +184,7 @@ func convertApplication(
 	}
 
 	if selected.isKustomization {
-		return convertKustomizeApplication(app, baseRelease, selected, documentNumber, resolver)
+		return convertKustomizeApplication(baseRelease, selected, documentNumber, resolver)
 	}
 	return convertHelmApplication(app, baseRelease, selected, documentNumber, resolver)
 }
@@ -305,7 +305,6 @@ func selectChartSource(app application, documentNumber int) (chartSourceSelectio
 }
 
 func convertKustomizeApplication(
-	app application,
 	baseRelease release,
 	selected chartSourceSelection,
 	documentNumber int,
