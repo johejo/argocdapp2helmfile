@@ -255,7 +255,9 @@ func generateGitDirectoryParams(
 				return relative != "." && entry.IsDir() &&
 					strings.HasPrefix(entry.Name(), ".")
 			},
-			func(_ string, entry fs.DirEntry) bool { return entry.IsDir() },
+			func(relative string, entry fs.DirEntry) bool {
+				return relative != "." && entry.IsDir()
+			},
 		)
 	})
 	if err != nil {

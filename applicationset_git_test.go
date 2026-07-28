@@ -11,6 +11,10 @@ func TestConvertApplicationSetGitDirectory(t *testing.T) {
 	testConvertApplicationSetFixture(t, "git-directory", true)
 }
 
+func TestConvertApplicationSetGitDirectoryExcludesRepositoryRoot(t *testing.T) {
+	testConvertApplicationSetFixture(t, "git-directory-root", true)
+}
+
 func TestConvertApplicationSetGitFile(t *testing.T) {
 	testConvertApplicationSetFixture(t, "git-file", true)
 }

@@ -4,10 +4,6 @@ repositories:
 helmDefaults:
   createNamespace: false
 releases:
-  - name: root
-    namespace: from-generator
-    chart: source/nginx
-    version: 1.2.3
   - name: dev
     namespace: from-generator
     chart: source/nginx
