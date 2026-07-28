@@ -173,6 +173,10 @@ func TestConvertApplicationSetTemplateFunctions(t *testing.T) {
 	}
 }
 
+func TestConvertApplicationSetTemplateYAMLPreservesLargeInteger(t *testing.T) {
+	testConvertApplicationSetFixture(t, "template-yaml-large-integer", false)
+}
+
 func TestApplicationSetSelectorOperators(t *testing.T) {
 	tests := []struct {
 		name       string

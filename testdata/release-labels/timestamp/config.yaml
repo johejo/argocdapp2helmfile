@@ -1,0 +1,7 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+releaseLabels:
+  - name: project
+    query: .spec.project
+  - name: rotatedAt
+    query: .metadata.annotations.rotatedAt

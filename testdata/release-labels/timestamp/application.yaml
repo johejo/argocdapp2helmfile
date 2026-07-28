@@ -1,0 +1,12 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: timestamp-labels
+  annotations:
+    rotatedAt: !!timestamp 2020-01-01
+spec:
+  project: production
+  source:
+    repoURL: https://example.com/charts
+    chart: app
+    targetRevision: 1.2.3

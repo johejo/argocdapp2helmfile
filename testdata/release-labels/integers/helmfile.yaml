@@ -1,0 +1,16 @@
+repositories:
+  - name: charts
+    url: https://example.com/charts
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: integer-labels
+    historyMax: 5
+    labels:
+      revision: "5"
+      replicas: "-3"
+      doubled: "10"
+      maxUnsigned: "18446744073709551615"
+      belowMinInt64Type: string
+    chart: charts/app
+    version: 1.2.3

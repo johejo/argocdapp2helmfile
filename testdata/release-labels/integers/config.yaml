@@ -1,0 +1,13 @@
+apiVersion: argocdapp2helmfile/v1alpha1
+kind: Config
+releaseLabels:
+  - name: revision
+    query: .spec.revisionHistoryLimit | tostring
+  - name: replicas
+    query: .spec.custom.replicas | tostring
+  - name: doubled
+    query: .spec.revisionHistoryLimit * 2
+  - name: maxUnsigned
+    query: .spec.custom.maxUnsigned | tostring
+  - name: belowMinInt64Type
+    query: .spec.custom.belowMinInt64 | type

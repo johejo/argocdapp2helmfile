@@ -70,6 +70,24 @@ func TestConvertProjectsReleaseLabelsFromCompleteApplication(t *testing.T) {
 	}
 }
 
+func TestConvertProjectsIntegerReleaseLabels(t *testing.T) {
+	assertConvertFixture(t, "release-labels/integers", true)
+}
+
+func TestConvertProjectsTimestampReleaseLabels(t *testing.T) {
+	assertConvertFixture(t, "release-labels/timestamp", true)
+}
+
+func TestConvertRejectsUnsupportedReleaseLabelInputType(t *testing.T) {
+	config, err := parseConfig([]byte(readTestdata(t, "release-labels/binary/config.yaml")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := readTestdata(t, "release-labels/binary/application.yaml")
+	_, err = convertWithConfig([]byte(input), config)
+	assertErrorContains(t, err, "release label query input: unsupported value type []uint8")
+}
+
 func TestConvertOmitsEmptyReleaseLabelResults(t *testing.T) {
 	config := testConfig(t, `releaseLabels:
   - name: missing

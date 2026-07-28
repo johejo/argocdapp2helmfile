@@ -1,0 +1,11 @@
+repositories:
+  - name: charts
+    url: https://example.com/charts
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: app
+    chart: charts/app
+    version: 1.2.3
+    values:
+      - large: 18446744073709551615

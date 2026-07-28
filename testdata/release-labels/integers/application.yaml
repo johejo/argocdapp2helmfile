@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: integer-labels
+spec:
+  revisionHistoryLimit: 5
+  custom:
+    replicas: -3
+    maxUnsigned: 18446744073709551615
+    belowMinInt64: -18446744073709551616
+  source:
+    repoURL: https://example.com/charts
+    chart: app
+    targetRevision: 1.2.3

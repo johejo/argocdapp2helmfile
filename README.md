@@ -414,6 +414,12 @@ an ApplicationSet.
 A single string, boolean, or number becomes a string label value.
 `null` or no result omits the label.
 Multiple results, arrays, objects, jq errors, and duplicate names fail conversion.
+Before queries run, the complete Application is normalized to jq's data model.
+YAML timestamps become RFC 3339 strings;
+a date-only timestamp such as `!!timestamp 2020-01-01` becomes `2020-01-01T00:00:00Z`.
+Due to a YAML decoder limitation, integers outside the range
+`-9223372036854775808` through `18446744073709551615` are exposed to jq as strings.
+Unsupported YAML values such as binary data fail conversion even when no query selects them.
 Labels retain config order.
 No `labels` mapping is emitted when there are no rules or every result is omitted.
 

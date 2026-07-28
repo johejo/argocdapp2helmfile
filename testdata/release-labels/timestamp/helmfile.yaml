@@ -1,0 +1,12 @@
+repositories:
+  - name: charts
+    url: https://example.com/charts
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: timestamp-labels
+    labels:
+      project: production
+      rotatedAt: "2020-01-01T00:00:00Z"
+    chart: charts/app
+    version: 1.2.3

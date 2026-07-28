@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
@@ -411,9 +412,63 @@ func (resolver *destinationResolver) resolve(destination applicationDestination,
 	return entry.KubeContext, nil
 }
 
+func normalizeJQValue(value any) (any, error) {
+	switch typed := value.(type) {
+	case nil, bool, string, int, float64, *big.Int:
+		return value, nil
+	case time.Time:
+		return typed.Format(time.RFC3339Nano), nil
+	case map[string]any:
+		result := make(map[string]any, len(typed))
+		for key, item := range typed {
+			normalized, err := normalizeJQValue(item)
+			if err != nil {
+				return nil, err
+			}
+			result[key] = normalized
+		}
+		return result, nil
+	case []any:
+		result := make([]any, len(typed))
+		for i, item := range typed {
+			normalized, err := normalizeJQValue(item)
+			if err != nil {
+				return nil, err
+			}
+			result[i] = normalized
+		}
+		return result, nil
+	case int64:
+		return normalizeJQSignedInteger(typed), nil
+	case uint64:
+		return normalizeJQUnsignedInteger(typed), nil
+	default:
+		return nil, fmt.Errorf("unsupported value type %T", value)
+	}
+}
+
+func normalizeJQSignedInteger(value int64) any {
+	maxInt := uint64(^uint(0) >> 1)
+	if value >= -int64(maxInt)-1 && value <= int64(maxInt) {
+		return int(value)
+	}
+	return big.NewInt(value)
+}
+
+func normalizeJQUnsignedInteger(value uint64) any {
+	if value <= uint64(^uint(0)>>1) {
+		return int(value)
+	}
+	return new(big.Int).SetUint64(value)
+}
+
 func (projector *releaseLabelProjector) project(input any) (yaml.MapSlice, error) {
 	if projector == nil || len(projector.rules) == 0 {
 		return nil, nil
+	}
+	input, err := normalizeJQValue(input)
+	if err != nil {
+		return nil, fmt.Errorf("release label query input: %w", err)
 	}
 	labels := make(yaml.MapSlice, 0, len(projector.rules))
 	for _, rule := range projector.rules {
@@ -456,10 +511,6 @@ func releaseLabelValue(value any) (string, error) {
 		return value.String(), nil
 	case float64:
 		return strconv.FormatFloat(value, 'g', -1, 64), nil
-	case int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return fmt.Sprint(value), nil
-	case float32:
-		return strconv.FormatFloat(float64(value), 'g', -1, 32), nil
 	default:
 		return "", fmt.Errorf("must be a string, boolean, or number, got %T", value)
 	}

@@ -1,0 +1,12 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: binary-label
+  annotations:
+    payload: !!binary aGVsbG8=
+spec:
+  project: production
+  source:
+    repoURL: https://example.com/charts
+    chart: app
+    targetRevision: 1.2.3
