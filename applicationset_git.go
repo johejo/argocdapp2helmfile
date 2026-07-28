@@ -377,8 +377,7 @@ func generateGitFileParams(
 			renderer.GoTemplate(),
 		)
 		if err != nil {
-			var indexed *gitFileEntryError
-			if errors.As(err, &indexed) {
+			if indexed, ok := errors.AsType[*gitFileEntryError](err); ok {
 				return nil, fmt.Errorf(
 					"%s.files[%q][%d]: %w",
 					field,
