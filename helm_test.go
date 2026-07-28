@@ -191,8 +191,12 @@ func TestConvertPassCredentials(t *testing.T) {
 	}
 }
 
+func TestConvertNullHelmBooleansAsOmitted(t *testing.T) {
+	assertConvertFixture(t, "helm-options/null-booleans", false)
+}
+
 func TestConvertRejectsNonBooleanPassCredentials(t *testing.T) {
-	for _, value := range []string{"enabled", "1", "null", `""`, "[]", "{}"} {
+	for _, value := range []string{"enabled", "1", `""`, "[]", "{}"} {
 		t.Run(value, func(t *testing.T) {
 			_, err := convert([]byte(minimalApplication(
 				"    helm:\n      passCredentials: " + value + "\n",
@@ -325,7 +329,8 @@ func TestDeclaredHelmOptionValueBehavior(t *testing.T) {
 					"helm",
 				)
 				if entry.AllowEmpty || entry.HelmValueKind == applicationmapping.Ignored ||
-					entry.HelmValueKind == applicationmapping.RawValues {
+					entry.HelmValueKind == applicationmapping.RawValues ||
+					entry.HelmValueKind == applicationmapping.Boolean && value == nil {
 					if err != nil {
 						t.Errorf("empty value %#v was rejected: %v", value, err)
 					}

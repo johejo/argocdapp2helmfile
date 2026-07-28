@@ -461,6 +461,8 @@ because it controls Argo CD's Helm invocation, not a helmfile release.
   and other sync options are not converted.
 
 Unsupported inputs fail instead of producing an incomplete helmfile.
+Supported boolean Helm options accept booleans only, with an explicit `null` treated as omission;
+empty strings, sequences, and mappings are rejected.
 Unsupported Helm options are ignored only when their value is null, an empty string,
 an empty sequence, or an empty mapping.
 Boolean `false` and numeric zero are values rather than empty input, so they are rejected.

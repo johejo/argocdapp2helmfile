@@ -209,12 +209,12 @@ var entries = []Entry{
 	{
 		ID: HelmIgnoreMissingValues, Input: "spec.source.helm.ignoreMissingValueFiles",
 		Output:     "Release `missingFileHandler: Warn` when true",
-		HelmOption: "ignoreMissingValueFiles", HelmValueKind: Boolean, AllowEmpty: true,
+		HelmOption: "ignoreMissingValueFiles", HelmValueKind: Boolean,
 	},
 	{
 		ID: HelmSkipSchema, Input: "spec.source.helm.skipSchemaValidation",
 		Output: "Release `skipSchemaValidation`", HelmOption: "skipSchemaValidation",
-		HelmValueKind: Boolean, AllowEmpty: true,
+		HelmValueKind: Boolean,
 	},
 	{
 		ID: HelmKubeVersion, Input: "spec.source.helm.kubeVersion",
@@ -229,8 +229,8 @@ var entries = []Entry{
 	{
 		ID: HelmSkipCRDs, Input: "spec.source.helm.skipCrds",
 		Output: "Shared `helmDefaults.skipCRDs`", HelmOption: "skipCrds",
-		HelmValueKind: Boolean, AllowEmpty: true,
-		Notes: "All Helm releases must resolve to the same value.",
+		HelmValueKind: Boolean,
+		Notes:         "All Helm releases must resolve to the same value.",
 	},
 	{
 		ID: CreateNamespace, Input: "Exact `CreateNamespace=true` sync option",

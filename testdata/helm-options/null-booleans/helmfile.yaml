@@ -1,0 +1,9 @@
+repositories:
+  - name: charts
+    url: https://example.com/charts
+helmDefaults:
+  createNamespace: false
+releases:
+  - name: app
+    chart: charts/chart
+    version: 1.2.3

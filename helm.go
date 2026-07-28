@@ -108,6 +108,11 @@ func parseHelmOptionValue(
 	if entry.AllowEmpty && isIgnorableEmptyYAMLOption(value) {
 		return omittedHelmOption{}, nil
 	}
+	// Kubernetes prunes null values from non-nullable CRD fields before
+	// Argo CD decodes them, making null equivalent to omission.
+	if entry.HelmValueKind == applicationmapping.Boolean && value == nil {
+		return omittedHelmOption{}, nil
+	}
 	switch entry.HelmValueKind {
 	case applicationmapping.String:
 		text, ok := value.(string)
