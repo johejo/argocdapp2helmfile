@@ -40,17 +40,15 @@ func newGoTemplateRenderer(options []string) (applicationSetRenderer, error) {
 	}, nil
 }
 
-var invalidDNSNameCharacters = regexp.MustCompile(`[^a-z0-9.-]+`)
+var invalidDNSNameCharacters = regexp.MustCompile(`[^a-z0-9.-]`)
 
 func normalizeName(value string) string {
 	value = strings.ToLower(value)
 	value = invalidDNSNameCharacters.ReplaceAllString(value, "-")
-	value = strings.Trim(value, "-.")
 	if len(value) > 253 {
 		value = value[:253]
-		value = strings.TrimRight(value, "-.")
 	}
-	return value
+	return strings.Trim(value, "-.")
 }
 
 func slugifyName(args ...any) (string, error) {
