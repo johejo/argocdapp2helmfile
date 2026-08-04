@@ -1,0 +1,69 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: frontend
+spec:
+  destination:
+    namespace: production
+  source:
+    repoURL: https://example.com/charts
+    chart: frontend
+    targetRevision: 1.2.3
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: from-repositories
+spec:
+  goTemplate: true
+  generators:
+    - scmProvider:
+        github:
+          organization: example
+  template:
+    metadata:
+      name: '{{ .repository }}'
+    spec:
+      destination:
+        namespace: default
+      source:
+        repoURL: https://example.com/charts
+        chart: '{{ .repository }}'
+        targetRevision: 1.0.0
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: worker
+spec:
+  destination:
+    namespace: background
+  source:
+    repoURL: https://example.com/charts
+    chart: worker
+    targetRevision: 4.5.6
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: reporting
+spec:
+  revisionHistoryLimit: 0
+  destination:
+    namespace: analytics
+  source:
+    repoURL: https://example.com/charts
+    chart: reporting
+    targetRevision: 7.8.9
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway
+spec:
+  destination:
+    namespace: edge
+  source:
+    repoURL: https://example.com/charts
+    chart: gateway
+    targetRevision: 2.0.0

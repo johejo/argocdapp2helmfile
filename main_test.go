@@ -97,25 +97,110 @@ func TestRunConversionErrorSuppressesDiagnostics(t *testing.T) {
 	}
 }
 
+func TestRunSkipUnconvertibleWritesPartialHelmfile(t *testing.T) {
+	input := readTestdata(t, "skip-unconvertible/application.yaml")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"--skip-unconvertible"}, strings.NewReader(input), &stdout, &stderr); code != 2 {
+		t.Fatalf("exit code = %d, want 2: %s", code, stderr.String())
+	}
+	if want := readTestdata(t, "skip-unconvertible/helmfile.yaml"); stdout.String() != want {
+		t.Fatalf("unexpected stdout:\n%s\nwant:\n%s", stdout.String(), want)
+	}
+	if strings.Count(stderr.String(), "\n") != 2 ||
+		strings.Count(stderr.String(), "argocdapp2helmfile: skipped:") != 2 {
+		t.Fatalf("stderr does not contain two skip reports:\n%s", stderr.String())
+	}
+	for _, want := range []string{
+		"document 2: spec.generators[0].scmProvider",
+		"document 4: spec.revisionHistoryLimit",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr is missing %q:\n%s", want, stderr.String())
+		}
+	}
+}
+
+func TestRunSkipUnconvertibleDiscardsSkippedApplicationState(t *testing.T) {
+	input := readTestdata(t, "skip-unconvertible/rollback.yaml")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"--skip-unconvertible"}, strings.NewReader(input), &stdout, &stderr); code != 2 {
+		t.Fatalf("exit code = %d, want 2: %s", code, stderr.String())
+	}
+	if want := readTestdata(t, "skip-unconvertible/rollback-helmfile.yaml"); stdout.String() != want {
+		t.Fatalf("unexpected stdout:\n%s\nwant:\n%s", stdout.String(), want)
+	}
+	if strings.Count(stderr.String(), "\n") != 1 {
+		t.Fatalf("a skipped Application rejected a later one:\n%s", stderr.String())
+	}
+}
+
+func TestRunSkipUnconvertibleFailsWhenNothingConverts(t *testing.T) {
+	input := readTestdata(t, "skip-unconvertible/all-skipped.yaml")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"--skip-unconvertible"}, strings.NewReader(input), &stdout, &stderr); code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("a helmfile with no releases was written: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "every input was skipped: 2 of 2") {
+		t.Fatalf("stderr does not report the skipped total:\n%s", stderr.String())
+	}
+}
+
+func TestRunWithoutSkipUnconvertibleStaysAtomic(t *testing.T) {
+	for _, name := range []string{
+		"skip-unconvertible/application.yaml",
+		"skip-unconvertible/rollback.yaml",
+		"skip-unconvertible/all-skipped.yaml",
+	} {
+		t.Run(name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run(nil, strings.NewReader(readTestdata(t, name)), &stdout, &stderr)
+			if code != 1 {
+				t.Fatalf("exit code = %d, want 1", code)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout was not empty: %q", stdout.String())
+			}
+			if strings.Contains(stderr.String(), "skipped") {
+				t.Fatalf("input was skipped without the flag:\n%s", stderr.String())
+			}
+		})
+	}
+}
+
 func TestParseArgs(t *testing.T) {
 	tests := []struct {
-		args       []string
-		strict     bool
-		configPath string
+		args              []string
+		strict            bool
+		skipUnconvertible bool
+		configPath        string
 	}{
 		{args: []string{"--strict", "--config", "config.yaml"}, strict: true, configPath: "config.yaml"},
 		{args: []string{"-config", "config.yaml", "-strict"}, strict: true, configPath: "config.yaml"},
 		{args: []string{"--config=first.yaml", "--config=last.yaml"}, configPath: "last.yaml"},
 		{args: []string{"--strict=true", "--strict=false"}},
+		{args: []string{"--skip-unconvertible"}, skipUnconvertible: true},
+		{
+			args:              []string{"-skip-unconvertible", "--config", "config.yaml"},
+			skipUnconvertible: true,
+			configPath:        "config.yaml",
+		},
+		{args: []string{"--skip-unconvertible=false", "--strict"}, strict: true},
 	}
 	for _, test := range tests {
 		options, _, err := parseArgs(test.args)
-		if err != nil || options.strict != test.strict || options.configPath != test.configPath {
+		if err != nil || options.strict != test.strict ||
+			options.skipUnconvertible != test.skipUnconvertible ||
+			options.configPath != test.configPath {
 			t.Errorf("parseArgs(%q) = %#v, %v", test.args, options, err)
 		}
 	}
 	for _, args := range [][]string{
 		{"--config"},
+		{"--strict", "--skip-unconvertible"},
+		{"--help-diagnostics", "--skip-unconvertible"},
 		{"--help-diagnostics", "--strict"},
 		{"--config", "a", "--help-diagnostics"},
 		{"--help-application-mapping", "--strict"},

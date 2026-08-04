@@ -1,0 +1,16 @@
+# skipped document 2: spec.source.helm.skipCrds conflicts with document 1
+repositories:
+  - name: charts
+    url: https://example.com/charts
+helmDefaults:
+  skipCRDs: true
+  createNamespace: false
+releases:
+  - name: alpha
+    namespace: production
+    chart: charts/alpha
+    version: 1.0.0
+  - name: beta
+    namespace: staging
+    chart: charts/beta
+    version: 2.0.0

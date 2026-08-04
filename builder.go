@@ -18,6 +18,7 @@ type repositoryRecord struct {
 type helmfileBuilder struct {
 	result                helmfile
 	provenanceComments    []string
+	skipComments          []string
 	repositories          map[string]repositoryRecord
 	usedRepositoryAliases map[string]struct{}
 	releaseOrigins        map[string]inputOrigin
@@ -42,6 +43,55 @@ func newHelmfileBuilder(config *conversionConfig) *helmfileBuilder {
 		builder.projector = config.labelProjector
 	}
 	return builder
+}
+
+// addSkippable restores builder state when a skipped Application fails.
+func (builder *helmfileBuilder) addSkippable(item applicationInput, skip bool) error {
+	if !skip {
+		return builder.add(item)
+	}
+	undo := builder.snapshot()
+	if err := builder.add(item); err != nil {
+		undo()
+		return err
+	}
+	return nil
+}
+
+func (builder *helmfileBuilder) snapshot() func() {
+	repositories := maps.Clone(builder.repositories)
+	usedRepositoryAliases := maps.Clone(builder.usedRepositoryAliases)
+	releaseOrigins := maps.Clone(builder.releaseOrigins)
+	rollingSyncReleases := make(map[int]map[int][]int, len(builder.rollingSyncReleases))
+	for document, steps := range builder.rollingSyncReleases {
+		rollingSyncReleases[document] = maps.Clone(steps)
+	}
+	sharedSkipCRDs := builder.sharedSkipCRDs
+	sharedSkipCRDsOrigin := builder.sharedSkipCRDsOrigin
+	repositoryCount := len(builder.result.Repositories)
+	releaseCount := len(builder.result.Releases)
+	commentCount := len(builder.provenanceComments)
+
+	return func() {
+		builder.repositories = repositories
+		builder.usedRepositoryAliases = usedRepositoryAliases
+		builder.releaseOrigins = releaseOrigins
+		builder.rollingSyncReleases = rollingSyncReleases
+		builder.sharedSkipCRDs = sharedSkipCRDs
+		builder.sharedSkipCRDsOrigin = sharedSkipCRDsOrigin
+		builder.result.Repositories = builder.result.Repositories[:repositoryCount]
+		builder.result.Releases = builder.result.Releases[:releaseCount]
+		builder.provenanceComments = builder.provenanceComments[:commentCount]
+	}
+}
+
+func (builder *helmfileBuilder) noteSkipped(skipped []error) {
+	for _, err := range skipped {
+		builder.skipComments = append(
+			builder.skipComments,
+			"skipped "+collapseMessage(err),
+		)
+	}
 }
 
 func (builder *helmfileBuilder) add(item applicationInput) error {
@@ -145,6 +195,9 @@ func (builder *helmfileBuilder) finalize() ([]byte, error) {
 	}
 
 	var output bytes.Buffer
+	for _, comment := range builder.skipComments {
+		fmt.Fprintf(&output, "# %s\n", comment)
+	}
 	for _, comment := range builder.provenanceComments {
 		fmt.Fprintf(&output, "# %s\n", comment)
 	}

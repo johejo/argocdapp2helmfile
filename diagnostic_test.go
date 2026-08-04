@@ -22,7 +22,7 @@ var helmInputPathPattern = regexp.MustCompile(
 
 func TestConvertWithDiagnosticsClassifiesSyncSettings(t *testing.T) {
 	input := readTestdata(t, "diagnostics/cases.yaml")
-	result, err := convertWithDiagnostics([]byte(input), nil)
+	result, err := convertWithDiagnostics([]byte(input), nil, conversionOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestConvertWithDiagnosticsClassifiesSyncSettings(t *testing.T) {
 
 func TestApplicationSetDiagnosticsUseRenderedValuesAndGeneratorOrigins(t *testing.T) {
 	input := readTestdata(t, "diagnostics/applicationset.yaml")
-	result, err := convertWithDiagnostics([]byte(input), nil)
+	result, err := convertWithDiagnostics([]byte(input), nil, conversionOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +126,7 @@ func TestDiagnosticsReportExpansionDivergence(t *testing.T) {
 	result, err := convertWithDiagnostics(
 		[]byte(readTestdata(t, "diagnostics/expansion.yaml")),
 		expansionFixtureConfig(t),
+		conversionOptions{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -344,7 +345,7 @@ func TestDiagnosticPathsMatchTheRuleCatalog(t *testing.T) {
 	}
 	for _, fixture := range fixtures {
 		name := fixture.name
-		result, err := convertWithDiagnostics([]byte(readTestdata(t, name)), fixture.config)
+		result, err := convertWithDiagnostics([]byte(readTestdata(t, name)), fixture.config, conversionOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}

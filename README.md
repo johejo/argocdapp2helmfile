@@ -37,9 +37,41 @@ yq '.items[]' applications.yaml | argocdapp2helmfile
 
 Diagnostics go to standard error.
 Lossy synchronization settings warn by default; `--strict` rejects them.
-Conversion errors never write a partial helmfile.
+Conversion errors never write a partial helmfile,
+unless `--skip-unconvertible` asks for one.
 See the [diagnostic reference](docs/diagnostics.md), also available with
 `--help-diagnostics`, for all rules and examples.
+
+## Reviewing what an ApplicationSet expands to
+
+The generated helmfile provides an offline, normalized list of releases for review.
+Use `--skip-unconvertible` to convert supported input while reporting omissions on standard error
+and in comments at the top of the helmfile:
+
+```sh
+argocdapp2helmfile --skip-unconvertible <applications.yaml >helmfile.yaml
+```
+
+```
+# skipped document 2: spec.generators[0].scmProvider generator is not supported: ...
+repositories:
+  - name: charts
+    url: https://example.com/charts
+...
+```
+
+A document that cannot be decoded or expanded is skipped whole.
+Otherwise, each generated Application is skipped independently without affecting later releases.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | every input converted |
+| 1 | nothing was written |
+| 2 | a helmfile was written, and some input was skipped |
+
+Exit 2 is only possible with `--skip-unconvertible`.
+Skipping every input writes nothing and exits 1.
+`--strict` and `--skip-unconvertible` are mutually exclusive.
 
 ## End-to-end test
 
@@ -460,7 +492,8 @@ because it controls Argo CD's Helm invocation, not a helmfile release.
 - Apart from `CreateNamespace=true`, operational fields such as `project`
   and other sync options are not converted.
 
-Unsupported inputs fail instead of producing an incomplete helmfile.
+Unsupported inputs fail instead of producing an incomplete helmfile,
+unless `--skip-unconvertible` is given.
 Supported boolean Helm options accept booleans only, with an explicit `null` treated as omission;
 empty strings, sequences, and mappings are rejected.
 Unsupported Helm options are ignored only when their value is null, an empty string,

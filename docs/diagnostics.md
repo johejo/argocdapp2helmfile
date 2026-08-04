@@ -114,6 +114,10 @@ With `--strict`, diagnostics are reported as errors, no Helmfile is written, and
 command exits with status 1.
 Conversion errors report one error, write no Helmfile, and exit with status 1.
 
+With `--skip-unconvertible`, conversion errors are reported as `skipped:` on standard error
+and in Helmfile comments.
+A partial Helmfile exits with status 2; skipping every input writes nothing and exits with status 1.
+
 Diagnostics are one line each and preserve document and generated Application order.
 ApplicationSet diagnostics include the generator origin and rendered Application name:
 

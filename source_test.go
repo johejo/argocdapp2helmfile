@@ -226,7 +226,7 @@ func TestConvertBuildEnvironmentDoesNotUseDefaultGitRevision(t *testing.T) {
 func TestChartSourceSelectionCapturesBuildEnvironmentBeforeDefaults(t *testing.T) {
 	t.Run("conversion and diagnostic parity", func(t *testing.T) {
 		inputText := readTestdata(t, "default-git-target-revision/application.yaml")
-		applications, err := decodeApplicationInputs([]byte(inputText), nil)
+		applications, _, err := decodeApplicationInputs([]byte(inputText), nil, conversionOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -256,7 +256,7 @@ func TestChartSourceSelectionCapturesBuildEnvironmentBeforeDefaults(t *testing.T
 
 	t.Run("default Git revision", func(t *testing.T) {
 		inputText := readTestdata(t, "default-git-target-revision/application.yaml")
-		applications, err := decodeApplicationInputs([]byte(inputText), nil)
+		applications, _, err := decodeApplicationInputs([]byte(inputText), nil, conversionOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -277,7 +277,7 @@ func TestChartSourceSelectionCapturesBuildEnvironmentBeforeDefaults(t *testing.T
 
 	t.Run("trimmed Git source", func(t *testing.T) {
 		inputText := readTestdata(t, "kustomize/metadata/application.yaml")
-		applications, err := decodeApplicationInputs([]byte(inputText), nil)
+		applications, _, err := decodeApplicationInputs([]byte(inputText), nil, conversionOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}

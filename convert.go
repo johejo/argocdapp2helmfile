@@ -96,32 +96,58 @@ func convert(input []byte) ([]byte, error) {
 }
 
 func convertWithConfig(input []byte, config *conversionConfig) ([]byte, error) {
-	result, err := convertWithDiagnostics(input, config)
+	result, err := convertWithDiagnostics(input, config, conversionOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return result.output, nil
 }
 
+type conversionOptions struct {
+	skipUnconvertible bool
+}
+
 type conversionResult struct {
 	output      []byte
 	diagnostics []conversionDiagnostic
+	skipped     []error
 }
 
-func convertWithDiagnostics(input []byte, config *conversionConfig) (conversionResult, error) {
-	applications, err := decodeApplicationInputs(input, config)
+func convertWithDiagnostics(
+	input []byte,
+	config *conversionConfig,
+	options conversionOptions,
+) (conversionResult, error) {
+	applications, skipped, err := decodeApplicationInputs(input, config, options)
 	if err != nil {
 		return conversionResult{}, err
 	}
 
+	total := len(skipped) + len(applications)
+
 	builder := newHelmfileBuilder(config)
 	var diagnostics []conversionDiagnostic
+	var converted int
 	for _, item := range applications {
-		diagnostics = append(diagnostics, auditApplication(item)...)
-		if err := builder.add(item); err != nil {
-			return conversionResult{}, err
+		itemDiagnostics := auditApplication(item)
+		if err := builder.addSkippable(item, options.skipUnconvertible); err != nil {
+			if !options.skipUnconvertible {
+				return conversionResult{}, err
+			}
+			skipped = append(skipped, err)
+			continue
 		}
+		diagnostics = append(diagnostics, itemDiagnostics...)
+		converted++
 	}
+	if options.skipUnconvertible && converted == 0 {
+		return conversionResult{}, fmt.Errorf(
+			"every input was skipped: %d of %d could not be converted",
+			len(skipped),
+			total,
+		)
+	}
+	builder.noteSkipped(skipped)
 	output, err := builder.finalize()
 	if err != nil {
 		return conversionResult{}, err
@@ -129,6 +155,7 @@ func convertWithDiagnostics(input []byte, config *conversionConfig) (conversionR
 	return conversionResult{
 		output:      output,
 		diagnostics: diagnostics,
+		skipped:     skipped,
 	}, nil
 }
 

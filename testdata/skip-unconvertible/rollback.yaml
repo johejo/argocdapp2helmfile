@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alpha
+spec:
+  destination:
+    namespace: production
+  source:
+    repoURL: https://example.com/charts
+    chart: alpha
+    targetRevision: 1.0.0
+    helm:
+      skipCrds: true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: beta
+spec:
+  destination:
+    namespace: production
+  source:
+    repoURL: https://example.com/charts
+    chart: beta
+    targetRevision: 2.0.0
+    helm:
+      skipCrds: false
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: beta
+spec:
+  destination:
+    namespace: staging
+  source:
+    repoURL: https://example.com/charts
+    chart: beta
+    targetRevision: 2.0.0
+    helm:
+      skipCrds: true
