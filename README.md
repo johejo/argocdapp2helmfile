@@ -26,6 +26,9 @@ argocdapp2helmfile --config config.yaml \
 ```
 
 Run `argocdapp2helmfile --help` to list all command-line options.
+Run `argocdapp2helmfile --version` to print the version.
+Release builds can embed it with `go build -ldflags '-X main.version=v1.2.3' .`;
+otherwise, the version reported by Go build information is used.
 
 Separate multiple resources with YAML document markers.
 Direct Applications and ApplicationSets may be mixed, and release order follows input order.

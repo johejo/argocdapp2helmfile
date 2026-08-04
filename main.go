@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/johejo/argocdapp2helmfile/internal/reference"
 )
 
 //go:generate go run ./internal/cmd/gendocs
+
+var version string
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -23,6 +26,7 @@ type commandOptions struct {
 	skipUnconvertible bool
 	configPath        string
 	reference         *reference.Document
+	showVersion       bool
 }
 
 const (
@@ -43,6 +47,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		writeDiagnostic(stderr, err)
 		return 1
+	}
+	if options.showVersion {
+		if _, err := fmt.Fprintf(stdout, "argocdapp2helmfile %s\n", resolvedVersion()); err != nil {
+			writeDiagnostic(stderr, fmt.Errorf("write version: %w", err))
+			return 1
+		}
+		return 0
 	}
 	if options.reference != nil {
 		if _, err := stdout.Write(options.reference.Render()); err != nil {
@@ -114,6 +125,7 @@ func parseArgs(args []string) (commandOptions, string, error) {
 	var output bytes.Buffer
 	flags := flag.NewFlagSet("argocdapp2helmfile", flag.ContinueOnError)
 	flags.SetOutput(&output)
+	flags.BoolVar(&options.showVersion, "version", false, "print version and exit")
 	flags.BoolVar(&options.strict, "strict", false, "reject lossy conversions")
 	flags.BoolVar(
 		&options.skipUnconvertible,
@@ -131,6 +143,7 @@ func parseArgs(args []string) (commandOptions, string, error) {
 			&output,
 			"Usage: argocdapp2helmfile [--strict | --skip-unconvertible] [--config PATH]",
 		)
+		fmt.Fprintln(&output, "       argocdapp2helmfile --version")
 		for _, document := range reference.Documents {
 			fmt.Fprintf(&output, "       argocdapp2helmfile --%s\n", document.Flag)
 		}
@@ -166,6 +179,16 @@ func parseArgs(args []string) (commandOptions, string, error) {
 		)
 	}
 	return options, "", nil
+}
+
+func resolvedVersion() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "(devel)"
 }
 
 func writeDiagnostic(stderr io.Writer, err error) {

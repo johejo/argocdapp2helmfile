@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -233,6 +234,7 @@ func TestRunHelp(t *testing.T) {
 				"-help-applicationset",
 				"-help-diagnostics",
 				"-strict",
+				"-version",
 			} {
 				if !strings.Contains(stdout.String(), want) {
 					t.Errorf("help output does not contain %q:\n%s", want, stdout.String())
@@ -242,6 +244,53 @@ func TestRunHelp(t *testing.T) {
 				t.Errorf("stderr was not empty: %q", stderr.String())
 			}
 		})
+	}
+}
+
+func TestRunVersion(t *testing.T) {
+	oldVersion := version
+	version = "v1.2.3"
+	t.Cleanup(func() { version = oldVersion })
+
+	for _, arg := range []string{"-version", "--version"} {
+		t.Run(arg, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{arg}, errorReader{}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("exit code = %d, want 0: %s", code, stderr.String())
+			}
+			if got, want := stdout.String(), "argocdapp2helmfile v1.2.3\n"; got != want {
+				t.Errorf("stdout = %q, want %q", got, want)
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("stderr was not empty: %q", stderr.String())
+			}
+		})
+	}
+}
+
+func TestResolvedVersionFallsBackToBuildInfo(t *testing.T) {
+	oldVersion := version
+	version = ""
+	t.Cleanup(func() { version = oldVersion })
+
+	want := "(devel)"
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		want = info.Main.Version
+	}
+	if got := resolvedVersion(); got != want {
+		t.Errorf("resolvedVersion() = %q, want %q", got, want)
+	}
+}
+
+func TestRunVersionReportsWriteFailure(t *testing.T) {
+	var stderr bytes.Buffer
+	if code := run([]string{"--version"}, errorReader{}, errorWriter{}, &stderr); code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if got := stderr.String(); !strings.Contains(got, "write version: write failed") ||
+		strings.Count(got, "\n") != 1 {
+		t.Fatalf("unexpected stderr: %q", got)
 	}
 }
 
