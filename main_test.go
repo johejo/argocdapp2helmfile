@@ -10,6 +10,7 @@ import (
 
 	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
 	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
+	"github.com/johejo/argocdapp2helmfile/internal/conversionconfig"
 	"github.com/johejo/argocdapp2helmfile/internal/diagnostic"
 	"github.com/johejo/argocdapp2helmfile/internal/reference"
 )
@@ -455,6 +456,7 @@ var referenceFlags = []struct {
 	{"help-diagnostics", "diagnostics", diagnostic.Markdown},
 	{"help-application-mapping", "application mapping", applicationmapping.Markdown},
 	{"help-applicationset", "ApplicationSet", applicationset.Markdown},
+	{"help-conversion-config", "conversion config", conversionconfig.Markdown},
 }
 
 func TestReferenceFlagsCoverEveryReference(t *testing.T) {

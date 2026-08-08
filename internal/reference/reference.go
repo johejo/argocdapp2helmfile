@@ -5,6 +5,7 @@ package reference
 import (
 	"github.com/johejo/argocdapp2helmfile/internal/applicationmapping"
 	"github.com/johejo/argocdapp2helmfile/internal/applicationset"
+	"github.com/johejo/argocdapp2helmfile/internal/conversionconfig"
 	"github.com/johejo/argocdapp2helmfile/internal/diagnostic"
 )
 
@@ -39,5 +40,12 @@ var Documents = []Document{
 		Name:   "ApplicationSet",
 		Path:   "docs/applicationset.md",
 		Render: applicationset.Markdown,
+	},
+	{
+		Flag:   "help-conversion-config",
+		Usage:  "print the conversion config reference",
+		Name:   "conversion config",
+		Path:   "docs/conversion-config.md",
+		Render: conversionconfig.Markdown,
 	},
 }

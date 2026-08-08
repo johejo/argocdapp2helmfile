@@ -75,19 +75,19 @@ func TestClusterGeneratorReportsEntryOriginAndUnknownFields(t *testing.T) {
 	assertErrorContains(t, err, "clusters.secretType is not supported")
 }
 
-func TestReadmeClusterSnapshotExampleDoesNotProjectCredentials(t *testing.T) {
-	readme := readTestdata(t, "../README.md")
+func TestConfigReferenceClusterSnapshotDoesNotProjectCredentials(t *testing.T) {
+	reference := readTestdata(t, "../docs/conversion-config.md")
 	for _, required := range []string{
 		"@base64d",
 		`with_entries(select(.key == "example.com/owner"))`,
 		"kubectl.kubernetes.io/last-applied-configuration",
 		"default local cluster",
 	} {
-		if !strings.Contains(readme, required) {
-			t.Errorf("README snapshot guidance is missing %q", required)
+		if !strings.Contains(reference, required) {
+			t.Errorf("conversion config reference is missing %q", required)
 		}
 	}
-	if strings.Contains(readme, ".data.config") {
-		t.Error("README snapshot example projects the Cluster Secret config field")
+	if strings.Contains(reference, ".data.config") {
+		t.Error("snapshot example projects the Cluster Secret config field")
 	}
 }

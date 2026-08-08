@@ -12,73 +12,20 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
-	"github.com/goccy/go-yaml/ast"
 	"github.com/itchyny/gojq"
+	"github.com/johejo/argocdapp2helmfile/internal/conversionconfig"
 )
 
 const (
-	configAPIVersion = "argocdapp2helmfile/v1alpha1"
-	configKind       = "Config"
+	configAPIVersion = conversionconfig.APIVersion
+	configKind       = conversionconfig.Kind
 )
 
-type configResource struct {
-	APIVersion    string                   `yaml:"apiVersion"`
-	Kind          string                   `yaml:"kind"`
-	Sources       []sourceConfigEntry      `yaml:"sources"`
-	Destinations  []destinationConfigEntry `yaml:"destinations"`
-	Clusters      []clusterConfigEntry     `yaml:"clusters"`
-	ReleaseLabels []releaseLabelConfig     `yaml:"releaseLabels"`
-}
-
-type sourceConfigEntry struct {
-	RepoURL        string `yaml:"repoURL"`
-	TargetRevision string `yaml:"targetRevision"`
-	LocalRoot      string `yaml:"localRoot"`
-}
-
-type destinationConfigEntry struct {
-	Name        string `yaml:"name"`
-	Server      string `yaml:"server"`
-	KubeContext string `yaml:"kubeContext"`
-}
-
-type clusterConfigEntry struct {
-	Name        string          `yaml:"name"`
-	Server      string          `yaml:"server"`
-	KubeContext string          `yaml:"kubeContext"`
-	Project     string          `yaml:"project"`
-	Labels      strictStringMap `yaml:"labels"`
-	Annotations strictStringMap `yaml:"annotations"`
-}
-
-type strictStringMap map[string]string
-
-func (mapping *strictStringMap) UnmarshalYAML(node ast.Node) error {
-	if node.Type() == ast.NullType {
-		*mapping = nil
-		return nil
-	}
-	root, ok := node.(*ast.MappingNode)
-	if !ok {
-		return errors.New("must be a mapping")
-	}
-	result := make(strictStringMap, len(root.Values))
-	for _, item := range root.Values {
-		key, keyOK := item.Key.(*ast.StringNode)
-		value, valueOK := item.Value.(*ast.StringNode)
-		if !keyOK || !valueOK {
-			return errors.New("keys and values must be strings")
-		}
-		result[key.Value] = value.Value
-	}
-	*mapping = result
-	return nil
-}
-
-type releaseLabelConfig struct {
-	Name  string `yaml:"name"`
-	Query string `yaml:"query"`
-}
+type configResource = conversionconfig.Resource
+type sourceConfigEntry = conversionconfig.Source
+type destinationConfigEntry = conversionconfig.Destination
+type clusterConfigEntry = conversionconfig.Cluster
+type releaseLabelConfig = conversionconfig.ReleaseLabelRule
 
 type sourceKey struct {
 	repoURL        string
@@ -206,24 +153,14 @@ func parseConfig(input []byte) (*conversionConfig, error) {
 }
 
 func parseConfigSources(entries []sourceConfigEntry) (*sourceResolver, error) {
+	if err := conversionconfig.ValidateSources(entries); err != nil {
+		return nil, err
+	}
 	resolver := &sourceResolver{
 		entries: make(map[sourceKey]sourceConfigEntry, len(entries)),
 	}
-	for i, entry := range entries {
-		field := fmt.Sprintf("config sources[%d]", i)
-		if strings.TrimSpace(entry.RepoURL) == "" {
-			return nil, fmt.Errorf("%s.repoURL is required", field)
-		}
-		if strings.TrimSpace(entry.TargetRevision) == "" {
-			return nil, fmt.Errorf("%s.targetRevision is required", field)
-		}
-		if strings.TrimSpace(entry.LocalRoot) == "" {
-			return nil, fmt.Errorf("%s.localRoot is required", field)
-		}
+	for _, entry := range entries {
 		key := sourceKey{repoURL: entry.RepoURL, targetRevision: entry.TargetRevision}
-		if _, exists := resolver.entries[key]; exists {
-			return nil, fmt.Errorf("%s duplicates repoURL %q at targetRevision %q", field, entry.RepoURL, entry.TargetRevision)
-		}
 		resolver.entries[key] = entry
 	}
 	return resolver, nil
@@ -236,42 +173,24 @@ func parseConfigDestinations(
 	entries []destinationConfigEntry,
 	clusters []clusterConfigEntry,
 ) (*destinationResolver, error) {
+	if err := conversionconfig.ValidateDestinations(entries, clusters); err != nil {
+		return nil, err
+	}
 	resolver := &destinationResolver{
 		entries: make(
 			map[destinationKey]destinationConfigEntry,
 			len(entries)+len(clusters)*2,
 		),
 	}
-	for i, entry := range entries {
-		field := fmt.Sprintf("config destinations[%d]", i)
+	for _, entry := range entries {
 		hasName := strings.TrimSpace(entry.Name) != ""
-		hasServer := strings.TrimSpace(entry.Server) != ""
-		if hasName == hasServer {
-			return nil, fmt.Errorf("%s must set exactly one of name or server", field)
-		}
-		if strings.TrimSpace(entry.KubeContext) == "" {
-			return nil, fmt.Errorf("%s.kubeContext is required", field)
-		}
 		key := destinationKey{kind: "name", value: entry.Name}
-		if hasServer {
+		if !hasName {
 			key = destinationKey{kind: "server", value: entry.Server}
-		}
-		if _, exists := resolver.entries[key]; exists {
-			return nil, fmt.Errorf("%s duplicates %s %q", field, key.kind, key.value)
 		}
 		resolver.entries[key] = entry
 	}
-	for i, cluster := range clusters {
-		field := fmt.Sprintf("config clusters[%d]", i)
-		if strings.TrimSpace(cluster.Name) == "" {
-			return nil, fmt.Errorf("%s.name is required", field)
-		}
-		if strings.TrimSpace(cluster.Server) == "" {
-			return nil, fmt.Errorf("%s.server is required", field)
-		}
-		if strings.TrimSpace(cluster.KubeContext) == "" {
-			return nil, fmt.Errorf("%s.kubeContext is required", field)
-		}
+	for _, cluster := range clusters {
 		entry := destinationConfigEntry{
 			Name:        cluster.Name,
 			Server:      cluster.Server,
@@ -281,9 +200,6 @@ func parseConfigDestinations(
 			{kind: "name", value: cluster.Name},
 			{kind: "server", value: cluster.Server},
 		} {
-			if _, exists := resolver.entries[key]; exists {
-				return nil, fmt.Errorf("%s duplicates %s %q", field, key.kind, key.value)
-			}
 			resolver.entries[key] = entry
 		}
 	}
@@ -291,21 +207,14 @@ func parseConfigDestinations(
 }
 
 func parseConfigReleaseLabels(entries []releaseLabelConfig) (*releaseLabelProjector, error) {
+	if err := conversionconfig.ValidateReleaseLabels(entries); err != nil {
+		return nil, err
+	}
 	projector := &releaseLabelProjector{
 		rules: make([]releaseLabelRule, 0, len(entries)),
 	}
-	names := make(map[string]struct{}, len(entries))
 	for i, entry := range entries {
 		field := fmt.Sprintf("config releaseLabels[%d]", i)
-		if strings.TrimSpace(entry.Name) == "" {
-			return nil, fmt.Errorf("%s.name is required", field)
-		}
-		if strings.TrimSpace(entry.Query) == "" {
-			return nil, fmt.Errorf("%s.query is required", field)
-		}
-		if _, exists := names[entry.Name]; exists {
-			return nil, fmt.Errorf("%s duplicates name %q", field, entry.Name)
-		}
 		query, err := gojq.Parse(entry.Query)
 		if err != nil {
 			return nil, fmt.Errorf("%s.query: %w", field, err)
@@ -314,7 +223,6 @@ func parseConfigReleaseLabels(entries []releaseLabelConfig) (*releaseLabelProjec
 		if err != nil {
 			return nil, fmt.Errorf("%s.query: %w", field, err)
 		}
-		names[entry.Name] = struct{}{}
 		projector.rules = append(projector.rules, releaseLabelRule{name: entry.Name, code: code})
 	}
 	return projector, nil
