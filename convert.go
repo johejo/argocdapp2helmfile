@@ -105,6 +105,7 @@ func convertWithConfig(input []byte, config *conversionConfig) ([]byte, error) {
 
 type conversionOptions struct {
 	skipUnconvertible bool
+	kubeContextMode   kubeContextMode
 }
 
 type conversionResult struct {
@@ -125,7 +126,7 @@ func convertWithDiagnostics(
 
 	total := len(skipped) + len(applications)
 
-	builder := newHelmfileBuilder(config)
+	builder := newHelmfileBuilder(config, options.kubeContextMode)
 	var diagnostics []conversionDiagnostic
 	var converted int
 	for _, item := range applications {
@@ -187,15 +188,27 @@ func convertApplication(
 	documentNumber int,
 	resolver *sourceResolver,
 	destinationResolver *destinationResolver,
+	kubeContextMode kubeContextMode,
 ) (convertedApplication, error) {
 	var converted convertedApplication
 
 	if err := validateApplicationEnvelope(app); err != nil {
 		return converted, err
 	}
-	kubeContext, err := destinationResolver.resolve(app.Spec.Destination, "spec.destination")
-	if err != nil {
-		return converted, err
+	var kubeContext string
+	switch kubeContextMode {
+	case kubeContextModeMapped:
+		var err error
+		kubeContext, err = destinationResolver.resolve(app.Spec.Destination, "spec.destination")
+		if err != nil {
+			return converted, err
+		}
+	case kubeContextModeOmit:
+		if err := validateDestinationSelector(app.Spec.Destination, "spec.destination"); err != nil {
+			return converted, err
+		}
+	default:
+		return converted, fmt.Errorf("invalid kube context mode %q", kubeContextMode)
 	}
 	selected, err := selectChartSource(app, documentNumber)
 	if err != nil {

@@ -1,0 +1,13 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app
+spec:
+  destination:
+    name: production
+    server: https://production.example.com
+    namespace: web
+  source:
+    repoURL: https://example.com/charts
+    chart: chart
+    targetRevision: 1.2.3

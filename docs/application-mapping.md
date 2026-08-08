@@ -34,7 +34,7 @@ Paths beginning with `spec.source` also apply to the manifest source selected fr
 | spec.source.helm.apiVersions | Release `apiVersions` | — |
 | spec.source.helm.skipCrds | Shared `helmDefaults.skipCRDs` | All Helm releases must resolve to the same value. |
 | Exact `CreateNamespace=true` sync option | Release `createNamespace: true` | Approximate mapping. |
-| spec.destination.name or spec.destination.server | Release `kubeContext` through Config `destinations` | — |
+| spec.destination.name or spec.destination.server | Release `kubeContext` through Config `destinations` | Omitted when `--kube-context-mode omit` is selected. |
 | Config `releaseLabels` query result | Release `labels` entry | — |
 | Source type selection | Packaged Helm chart, Git Helm chart, or explicit Git Kustomization | `chart`, `path`, repository URL type, and explicit `kustomize: {}` select the type. |
 | spec.source or spec.sources | Exactly one manifest source plus optional values-only ref sources | The fields are mutually exclusive. Mapping paths apply to the selected manifest source. |
@@ -168,5 +168,5 @@ necessary.
 Scheme-less OCI repository URLs must not include an `oci://` prefix.
 Git sources are resolved through Config `sources` by repository URL and revision.
 Destination name or server is resolved through Config `destinations` (including
-cluster-derived entries), and Config `releaseLabels` project query results into release
-labels.
+cluster-derived entries), unless `--kube-context-mode omit` disables destination resolution.
+Config `releaseLabels` project query results into release labels.

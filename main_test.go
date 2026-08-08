@@ -177,33 +177,75 @@ func TestParseArgs(t *testing.T) {
 		strict            bool
 		skipUnconvertible bool
 		configPath        string
+		kubeContextMode   kubeContextMode
 	}{
-		{args: []string{"--strict", "--config", "config.yaml"}, strict: true, configPath: "config.yaml"},
-		{args: []string{"-config", "config.yaml", "-strict"}, strict: true, configPath: "config.yaml"},
-		{args: []string{"--config=first.yaml", "--config=last.yaml"}, configPath: "last.yaml"},
-		{args: []string{"--strict=true", "--strict=false"}},
-		{args: []string{"--skip-unconvertible"}, skipUnconvertible: true},
+		{
+			args:            []string{"--strict", "--config", "config.yaml"},
+			strict:          true,
+			configPath:      "config.yaml",
+			kubeContextMode: kubeContextModeMapped,
+		},
+		{
+			args:            []string{"-config", "config.yaml", "-strict"},
+			strict:          true,
+			configPath:      "config.yaml",
+			kubeContextMode: kubeContextModeMapped,
+		},
+		{
+			args:            []string{"--config=first.yaml", "--config=last.yaml"},
+			configPath:      "last.yaml",
+			kubeContextMode: kubeContextModeMapped,
+		},
+		{
+			args:            []string{"--strict=true", "--strict=false"},
+			kubeContextMode: kubeContextModeMapped,
+		},
+		{
+			args:              []string{"--skip-unconvertible"},
+			skipUnconvertible: true,
+			kubeContextMode:   kubeContextModeMapped,
+		},
 		{
 			args:              []string{"-skip-unconvertible", "--config", "config.yaml"},
 			skipUnconvertible: true,
 			configPath:        "config.yaml",
+			kubeContextMode:   kubeContextModeMapped,
 		},
-		{args: []string{"--skip-unconvertible=false", "--strict"}, strict: true},
+		{
+			args:            []string{"--skip-unconvertible=false", "--strict"},
+			strict:          true,
+			kubeContextMode: kubeContextModeMapped,
+		},
+		{
+			args:            []string{"--kube-context-mode", "omit"},
+			kubeContextMode: kubeContextModeOmit,
+		},
+		{
+			args:            []string{"--kube-context-mode=omit", "--kube-context-mode=mapped"},
+			kubeContextMode: kubeContextModeMapped,
+		},
 	}
 	for _, test := range tests {
 		options, _, err := parseArgs(test.args)
 		if err != nil || options.strict != test.strict ||
 			options.skipUnconvertible != test.skipUnconvertible ||
-			options.configPath != test.configPath {
+			options.configPath != test.configPath ||
+			options.kubeContextMode != test.kubeContextMode {
 			t.Errorf("parseArgs(%q) = %#v, %v", test.args, options, err)
 		}
 	}
 	for _, args := range [][]string{
 		{"--config"},
+		{"--kube-context-mode"},
+		{"--kube-context-mode", "unknown"},
 		{"--strict", "--skip-unconvertible"},
 		{"--help-diagnostics", "--skip-unconvertible"},
+		{"--help-diagnostics", "--skip-unconvertible=false"},
 		{"--help-diagnostics", "--strict"},
+		{"--help-diagnostics", "--strict=false"},
+		{"--help-diagnostics", "--kube-context-mode", "mapped"},
 		{"--config", "a", "--help-diagnostics"},
+		{"--config=", "--help-diagnostics"},
 		{"--help-application-mapping", "--strict"},
 		{"--config", "a", "--help-application-mapping"},
 		{"--help-applicationset", "--strict"},
@@ -216,6 +258,23 @@ func TestParseArgs(t *testing.T) {
 		if _, _, err := parseArgs(args); err == nil {
 			t.Errorf("parseArgs(%q) unexpectedly succeeded", args)
 		}
+	}
+}
+
+func TestParseArgsNamesReferenceFlagConflicts(t *testing.T) {
+	_, _, err := parseArgs([]string{
+		"--strict=false",
+		"--kube-context-mode=mapped",
+		"--config=config.yaml",
+		"--help-diagnostics",
+	})
+	if err == nil {
+		t.Fatal("parseArgs unexpectedly succeeded")
+	}
+	want := "--help-diagnostics cannot be combined with " +
+		"--config, --kube-context-mode, --strict"
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err, want)
 	}
 }
 
@@ -233,6 +292,8 @@ func TestRunHelp(t *testing.T) {
 				"-help-application-mapping",
 				"-help-applicationset",
 				"-help-diagnostics",
+				"-kube-context-mode mode",
+				"default mapped",
 				"-strict",
 				"-version",
 			} {
@@ -244,6 +305,71 @@ func TestRunHelp(t *testing.T) {
 				t.Errorf("stderr was not empty: %q", stderr.String())
 			}
 		})
+	}
+}
+
+func TestRunKubeContextMode(t *testing.T) {
+	input := readTestdata(t, "kube-context-mode/application.yaml")
+	config := "testdata/kube-context-mode/config.yaml"
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "mapped by default",
+			args: []string{"--config", config},
+			want: "kube-context-mode/mapped-helmfile.yaml",
+		},
+		{
+			name: "omit",
+			args: []string{"--kube-context-mode", "omit"},
+			want: "kube-context-mode/omit-helmfile.yaml",
+		},
+		{
+			name: "omit with config",
+			args: []string{"--config", config, "--kube-context-mode", "omit"},
+			want: "kube-context-mode/omit-helmfile.yaml",
+		},
+		{
+			name: "omit with strict",
+			args: []string{"--strict", "--kube-context-mode", "omit"},
+			want: "kube-context-mode/omit-helmfile.yaml",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if code := run(test.args, strings.NewReader(input), &stdout, &stderr); code != 0 {
+				t.Fatalf("exit code = %d, want 0: %s", code, stderr.String())
+			}
+			if want := readTestdata(t, test.want); stdout.String() != want {
+				t.Fatalf("unexpected stdout:\n%s\nwant:\n%s", stdout.String(), want)
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("stderr was not empty: %q", stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunKubeContextOmitStillValidatesDestinationSelector(t *testing.T) {
+	input := readTestdata(t, "kube-context-mode/invalid-destination.yaml")
+	var stdout, stderr bytes.Buffer
+	if code := run(
+		[]string{"--kube-context-mode", "omit"},
+		strings.NewReader(input),
+		&stdout,
+		&stderr,
+	); code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout was not empty: %q", stdout.String())
+	}
+	want := "spec.destination.name and spec.destination.server cannot both be set"
+	if !strings.Contains(stderr.String(), want) {
+		t.Fatalf("stderr does not contain %q: %s", want, stderr.String())
 	}
 }
 

@@ -26,16 +26,18 @@ type helmfileBuilder struct {
 	sharedSkipCRDsOrigin  inputOrigin
 	resolver              *sourceResolver
 	destinationResolver   *destinationResolver
+	kubeContextMode       kubeContextMode
 	projector             *releaseLabelProjector
 	rollingSyncReleases   map[int]map[int][]int
 }
 
-func newHelmfileBuilder(config *conversionConfig) *helmfileBuilder {
+func newHelmfileBuilder(config *conversionConfig, kubeContextMode kubeContextMode) *helmfileBuilder {
 	builder := &helmfileBuilder{
 		repositories:          make(map[string]repositoryRecord),
 		usedRepositoryAliases: make(map[string]struct{}),
 		releaseOrigins:        make(map[string]inputOrigin),
 		rollingSyncReleases:   make(map[int]map[int][]int),
+		kubeContextMode:       kubeContextMode,
 	}
 	if config != nil {
 		builder.resolver = config.sourceResolver
@@ -100,6 +102,7 @@ func (builder *helmfileBuilder) add(item applicationInput) error {
 		item.origin.document,
 		builder.resolver,
 		builder.destinationResolver,
+		builder.kubeContextMode,
 	)
 	if err != nil {
 		return item.origin.wrap(err)

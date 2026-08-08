@@ -25,8 +25,41 @@ type commandOptions struct {
 	strict            bool
 	skipUnconvertible bool
 	configPath        string
+	kubeContextMode   kubeContextMode
 	reference         *reference.Document
 	showVersion       bool
+}
+
+type kubeContextMode uint8
+
+const (
+	// Keep mapped as the zero value so conversionOptions{} uses the safe default.
+	kubeContextModeMapped kubeContextMode = iota
+	kubeContextModeOmit
+)
+
+func (mode *kubeContextMode) Set(value string) error {
+	switch value {
+	case "mapped":
+		*mode = kubeContextModeMapped
+		return nil
+	case "omit":
+		*mode = kubeContextModeOmit
+		return nil
+	default:
+		return errors.New(`must be "mapped" or "omit"`)
+	}
+}
+
+func (mode kubeContextMode) String() string {
+	switch mode {
+	case kubeContextModeMapped:
+		return "mapped"
+	case kubeContextModeOmit:
+		return "omit"
+	default:
+		return fmt.Sprintf("unknown(%d)", mode)
+	}
 }
 
 const (
@@ -87,6 +120,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	result, err := convertWithDiagnostics(input, config, conversionOptions{
 		skipUnconvertible: options.skipUnconvertible,
+		kubeContextMode:   options.kubeContextMode,
 	})
 	if err != nil {
 		writeDiagnostic(stderr, err)
@@ -134,6 +168,11 @@ func parseArgs(args []string) (commandOptions, string, error) {
 		"convert what can be converted, reporting and omitting the rest, and exit 2",
 	)
 	flags.StringVar(&options.configPath, "config", "", "read conversion configuration from `path`")
+	flags.Var(
+		&options.kubeContextMode,
+		"kube-context-mode",
+		"set kubeContext handling to `mode` (mapped or omit; default mapped)",
+	)
 	selected := make([]bool, len(reference.Documents))
 	for i, document := range reference.Documents {
 		flags.BoolVar(&selected[i], document.Flag, false, document.Usage)
@@ -141,7 +180,7 @@ func parseArgs(args []string) (commandOptions, string, error) {
 	flags.Usage = func() {
 		fmt.Fprintln(
 			&output,
-			"Usage: argocdapp2helmfile [--strict | --skip-unconvertible] [--config PATH]",
+			"Usage: argocdapp2helmfile [--strict | --skip-unconvertible] [--config PATH] [--kube-context-mode MODE]",
 		)
 		fmt.Fprintln(&output, "       argocdapp2helmfile --version")
 		for _, document := range reference.Documents {
@@ -157,6 +196,13 @@ func parseArgs(args []string) (commandOptions, string, error) {
 	if flags.NArg() != 0 {
 		return commandOptions{}, "", fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
+	var conversionFlags []string
+	flags.Visit(func(item *flag.Flag) {
+		switch item.Name {
+		case "config", "kube-context-mode", "skip-unconvertible", "strict":
+			conversionFlags = append(conversionFlags, "--"+item.Name)
+		}
+	})
 	for i, chosen := range selected {
 		if !chosen {
 			continue
@@ -166,11 +212,11 @@ func parseArgs(args []string) (commandOptions, string, error) {
 		}
 		options.reference = &reference.Documents[i]
 	}
-	if options.reference != nil &&
-		(options.strict || options.skipUnconvertible || options.configPath != "") {
+	if options.reference != nil && len(conversionFlags) != 0 {
 		return commandOptions{}, "", fmt.Errorf(
-			"--%s cannot be combined with --strict, --skip-unconvertible, or --config",
+			"--%s cannot be combined with %s",
 			options.reference.Flag,
+			strings.Join(conversionFlags, ", "),
 		)
 	}
 	if options.strict && options.skipUnconvertible {

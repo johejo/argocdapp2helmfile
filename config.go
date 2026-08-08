@@ -390,16 +390,19 @@ func (resolver *sourceResolver) resolve(source applicationSource, field string) 
 }
 
 func (resolver *destinationResolver) resolve(destination applicationDestination, field string) (string, error) {
+	if err := validateDestinationSelector(destination, field); err != nil {
+		return "", err
+	}
 	hasName := strings.TrimSpace(destination.Name) != ""
 	hasServer := strings.TrimSpace(destination.Server) != ""
-	if hasName && hasServer {
-		return "", fmt.Errorf("%s.name and %s.server cannot both be set", field, field)
-	}
 	if !hasName && !hasServer {
 		return "", nil
 	}
 	if resolver == nil {
-		return "", fmt.Errorf("%s requires --config", field)
+		return "", fmt.Errorf(
+			"%s requires --config; use --kube-context-mode omit if the kube context is not needed",
+			field,
+		)
 	}
 	key := destinationKey{kind: "name", value: destination.Name}
 	if hasServer {
@@ -407,9 +410,23 @@ func (resolver *destinationResolver) resolve(destination applicationDestination,
 	}
 	entry, exists := resolver.entries[key]
 	if !exists {
-		return "", fmt.Errorf("%s has no config destination entry for %s %q", field, key.kind, key.value)
+		return "", fmt.Errorf(
+			"%s has no config destination entry for %s %q; use --kube-context-mode omit if the kube context is not needed",
+			field,
+			key.kind,
+			key.value,
+		)
 	}
 	return entry.KubeContext, nil
+}
+
+func validateDestinationSelector(destination applicationDestination, field string) error {
+	hasName := strings.TrimSpace(destination.Name) != ""
+	hasServer := strings.TrimSpace(destination.Server) != ""
+	if hasName && hasServer {
+		return fmt.Errorf("%s.name and %s.server cannot both be set", field, field)
+	}
+	return nil
 }
 
 func normalizeJQValue(value any) (any, error) {

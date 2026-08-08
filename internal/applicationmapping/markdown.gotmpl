@@ -122,5 +122,5 @@ necessary.
 Scheme-less OCI repository URLs must not include an `oci://` prefix.
 Git sources are resolved through Config `sources` by repository URL and revision.
 Destination name or server is resolved through Config `destinations` (including
-cluster-derived entries), and Config `releaseLabels` project query results into release
-labels.
+cluster-derived entries), unless `--kube-context-mode omit` disables destination resolution.
+Config `releaseLabels` project query results into release labels.

@@ -25,6 +25,17 @@ argocdapp2helmfile --config config.yaml \
   <application.yaml >helmfile.yaml
 ```
 
+Destination names and servers are mapped to Helmfile `kubeContext` values by default.
+When generating a Helmfile that should use Helmfile's execution context, such as for
+`helmfile template`, omit `kubeContext` explicitly:
+
+```sh
+argocdapp2helmfile --kube-context-mode omit \
+  <application.yaml >helmfile.yaml
+```
+
+This mode still converts `spec.destination.namespace` to the release namespace.
+
 Run `argocdapp2helmfile --help` to list all command-line options.
 Run `argocdapp2helmfile --version` to print the version.
 Release builds can embed it with `go build -ldflags '-X main.version=v1.2.3' .`;
@@ -261,6 +272,8 @@ The configured `kubeContext` is copied unchanged to the generated helmfile relea
 the converter does not read a kubeconfig or verify that the context exists.
 If an Application sets either field, `--config` and a matching entry are required.
 If neither is set, `kubeContext` is omitted.
+With `--kube-context-mode omit`, destination name and server resolution is disabled and
+`kubeContext` is always omitted; `spec.destination.namespace` remains the release namespace.
 
 Every `clusters` entry is also registered as a destination under both its exact
 `name` and `server`.

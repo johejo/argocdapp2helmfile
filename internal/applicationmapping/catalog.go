@@ -240,6 +240,7 @@ var entries = []Entry{
 		ID:     DestinationContext,
 		Input:  "spec.destination.name or spec.destination.server",
 		Output: "Release `kubeContext` through Config `destinations`",
+		Notes:  "Omitted when `--kube-context-mode omit` is selected.",
 	},
 	{
 		ID: ReleaseLabels, Input: "Config `releaseLabels` query result",

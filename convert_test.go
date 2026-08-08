@@ -137,19 +137,22 @@ func TestConvertDestinationFailsClosed(t *testing.T) {
 		{
 			name:  "config required",
 			input: withDestination("    name: production\n"),
-			want:  "document 1: spec.destination requires --config",
+			want: "document 1: spec.destination requires --config; " +
+				"use --kube-context-mode omit if the kube context is not needed",
 		},
 		{
 			name:   "name not mapped",
 			input:  withDestination("    name: staging\n"),
 			config: testConfig(t, "destinations: []\n"),
-			want:   `document 1: spec.destination has no config destination entry for name "staging"`,
+			want: `document 1: spec.destination has no config destination entry for name "staging"; ` +
+				"use --kube-context-mode omit if the kube context is not needed",
 		},
 		{
 			name:   "server not mapped",
 			input:  withDestination("    server: https://unknown\n"),
 			config: testConfig(t, "destinations: []\n"),
-			want:   `document 1: spec.destination has no config destination entry for server "https://unknown"`,
+			want: `document 1: spec.destination has no config destination entry for server "https://unknown"; ` +
+				"use --kube-context-mode omit if the kube context is not needed",
 		},
 		{
 			name:  "name and server",
